@@ -1,0 +1,57 @@
+# --- Environment / secrets ---
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+
+# --- Java / Maven (backend) ---
+backend/target/
+*.class
+*.jar
+*.war
+*.ear
+!**/src/main/**/target/
+!**/src/test/**/target/
+.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+
+# --- Node / frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/*.local
+frontend/coverage/
+frontend/.next/
+
+# --- Logs ---
+logs/
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# --- IDE / editors ---
+.idea/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+.factorypath
+.vscode/
+.apt_generated
+.springBeans
+.sts4-cache
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Misc ---
+target/
+*.swp
+*~
+node_modules/
+dist/
+build/
