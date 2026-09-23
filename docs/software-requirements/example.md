@@ -1,3 +1,6 @@
+> [!WARNING]
+> This document is a formatting example imported from an unrelated project. It is not a GuardWork requirement, architecture decision, or implementation reference. Use `template.md` to draft GuardWork specifications.
+
 # Cart & Order Feature — Software Requirements Specification
 
 | Field | Value |

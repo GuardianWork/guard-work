@@ -1,6 +1,6 @@
 # Software Requirements (SR) Specification Template
 
-> **Usage Note:** This general template is derived from the project's standard specification format (e.g., [`docs/feat-spec/cart-and-order-spec.md`](../feat-spec/cart-and-order-spec.md)). Replace all placeholder text `[like this]` with your feature-specific details while maintaining the structure and formatting conventions.
+> **Usage Note:** Copy this template into a focused GuardWork feature specification. Replace all placeholder text `[like this]` and remove sections that do not apply. The separate `example.md` demonstrates formatting only and is not a GuardWork requirement or architecture reference.
 
 > **Note:** You may skip for "optional"-labeled section.  
 
@@ -10,11 +10,15 @@
 
 | Field | Value |
 |---|---|
-| **Project** | [Project Name, e.g. ShopeeFood Clone] |
-| **Module** | [Module / Domain Name, e.g. Cart (Redis) & Order Management] |
+| **Specification ID** | [Stable ID, e.g. GW-SR-AUTH] |
+| **Project** | [Project Name, e.g. GuardWork] |
+| **Module** | [Module / Domain Name, e.g. Employer Verification] |
 | **File** | `[filename-spec.md]` |
 | **Version** | [1.0.0] |
 | **Date** | [YYYY-MM-DD] |
+| **Last Updated** | [YYYY-MM-DD] |
+| **Owner** | [Team member responsible for this specification] |
+| **Approver** | [Named human reviewer; required for Approved status] |
 | **Status** | [Draft / Under Review / Approved / Implemented] |
 
 ---
