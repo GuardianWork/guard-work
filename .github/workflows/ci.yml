@@ -15,6 +15,22 @@ jobs:
     name: Run Backend Tests, Package, and Upload Artifact
     runs-on: ubuntu-latest
 
+    # PostgreSQL service container for database migrations and test execution
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: backend_db
+          POSTGRES_USER: backend_user
+          POSTGRES_PASSWORD: backend_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       # Step 1: Check out repository source code
       - name: Checkout Repository
