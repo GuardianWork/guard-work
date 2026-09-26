@@ -1,0 +1,67 @@
+name: Continuous Integration
+
+# Trigger the CI pipeline on pushes to the dev branch and pull requests to main or dev
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  test-and-build:
+    name: Run Backend Tests, Package, and Upload Artifact
+    runs-on: ubuntu-latest
+
+    # PostgreSQL service container for database migrations and test execution
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: backend_db
+          POSTGRES_USER: backend_user
+          POSTGRES_PASSWORD: backend_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # Step 1: Check out repository source code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Java 25 runtime environment and enable Maven caching
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      # Step 3: Ensure executable permissions on the Maven wrapper script
+      - name: Grant execute permission for Maven wrapper
+        run: chmod +x backend/mvnw
+
+      # Step 4: Execute automated backend tests
+      - name: Run Backend Tests
+        run: ./mvnw test
+        working-directory: backend
+
+      # Step 5: Compile and package the application into a JAR artifact
+      - name: Build Application Package
+        run: ./mvnw package -DskipTests
+        working-directory: backend
+
+      # Step 6: Upload the packaged JAR artifact to GitHub Actions artifact storage
+      - name: Upload Application Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gw-backend-jar
+          path: backend/target/*.jar
+          retention-days: 7
