@@ -34,15 +34,59 @@ This document defines the software requirements for the **Admin Management & Sys
 
 ### 1.2 Scope
 
-| Sub-feature | Responsibility |
-|---|---|
-| **Company Verification (UC-ADM-01)** | Review submitted Business Registration Certificates and business profiles; approve or reject verification requests with feedback; trigger notification pipelines. |
-| **Violation Report Resolution (UC-ADM-02)** | Moderate community violation reports filed by candidates or recruiters; resolve tickets; apply sanctions (warnings, bans); enforce optimistic concurrency to avoid race conditions. |
-| **Account Ban & Suspension (UC-ADM-03)** | Suspend or reactivate user and company accounts; invalidate active session tokens immediately across distributed services via Redis blacklists. |
-| **Job Posting Moderation (UC-ADM-04)** | Takedown or suspend fraudulent/violating job postings; purge associated cached documents from Redis and Elasticsearch search indices. |
-| **System Health & Traffic Monitoring (UC-ADM-05)** | Expose real-time infrastructure metrics (CPU, RAM, DB connection pool) and application traffic (CCU, request rates) routed through read replicas and pre-aggregated metric buffers. |
-| **Background Cron Job Management (UC-ADM-06)** | Inspect scheduled jobs, trigger ad-hoc manual runs, adjust execution frequencies, and track runtime execution logs. |
-| **Audit Logging & Governance (Security)** | Capture append-only audit trail records for all state-mutating administrative actions for zero-trust compliance. |
+| Sub-feature | Responsibility | Priority (MVP Plan) |
+|---|---|---|
+| **Audit Logging & Governance (Security)** | Capture append-only audit trail records for all state-mutating administrative actions for zero-trust compliance. | **P0 — Critical (Foundation)**<br>Architectural prerequisite for all state-mutating admin actions (`audit_logs`). |
+| **Company Verification (UC-ADM-01)** | Review submitted Business Registration Certificates and business profiles; approve or reject verification requests with feedback; trigger notification pipelines. | **P0 — Must Have (Phase 1)**<br>Core value proposition; validates and activates legitimate recruiters on the platform. |
+| **Account Ban & Suspension (UC-ADM-03)** | Suspend or reactivate user and company accounts; invalidate active session tokens immediately across distributed services via Redis blacklists. | **P0 — Must Have (Phase 1)**<br>Essential security kill-switch; prerequisite for sanctioning accounts in UC-ADM-02. |
+| **Job Posting Moderation (UC-ADM-04)** | Takedown or suspend fraudulent/violating job postings; purge associated cached documents from Redis and Elasticsearch search indices. | **P1 — Should Have (Phase 2)**<br>Direct content safety control; required for job takedown sanction in UC-ADM-02. |
+| **Violation Report Resolution (UC-ADM-02)** | Moderate community violation reports filed by candidates or recruiters; resolve tickets; apply sanctions (warnings, bans); enforce optimistic concurrency to avoid race conditions. | **P1 — Should Have (Phase 2)**<br>Community moderation workflow; orchestrates sanctions via UC-ADM-03 and UC-ADM-04. |
+| **System Health & Traffic Monitoring (UC-ADM-05)** | Expose real-time infrastructure metrics (CPU, RAM, DB connection pool) and application traffic (CCU, request rates) routed through read replicas and pre-aggregated metric buffers. | **P2 — Could Have (Post-MVP)**<br>Can initially rely on native Spring Boot Actuator and external APM / Prometheus / Grafana dashboards. |
+| **Background Cron Job Management (UC-ADM-06)** | Inspect scheduled jobs, trigger ad-hoc manual runs, adjust execution frequencies, and track runtime execution logs. | **P3 — Won't Have (Post-MVP)**<br>Automated via Spring `@Scheduled` / cron jobs initially; custom UI management is non-blocking for launch. |
+
+#### 1.2.1 MVP Implementation Phasing & Roadmap
+
+To guide sprint planning toward a Minimum Viable Product (MVP), the admin use cases are sequenced by architectural dependency and business criticality:
+
+```mermaid
+flowchart TD
+    subgraph Phase0 ["Phase 0: Security & Audit Foundation"]
+        AUD["Audit Logging & Governance\n(Append-Only audit_logs Table)"]
+    end
+
+    subgraph Phase1 ["Phase 1: Core Trust & Safety (MVP Must-Have)"]
+        ADM01["UC-ADM-01: Company Verification\n(KYB Document Verification & Approval)"]
+        ADM03["UC-ADM-03: Account Ban & Suspension\n(Token Revocation via Redis Blacklist)"]
+    end
+
+    subgraph Phase2 ["Phase 2: Community Moderation (MVP Hardening)"]
+        ADM04["UC-ADM-04: Job Posting Moderation\n(Takedown & ES/Redis Cache Purge)"]
+        ADM02["UC-ADM-02: Violation Report Resolution\n(Ticket Queue, Optimistic Lock, Sanctions)"]
+    end
+
+    subgraph Phase3 ["Phase 3: Operational Tooling (Post-MVP)"]
+        ADM05["UC-ADM-05: System Health Monitoring\n(Read Replica Routing & Buffer Metrics)"]
+        ADM06["UC-ADM-06: Cron Job Management\n(Ad-hoc Triggers & Dynamic UI)"]
+    end
+
+    Phase0 --> Phase1
+    Phase1 --> Phase2
+    Phase2 --> Phase3
+
+    ADM03 -.->|Invoked as Ban Sanction| ADM02
+    ADM04 -.->|Invoked as Takedown Sanction| ADM02
+```
+
+1. **Phase 0 — Foundation (`P0`):** Implement `Audit Logging & Governance` to provide the append-only `audit_logs` persistence mechanism required by all subsequent mutating admin operations.
+2. **Phase 1 — Core Trust & Enforcement (`P0` — Essential for MVP Launch):**
+   - **UC-ADM-01 (Company Verification):** Critical onboarding gatekeeper ensuring only legitimate employers post vacancies.
+   - **UC-ADM-03 (Account Ban & Suspension):** Primary administrative defense to immediately neutralize rogue accounts and revoke active tokens.
+3. **Phase 2 — Community Moderation & Sanctions (`P1` — Essential for Active Platform Operation):**
+   - **UC-ADM-04 (Job Posting Moderation):** Allows targeted suspension of fraudulent postings without banning the entire employer account.
+   - **UC-ADM-02 (Violation Report Resolution):** Formal reporting workflow that orchestrates the enforcement actions built in UC-ADM-03 and UC-ADM-04.
+4. **Phase 3 — Operational Tooling & Observability (`P2` / `P3` — Post-MVP):**
+   - **UC-ADM-05 & UC-ADM-06:** Day-1 operations can leverage standard Spring Boot Actuator endpoints, Prometheus/Grafana, and hardcoded `@Scheduled` tasks, deferring custom administrative UI tools to future iterations.
+
 
 ### 1.3 Technology Stack
 
