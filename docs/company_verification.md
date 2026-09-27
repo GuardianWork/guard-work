@@ -226,20 +226,20 @@ Before an administrator marks any company profile as `VERIFIED`, all 5 criteria 
 ### 3. Rogue Admin / Collusion ("Who Watches the Watchers?")
 - **Problem:** A rogue internal administrator approves a fraudulent entity in exchange for kickbacks.
 - **Mitigation:**
-  - Mandatory, append-only [`audit_logs`](file:///home/vy/Documents/GuardianWork/guard-work/docs/software-requirements/admin_software_requirements.md#31-auditlog-postgresql--audit_logs-table) table.
+  - Mandatory, append-only [`audit_logs`](software-requirements/admin_software_requirements.md#31-auditlog-postgresql--audit_logs-table) table.
   - PostgreSQL role permissions explicitly revoke `UPDATE` and `DELETE` on `audit_logs`.
   - Captures `admin_id`, `ip_address`, `timestamp`, and complete `old_payload`/`new_payload` diffs.
 
 ### 4. Vague Rejection Feedback
 - **Problem:** Rejection without actionable feedback leads to repeated erroneous resubmissions and customer support overload.
 - **Mitigation:**
-  - Business Rule [`BR-ADM-05`](file:///home/vy/Documents/GuardianWork/guard-work/docs/software-requirements/admin_software_requirements.md#6-business-rules): Mandates `rejectionReason` with a minimum of 10 characters for any rejection payload.
+  - Business Rule [`BR-ADM-05`](software-requirements/admin_software_requirements.md#6-business-rules): Mandates `rejectionReason` with a minimum of 10 characters for any rejection payload.
 
 ---
 
 ## 9. GuardianWork Technical Implementation Mapping
 
-This section connects the business requirements to the implementation specifications in [`docs/software-requirements/admin_software_requirements.md`](file:///home/vy/Documents/GuardianWork/guard-work/docs/software-requirements/admin_software_requirements.md).
+This section connects the business requirements to the implementation specifications in [`docs/software-requirements/admin_software_requirements.md`](software-requirements/admin_software_requirements.md).
 
 ### Database Schema Reference (`companies` table)
 

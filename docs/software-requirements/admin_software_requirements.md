@@ -30,7 +30,7 @@
 
 ### 1.1 Purpose
 
-This document defines the software requirements for the **Admin Management & System Governance** module of GuardianWork. It translates the business workflows, technical considerations, and security constraints outlined in the system administrator role specification into engineering specifications. This document serves as the single source of truth for software engineers, QA teams, DevOps, and project stakeholders regarding system administrator capabilities, operational boundaries, database schemas, and API definitions.
+This document defines the software requirements for the **Admin Management & System Governance** module of GuardianWork. It translates the business workflows, technical considerations, and security constraints outlined in the system administrator role specification ([`docs/usecase/admin_role.md`](../usecase/admin_role.md)) and company verification guide ([`docs/company_verification.md`](../company_verification.md)) into engineering specifications. This document serves as the single source of truth for software engineers, QA teams, DevOps, and project stakeholders regarding system administrator capabilities, operational boundaries, database schemas, and API definitions.
 
 ### 1.2 Scope
 
@@ -242,13 +242,13 @@ For paginated listing responses, `data` uses the standard `PageResponse` model:
 
 ### 3.1 AuditLog (PostgreSQL — `audit_logs` table)
 
-The `audit_logs` table is an **append-only** table. PostgreSQL table grants must explicitly deny `UPDATE` and `DELETE` privileges to all operational database user accounts.
+The `audit_logs` table is strictly an **append-only** table. PostgreSQL table grants must explicitly deny `UPDATE`, `DELETE`, and `TRUNCATE` privileges to all operational database user accounts (`guardian_app_user`, `guardian_batch_user`, `guardian_read_user`, and `PUBLIC`). Operational accounts are granted exclusively `INSERT` and `SELECT` privileges. Schema ownership is assigned to an isolated non-runtime administrative role (`guardian_schema_owner`). A PostgreSQL statement trigger (`trg_protect_audit_logs`) enforces this immutability rule at the database engine level, rejecting any modification attempts with an exception.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | BIGSERIAL | PK | Auto-incrementing identifier |
 | `admin_id` | BIGINT | NOT NULL, FK → `users.id` | ID of the authenticated administrator |
-| `action` | VARCHAR(100) | NOT NULL | Action constant (e.g. `COMPANY_VERIFY`, `ACCOUNT_BAN`) |
+| `action` | VARCHAR(100) | NOT NULL | Action constant (e.g. `COMPANY_VERIFY`, `ACCOUNT_BAN`, `COMPANY_BAN`) |
 | `target_type` | VARCHAR(50) | NOT NULL | Target entity type (`COMPANY`, `USER`, `JOB`, `REPORT`, `CRON_JOB`) |
 | `target_id` | VARCHAR(100) | NOT NULL | Identifier of the target entity |
 | `old_payload` | JSONB | nullable | Snapshot of entity state prior to mutation |
@@ -268,11 +268,11 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 | `name` | VARCHAR(255) | NOT NULL | Legal or brand name |
 | `tax_code` | VARCHAR(50) | NOT NULL, UNIQUE | Official government tax identifier |
 | `registration_certificate_url` | TEXT | NOT NULL | Document storage URL (S3 / Cloud Storage) |
-| `verification_status` | VARCHAR(30) | NOT NULL, DEFAULT `'PENDING'` | `PENDING`, `VERIFIED`, `REJECTED` |
+| `verification_status` | VARCHAR(30) | NOT NULL, DEFAULT `'PENDING'` | Canonical verification status: `PENDING`, `VERIFIED`, `REJECTED` (single source of truth) |
 | `rejection_reason` | TEXT | nullable | Populated if status is `REJECTED` |
 | `verified_by` | BIGINT | nullable, FK → `users.id` | Admin user ID who reviewed |
 | `verified_at` | TIMESTAMPTZ | nullable | Timestamp of verification |
-| `is_banned` | BOOLEAN | NOT NULL, DEFAULT false | Flag indicating account ban status |
+| `is_banned` | BOOLEAN | NOT NULL, DEFAULT false | Flag indicating account ban status; detailed ban records in `account_bans` |
 | `version` | BIGINT | NOT NULL, DEFAULT 0 | Optimistic concurrency control counter |
 | `created_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
@@ -301,12 +301,15 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 
 ---
 
-### 3.4 UserAccountBan (PostgreSQL — `user_account_bans` table)
+### 3.4 AccountBan (PostgreSQL — `account_bans` table)
+
+Persists immutable penalty history and active enforcement state for both individual user accounts (`target_type = 'USER'`) and company entities (`target_type = 'COMPANY'`).
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | BIGSERIAL | PK | Ban record ID |
-| `user_id` | BIGINT | NOT NULL, FK → `users.id` | Target user account |
+| `target_type` | VARCHAR(30) | NOT NULL | `USER` or `COMPANY` |
+| `target_id` | BIGINT | NOT NULL | Target entity identifier (`users.id` or `companies.id`) |
 | `banned_by` | BIGINT | NOT NULL, FK → `users.id` | Admin who executed the ban |
 | `reason` | TEXT | NOT NULL | Violation reason |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT true | `true` = currently enforced |
@@ -315,6 +318,13 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 | `unbanned_at` | TIMESTAMPTZ | nullable | Populated upon unban action |
 | `unbanned_by` | BIGINT | nullable, FK → `users.id` | Admin who unbanned |
 | `unban_reason` | TEXT | nullable | Justification for restoration |
+| `version` | BIGINT | NOT NULL, DEFAULT 0 | Optimistic locking counter |
+
+> **Operational Scope of Company Bans:**
+> 1. Sets `companies.is_banned = true`.
+> 2. Automatically cascades all published jobs of the company to `SUSPENDED` and evicts them from Redis and Elasticsearch via Kafka `jobs.eviction`.
+> 3. Revokes all active JWT sessions for linked recruiter accounts via Redis (`auth:token_invalid_before:{userId} = now()`).
+> 4. Delists company profile from candidate search results.
 
 ---
 
@@ -369,7 +379,8 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 
 | Key Pattern | Data Type | TTL | Purpose |
 |---|---|---|---|
-| `auth:revoked_tokens:{userId}` | Set of String | 86,400 s (24 h) | Contains revoked JWT jti / user IDs for immediate ban enforcement |
+| `auth:token_invalid_before:{userId}` | String (Unix Epoch Millis) | Dynamic: Indefinite (no TTL) for permanent bans; `max(86400, expiresAt - now())` for temporary bans; refreshed to `now()` with 24h TTL upon unban | Holds the epoch timestamp before which all JWTs issued are rejected (`jwt.iat < token_invalid_before`). Persists for full ban duration; refreshing on unban prevents pre-ban JWTs from regaining validity. |
+| `auth:banned_accounts:{targetType}:{targetId}` | String (`"BANNED"`) | Dynamic: Indefinite for permanent bans; `expiresAt - now()` for temporary bans | Fast O(1) ban status lookup for `USER` and `COMPANY` entities at API gateway. |
 | `admin:review_lock:report:{reportId}` | String (`adminId`) | 900 s (15 min) | Transient soft lock preventing two admins from reviewing the same ticket simultaneously |
 | `cache:job:{jobId}` | String (JSON) | 3,600 s | Cached job payload; purged on takedown |
 | `metrics:system:snapshot` | String (JSON) | 60 s | Cached pre-aggregated health metrics |
@@ -386,7 +397,7 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 | `idx_companies_verification_status` | `companies` | `verification_status` | Filter pending verifications |
 | `idx_violation_reports_status` | `violation_reports` | `status` | Fetch unresolved tickets |
 | `idx_violation_reports_target` | `violation_reports` | `target_type`, `target_id` | Correlate repeated violations |
-| `idx_user_account_bans_user_active` | `user_account_bans` | `user_id`, `is_active` | Rapid active ban verification |
+| `idx_account_bans_target_active` | `account_bans` | `target_type`, `target_id`, `is_active` | Rapid active ban verification for users and companies |
 | `idx_jobs_status` | `jobs` | `status` | Filter published vs suspended jobs |
 | `idx_cron_executions_job_time` | `cron_job_executions` | `job_key`, `start_time DESC` | Query job history logs |
 
@@ -400,10 +411,11 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 |---|---|
 | **ADM-VER-01** | The system **shall** allow an Admin to view a paginated list of company accounts filtered by verification status (`PENDING`, `VERIFIED`, `REJECTED`). |
 | **ADM-VER-02** | The system **shall** provide full read access for the Admin to the uploaded Business Registration Certificate URL, tax code, and submitted corporate profile details. |
-| **ADM-VER-03** | When approving a company, the system **shall** update `verification_status` to `VERIFIED`, record `verified_by` and `verified_at`, and set the `is_verified` flag. |
+| **ADM-VER-03** | When approving a company, the system **shall** update `verification_status` to `VERIFIED`, and record `verified_by` and `verified_at`. |
 | **ADM-VER-04** | When rejecting a company, the system **shall** require a non-empty `rejectionReason`, set `verification_status` to `REJECTED`, and retain the reason in the database. |
 | **ADM-VER-05** | Upon status transition (`VERIFIED` or `REJECTED`), the system **shall** publish a notification event to Kafka to dispatch an email to the company's registered address. |
 | **ADM-VER-06** | The system **shall** record an immutable entry in `audit_logs` capturing the decision, old status, new status, and admin ID. |
+| **ADM-VER-07** | The system **shall** verify that the client-supplied `expectedVersion` matches the current `companies.version`; if a mismatch occurs, the transaction **must** abort and return HTTP `409 Conflict` (`40022 CONCURRENT_MODIFICATION`). On success, `version` is incremented. |
 
 ---
 
@@ -425,12 +437,12 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 
 | ID | Requirement |
 |---|---|
-| **ADM-BAN-01** | The system **shall** permit an Admin to ban any user or company account by providing `userId`, `reason`, and an optional `expiresAt` timestamp (null denotes permanent ban). |
-| **ADM-BAN-02** | When an account is banned, the system **shall** set `users.status = 'BANNED'` (or `companies.is_banned = true`) and persist a row in `user_account_bans`. |
-| **ADM-BAN-03** | Immediately following a ban, the system **shall** add the banned user's ID to the Redis revocation set `auth:revoked_tokens:{userId}` to invalidate all existing JWT bearer tokens. |
-| **ADM-BAN-04** | Subsequent API requests from revoked tokens **shall** be blocked by the authentication filter with HTTP `401 UNAUTHENTICATED` (`40101 ACCOUNT_BANNED`). |
-| **ADM-BAN-05** | The system **shall** allow an Admin to unban a previously banned account by supplying an `unbanReason`. |
-| **ADM-BAN-06** | Upon unban, the system **shall** update `user_account_bans.is_active = false`, set `users.status = 'ACTIVE'`, and remove the user ID from the Redis revocation set. |
+| **ADM-BAN-01** | The system **shall** permit an Admin to ban any user (`USER`) or company (`COMPANY`) account by providing `targetType`, `targetId`, `reason`, and an optional `expiresAt` timestamp (null denotes permanent ban). |
+| **ADM-BAN-02** | When an account is banned, the system **shall** set `users.status = 'BANNED'` (or `companies.is_banned = true`) and persist a row in `account_bans`. For company bans, the system **shall** automatically cascade all published jobs to `SUSPENDED`, evict them from Redis and Elasticsearch via Kafka `jobs.eviction`, and revoke tokens for all recruiters linked to the company. |
+| **ADM-BAN-03** | The ban operation **shall atomically guarantee token revocation**; writing the ban record to PostgreSQL and setting `auth:token_invalid_before:{userId} = banTimestamp` in Redis must execute synchronously within the ban transaction boundary. If writing to Redis fails, the database transaction **must roll back** and return HTTP `500` (`50001 CACHE_REVOCATION_FAILED`). |
+| **ADM-BAN-04** | The revocation record in Redis **shall persist for the full ban duration**: indefinite TTL for permanent bans (`expiresAt == null`), or `max(24h, remaining_ban_duration)` for temporary bans. Additionally, if the Redis key is absent or Redis is unreachable, the authentication filter **shall fall back** to the persistent database status (`users.status == 'BANNED'`, `companies.is_banned = true`), preventing fail-open authentication bypasses. |
+| **ADM-BAN-05** | The system **shall** allow an Admin to unban a previously banned user or company account by supplying an `unbanReason`. |
+| **ADM-BAN-06** | Upon unban, the system **shall** update `account_bans.is_active = false`, set `users.status = 'ACTIVE'` (or `companies.is_banned = false`), and **update `auth:token_invalid_before:{userId}` in Redis and DB to the unban timestamp** with a 24-hour TTL. All tokens issued prior to or during the ban (`iat < unban_timestamp`) **shall remain strictly invalid**, requiring the user to re-authenticate and obtain a new JWT. |
 | **ADM-BAN-07** | Every ban and unban operation **shall** be written to `audit_logs` with before-and-after snapshots. |
 
 ---
@@ -442,7 +454,7 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 | **ADM-JOB-01** | The system **shall** allow an Admin to force-suspend (`TAKEDOWN`) any job posting currently in `PUBLISHED` status by providing a mandatory `takedownReason`. |
 | **ADM-JOB-02** | Upon takedown, the system **shall** set `jobs.status = 'SUSPENDED'`, record `suspended_by` and `suspended_at`, and increment `version`. |
 | **ADM-JOB-03** | The system **shall** immediately evict the job from Redis cache key `cache:job:{jobId}`. |
-| **ADM-JOB-04** | The system **shall** publish an event `job.eviction` to Kafka to trigger an immediate removal from Elasticsearch search indices. |
+| **ADM-JOB-04** | The system **shall** publish an event `JobEvictionEvent` to Kafka topic `jobs.eviction` to trigger an immediate removal from Elasticsearch search indices. |
 | **ADM-JOB-05** | Candidates attempting to view a suspended job **shall** receive HTTP `404 NOT_FOUND` or `40061 JOB_SUSPENDED`. |
 | **ADM-JOB-06** | The system **shall** record the action, old state, new state, and reason in `audit_logs`. |
 
@@ -477,7 +489,7 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 |---|---|
 | **ADM-AUD-01** | Every state-mutating request (`POST`, `PUT`, `DELETE`, `PATCH`) handled by any Admin service **must** record an entry in `audit_logs`. |
 | **ADM-AUD-02** | Audit log entries **shall** be persisted within the same database transaction as the entity mutation, or via a reliable transactional outbox. |
-| **ADM-AUD-03** | The system **shall** prevent any Admin user from updating, modifying, or deleting records from the `audit_logs` table. |
+| **ADM-AUD-03** | The system and database engine **shall** strictly prevent all operational database accounts (`guardian_app_user`, `guardian_batch_user`, `guardian_read_user`, and `PUBLIC`) from executing `UPDATE`, `DELETE`, or `TRUNCATE` operations on `audit_logs` via explicit SQL privilege revocations and PostgreSQL statement triggers (`trg_protect_audit_logs`). |
 | **ADM-AUD-04** | The system **shall** expose a read-only endpoint for Admins to search and filter audit logs by `adminId`, `action`, `targetType`, and date range. |
 | **ADM-AUD-05** | Admin APIs **must not** return unmasked raw passwords or private direct applicant messages unless associated with verified ticket evidence. |
 
@@ -485,30 +497,36 @@ The `audit_logs` table is an **append-only** table. PostgreSQL table grants must
 
 ## 5. Flow Diagrams
 
-### 5.1 Company Verification Flow (UC-ADM-01)
+### 5.1 Company Verification Flow with Optimistic Concurrency (UC-ADM-01)
 
 ```
 Admin Web App                  AdminController             AdminCompanyService         Database (PostgreSQL)          Kafka
       │                               │                             │                            │                      │
       │── PUT /api/admin/companies/──►│                             │                            │                      │
       │   {id}/verify                 │                             │                            │                      │
-      │   { status, reason }          │── verifyCompany(id, dto) ──►│                            │                      │
-      │                               │                             │── findById(id) ───────────►│                      │
-      │                               │                             │◄── Company (PENDING) ──────│                      │
+      │   { status, reason,           │── verifyCompany(id, dto) ──►│                            │                      │
+      │     expectedVersion }         │                             │── findById(id) ───────────►│                      │
+      │                               │                             │◄── Company (PENDING, v=1) ─│                      │
       │                               │                             │                            │                      │
-      │                               │                             │── [status == VERIFIED]?    │                      │
-      │                               │                             │   ├── update status        │                      │
-      │                               │                             │   ├── record verifiedBy/At │                      │
-      │                               │                             │── [status == REJECTED]?    │                      │
-      │                               │                             │   └── set rejectionReason  │                      │
+      │                               │                             │── [expectedVersion != 1]?  │                      │
+      │                               │                             │   └── throw Conflict 409──►│                      │
       │                               │                             │                            │                      │
-      │                               │                             │── save(company) ──────────►│                      │
+      │                               │                             │── BEGIN TRANSACTION ──────►│                      │
+      │                               │                             │── UPDATE companies SET     │                      │
+      │                               │                             │   verification_status = S, │                      │
+      │                               │                             │   version = version + 1    │                      │
+      │                               │                             │   WHERE id = :id           │                      │
+      │                               │                             │   AND version = :expVer ──►│ [rows updated = 1]   │
       │                               │                             │── insert(auditLog) ───────►│                      │
+      │                               │                             │── COMMIT ─────────────────►│                      │
       │                               │                             │                            │                      │
       │                               │                             │── publishNotification() ─────────────────────────►│
-      │                               │                             │                            │  (email.notification)│
+      │                               │                             │                            │ (notifications.email)│
       │                               │◄── CompanyResponse ─────────│                            │                      │
       │◄── 200 OK { CompanyResponse }─│                             │                            │                      │
+      │                               │                             │                            │                      │
+      │── [If concurrent version mismatch: rows updated == 0] ─────►│                            │                      │
+      │◄── 409 CONFLICT (CONCURRENT_MODIFICATION) ──────────────────│                            │                      │
 ```
 
 ---
@@ -546,32 +564,48 @@ Admin A (Alice)          Admin B (Bob)            AdminReportService            
 
 ---
 
-### 5.3 Account Ban & Distributed Token Invalidation (UC-ADM-03)
+### 5.3 Account Ban, Atomic Token Invalidation, & Safe Unban Flow (UC-ADM-03)
 
 ```
-Admin Web App              AdminAccountService               PostgreSQL               Redis (Revocation Set)
+Admin Web App              AdminAccountService               PostgreSQL               Redis (Token Invalidation Epoch)
       │                             │                            │                              │
+  [BAN OPERATION]                   │                            │                              │
       │── POST /accounts/{id}/ban ─►│                            │                              │
       │   { reason, expiresAt }     │── checkUserExists(id) ────►│                              │
       │                             │◄── User (ACTIVE) ──────────│                              │
       │                             │                            │                              │
       │                             │── BEGIN TRANSACTION        │                              │
       │                             │── update user status ─────►│                              │
-      │                             │── insert user_account_bans►│                              │
+      │                             │── insert account_bans ────►│                              │
       │                             │── insert audit_logs ──────►│                              │
-      │                             │── COMMIT                   │                              │
       │                             │                            │                              │
-      │                             │── SADD auth:revoked_tokens:{userId} ─────────────────────►│
-      │                             │   (Immediate token kill switch)                           │
+      │                             │── SET token_invalid_before = banTimestamp ───────────────►│
+      │                             │   (TTL: Indefinite if permanent, else max(24h, banDur))   │
+      │                             │   [On Redis write failure -> ROLLBACK DB & throw 50001]   │
+      │                             │── COMMIT ─────────────────►│                              │
       │◄── 200 OK (Account Banned) ─│                                                           │
       │                             │                                                           │
-Candidate Client App         AuthFilter / Gateway                                              │
+Candidate Client App         AuthFilter / Gateway                                               │
       │                             │                                                           │
       │── GET /api/jobs (JWT) ─────►│                                                           │
-      │                             │── SISMEMBER auth:revoked_tokens:{userId} ────────────────►│
-      │                             │◄── returns true (Revoked) ────────────────────────────────│
-      │◄── 401 UNAUTHENTICATED ─────│                                                           │
-          (ACCOUNT_BANNED)          │                                                           │
+      │                             │── GET auth:token_invalid_before:{userId} ────────────────►│
+      │                             │   [Fallback to DB users.status if Redis key absent]       │
+      │                             │── [jwt.iat < token_invalid_before]?                       │
+      │◄── 401 UNAUTHENTICATED ─────│   (ACCOUNT_BANNED: Token issued before ban)              │
+      │                             │                                                           │
+  [SAFE UNBAN OPERATION]            │                                                           │
+      │── POST /accounts/{id}/unban►│                                                           │
+      │   { unbanReason }           │── BEGIN TRANSACTION        │                              │
+      │                             │── update user ACTIVE ─────►│                              │
+      │                             │── update account_bans off ─►│                             │
+      │                             │── insert audit_logs ──────►│                              │
+      │                             │── SET token_invalid_before = unbanTimestamp (TTL: 24h) ──►│
+      │                             │── COMMIT ─────────────────►│                              │
+      │◄── 200 OK (Unbanned) ───────│                                                           │
+      │                             │                                                           │
+      │── GET /api/jobs (Pre-ban JWT)───────────────────────────►│                              │
+      │                             │   (Check: jwt.iat < unbanTimestamp -> REJECTED 401)       │
+      │◄── 401 UNAUTHENTICATED ─────│   (Pre-ban tokens remain revoked; fresh login required)   │
 ```
 
 ---
@@ -591,7 +625,7 @@ Admin Web App              AdminJobService                   PostgreSQL         
       │                           │                              │                     │                     │
       │                           │── DEL cache:job:{id} ─────────────────────────────►│                     │
       │                           │                              │                     │                     │
-      │                           │── publishEvent("job.evict", {jobId}) ───────────────────────────────────►│
+      │                           │── publishEvent("jobs.eviction", JobEvictionEvent) ──────────────────────►│
       │                           │                              │                     │                     │── [Sync Eviction]
       │                           │                              │                     │                     │   Removes from ES
       │◄── 200 OK (Suspended) ────│                              │                     │                     │
@@ -614,6 +648,7 @@ Admin Web App              AdminJobService                   PostgreSQL         
 | ID | Rule |
 |---|---|
 | **BR-ADM-04** | A company profile can only be approved (`VERIFIED`) or rejected (`REJECTED`) if its current status is `PENDING`. |
+| **BR-ADM-04b** | Concurrency verification: Any status mutation on `companies` requires verifying that database `version` matches `expectedVersion`. On mismatch, the API aborts and returns HTTP `409 CONFLICT` (`40022 CONCURRENT_MODIFICATION`). |
 | **BR-ADM-05** | If an admin rejects a verification request, a non-blank `rejectionReason` (at least 10 characters) is mandatory. |
 | **BR-ADM-06** | Once marked as `VERIFIED`, a company account receives verified search ranking privileges and access to direct outreach features. |
 
@@ -629,23 +664,23 @@ Admin Web App              AdminJobService                   PostgreSQL         
 
 | ID | Rule |
 |---|---|
-| **BR-ADM-10** | When an account is banned, all associated active JWT sessions are immediately invalidated by publishing the user ID to the Redis distributed revocation blacklist. |
-| **BR-ADM-11** | If a company account is banned, all active job postings belonging to that company must be automatically transitioned to `SUSPENDED` status and evicted from the search index. |
-| **BR-ADM-12** | Unbanning an account requires an active ban record. The previous ban history remains immutable in `user_account_bans`. |
+| **BR-ADM-10** | **Atomic Token Invalidation & Full Duration Persistence:** When an account is banned, the ban persistence and Redis token invalidation (`auth:token_invalid_before:{userId} = now()`) must execute atomically within the transaction boundary. If the Redis write fails, the database transaction rolls back. The revocation persists for the full ban duration: indefinite TTL for permanent bans; `max(24h, remaining_ban_duration)` for temporary bans. |
+| **BR-ADM-11** | **Operational Scope of Company Bans:** Banning a company sets `companies.is_banned = true`, cascades all published jobs to `SUSPENDED` (purged from Redis and Elasticsearch via `jobs.eviction`), revokes active sessions for all linked recruiter user accounts (`auth:token_invalid_before:{userId}`), and delists the company profile from public search results. |
+| **BR-ADM-12** | **Safe Unbanning & Pre-Ban Token Defense:** Unbanning an account requires an active ban record. Upon unban, `account_bans.is_active` is set to false, and `auth:token_invalid_before:{userId}` is updated to the unban timestamp with a 24-hour TTL. Pre-ban tokens (`iat < unban_timestamp`) remain strictly invalid; the unbanned user must log in again to acquire a new JWT. |
 
 ### Job Moderation Rules
 
 | ID | Rule |
 |---|---|
 | **BR-ADM-13** | Only jobs in `PUBLISHED` status can be taken down (`SUSPENDED`). Already closed or archived jobs cannot be suspended. |
-| **BR-ADM-14** | Takedown must atomically trigger cache invalidation in Redis (`cache:job:{id}`) and asynchronous document deletion in Elasticsearch. |
+| **BR-ADM-14** | Takedown must atomically trigger cache invalidation in Redis (`cache:job:{id}`) and asynchronous document deletion in Elasticsearch via Kafka topic `jobs.eviction` (`JobEvictionEvent`). |
 
 ### Audit & System Governance Rules
 
 | ID | Rule |
 |---|---|
 | **BR-ADM-15** | Every state-altering HTTP request (`POST`, `PUT`, `PATCH`, `DELETE`) executed by an Admin must generate an immutable audit log record. |
-| **BR-ADM-16** | The `audit_logs` table is strictly append-only; database credentials used by the application service must not have `UPDATE` or `DELETE` grants on this table. |
+| **BR-ADM-16** | The `audit_logs` table is strictly append-only. All operational database accounts (`guardian_app_user`, `guardian_batch_user`, `guardian_read_user`, and `PUBLIC`) are denied `UPDATE`, `DELETE`, and `TRUNCATE` grants. PostgreSQL statement trigger `trg_protect_audit_logs` enforces immutability at the engine level. |
 | **BR-ADM-17** | System monitoring and telemetry queries must read from read replicas or Redis pre-aggregated buffers to prevent disruption of transactional OLTP traffic. |
 
 ---
@@ -657,7 +692,7 @@ Admin Web App              AdminJobService                   PostgreSQL         
 | Error Code | HTTP | Constant | Trigger |
 |---|---|---|---|
 | `40100` | 401 | `UNAUTHENTICATED` | Missing or invalid Bearer JWT token |
-| `40101` | 401 | `ACCOUNT_BANNED` | Caller account has been banned / revoked in Redis blacklist |
+| `40101` | 401 | `ACCOUNT_BANNED` | Caller account has been banned / token issued prior to ban or unban timestamp |
 | `40300` | 403 | `FORBIDDEN` | Caller lacks `ADMIN` role claim in JWT |
 | `40301` | 403 | `SELF_MODIFICATION_PROHIBITED` | Admin attempted to ban or modify their own administrative account |
 
@@ -670,15 +705,16 @@ Admin Web App              AdminJobService                   PostgreSQL         
 | `40011` | 404 | `COMPANY_NOT_FOUND` | Company ID does not exist |
 | `40020` | 400 | `REPORT_ALREADY_RESOLVED` | Attempted to mutate a report already in `RESOLVED` or `REJECTED` status |
 | `40021` | 404 | `REPORT_NOT_FOUND` | Violation report ID does not exist |
-| `40022` | 409 | `CONCURRENT_MODIFICATION` | Report ticket version mismatch (Optimistic Locking failure) |
-| `40030` | 400 | `ACCOUNT_ALREADY_BANNED` | Attempting to ban an already banned user |
-| `40031` | 400 | `ACCOUNT_NOT_BANNED` | Attempting to unban an active user |
-| `40032` | 404 | `USER_NOT_FOUND` | Target user account does not exist |
+| `40022` | 409 | `CONCURRENT_MODIFICATION` | Entity version mismatch (Optimistic Locking failure on company or report ticket) |
+| `40030` | 400 | `ACCOUNT_ALREADY_BANNED` | Attempting to ban an already banned user or company |
+| `40031` | 400 | `ACCOUNT_NOT_BANNED` | Attempting to unban an active user or company |
+| `40032` | 404 | `ENTITY_NOT_FOUND` | Target user account or company does not exist |
 | `40040` | 400 | `JOB_NOT_PUBLISHED` | Cannot takedown a job that is not currently `PUBLISHED` |
 | `40041` | 404 | `JOB_NOT_FOUND` | Job posting ID does not exist |
 | `40050` | 404 | `CRON_JOB_NOT_FOUND` | Cron job key not registered in system |
 | `40051` | 400 | `INVALID_CRON_EXPRESSION` | Submitted cron string fails Quartz / Spring cron parser |
 | `50000` | 500 | `INTERNAL_SERVER_ERROR` | Unexpected backend or database failure |
+| `50001` | 500 | `CACHE_REVOCATION_FAILED` | Ban transaction aborted and rolled back due to Redis session revocation failure |
 
 ---
 
@@ -754,7 +790,8 @@ Issues an approval badge or rejects the company's business registration document
 ```json
 {
   "status": "VERIFIED",
-  "rejectionReason": null
+  "rejectionReason": null,
+  "expectedVersion": 0
 }
 ```
 
@@ -764,6 +801,7 @@ Issues an approval badge or rejects the company's business registration document
 |---|---|
 | `status` | Must be `VERIFIED` or `REJECTED` |
 | `rejectionReason` | Mandatory if status is `REJECTED` (min 10 chars, max 1000 chars); must be null if `VERIFIED` |
+| `expectedVersion` | Mandatory numeric version identifier matching current company `version` |
 
 **Response `200 OK`**
 
@@ -777,7 +815,8 @@ Issues an approval badge or rejects the company's business registration document
     "verificationStatus": "VERIFIED",
     "verifiedBy": 1,
     "verifiedAt": "2026-09-21T09:30:00Z",
-    "rejectionReason": null
+    "rejectionReason": null,
+    "version": 1
   }
 }
 ```
@@ -789,6 +828,7 @@ Issues an approval badge or rejects the company's business registration document
 | Company not found | `40011` | 404 |
 | Status is not PENDING | `40010` | 400 |
 | Rejection without reason | `40000` | 400 |
+| Version conflict (Optimistic lock) | `40022` | 409 |
 
 ---
 
@@ -899,15 +939,19 @@ Finalizes enforcement action on a report with optimistic concurrency protection.
 
 ### 8.3 Account Ban & Unban Endpoints
 
-#### `POST /api/admin/accounts/{userId}/ban` — Ban Account
+#### `POST /api/admin/accounts/{userId}/ban` — Ban User Account
 
-Suspends account privileges and revokes distributed authentication tokens.
+Suspends user account privileges and atomically revokes distributed authentication tokens.
+
+> **Atomic Revocation Guarantee:** The PostgreSQL write (`users.status = 'BANNED'`, insertion into `account_bans` with `target_type = 'USER'`) and Redis invalidation (`SET auth:token_invalid_before:{userId} = banTimestamp`) execute synchronously within the transaction boundary. If Redis write fails, the database transaction rolls back and returns HTTP `500` (`50001 CACHE_REVOCATION_FAILED`).
+>
+> **Full Duration Persistence:** For permanent bans (`expiresAt == null`), the Redis key has indefinite TTL. For temporary bans, TTL is set to `max(86400, expiresAt - now())` seconds.
 
 **Path Parameters**
 
 | Parameter | Type | Description |
 |---|---|---|
-| `userId` | Long | Account ID to ban |
+| `userId` | Long | User ID to ban |
 
 **Request Body**
 
@@ -932,7 +976,8 @@ Suspends account privileges and revokes distributed authentication tokens.
   "status": 200,
   "message": "Account has been banned and active sessions revoked",
   "data": {
-    "userId": 42,
+    "targetType": "USER",
+    "targetId": 42,
     "status": "BANNED",
     "bannedBy": 1,
     "bannedAt": "2026-09-21T10:20:00Z",
@@ -949,18 +994,21 @@ Suspends account privileges and revokes distributed authentication tokens.
 | User not found | `40032` | 404 |
 | User already banned | `40030` | 400 |
 | Admin banning self | `40301` | 403 |
+| Cache revocation failure (Transaction rolled back) | `50001` | 500 |
 
 ---
 
-#### `POST /api/admin/accounts/{userId}/unban` — Unban Account
+#### `POST /api/admin/accounts/{userId}/unban` — Unban User Account
 
-Restores platform access and removes the user from the revocation blacklist.
+Restores platform access while permanently invalidating all tokens issued prior to or during the penalty period.
+
+> **Pre-Ban Token Defense:** Upon unban, `users.status` is restored to `ACTIVE` and `auth:token_invalid_before:{userId}` is updated to `unbanTimestamp` (with a 24-hour TTL). Any JWT issued before the unban (`iat < unbanTimestamp`) remains rejected by the authentication filter (`40101 ACCOUNT_BANNED`). The user must execute a fresh login to obtain a new token.
 
 **Path Parameters**
 
 | Parameter | Type | Description |
 |---|---|---|
-| `userId` | Long | Account ID to unban |
+| `userId` | Long | User ID to unban |
 
 **Request Body**
 
@@ -970,20 +1018,145 @@ Restores platform access and removes the user from the revocation blacklist.
 }
 ```
 
+**Validation**
+
+| Field | Rule |
+|---|---|
+| `unbanReason` | Mandatory (min 5 chars, max 1000 chars) |
+
 **Response `200 OK`**
 
 ```json
 {
   "status": 200,
-  "message": "Account has been unbanned successfully",
+  "message": "Account has been unbanned successfully; pre-ban sessions remain revoked and user must re-authenticate",
   "data": {
-    "userId": 42,
+    "targetType": "USER",
+    "targetId": 42,
     "status": "ACTIVE",
     "unbannedBy": 1,
-    "unbannedAt": "2026-09-21T10:30:00Z"
+    "unbannedAt": "2026-09-21T10:30:00Z",
+    "unbanReason": "Penalty duration expired; appeal accepted by administration."
   }
 }
 ```
+
+**Error Responses**
+
+| Condition | Error Code | HTTP |
+|---|---|---|
+| User not found | `40032` | 404 |
+| User not currently banned | `40031` | 400 |
+
+---
+
+#### `POST /api/admin/companies/{id}/ban` — Ban Company Account
+
+Suspends an employer organization, cascades all associated job listings to `SUSPENDED`, and invalidates recruiter tokens.
+
+> **Operational Scope & Persistence:**
+> 1. Sets `companies.is_banned = true` and records ban in `account_bans` (`target_type = 'COMPANY'`).
+> 2. Cascades all published jobs to `SUSPENDED` and publishes `JobEvictionEvent` to Kafka topic `jobs.eviction` to purge search indices.
+> 3. Revokes all active sessions for linked recruiters in Redis (`auth:token_invalid_before:{recruiterUserId} = now()`).
+> 4. Delists company profile from candidate search results.
+
+**Path Parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `id` | Long | Company entity ID to ban |
+
+**Request Body**
+
+```json
+{
+  "reason": "Entity involved in corporate identity theft and fraudulent job posting scams.",
+  "expiresAt": null
+}
+```
+
+**Validation**
+
+| Field | Rule |
+|---|---|
+| `reason` | Mandatory (min 5 chars, max 1000 chars) |
+| `expiresAt` | Nullable; if provided, must be a future ISO-8601 timestamp |
+
+**Response `200 OK`**
+
+```json
+{
+  "status": 200,
+  "message": "Company banned successfully; associated jobs suspended and recruiter sessions revoked",
+  "data": {
+    "targetType": "COMPANY",
+    "targetId": 105,
+    "isBanned": true,
+    "bannedBy": 1,
+    "bannedAt": "2026-09-21T11:00:00Z",
+    "expiresAt": null,
+    "reason": "Entity involved in corporate identity theft and fraudulent job posting scams."
+  }
+}
+```
+
+**Error Responses**
+
+| Condition | Error Code | HTTP |
+|---|---|---|
+| Company not found | `40011` | 404 |
+| Company already banned | `40030` | 400 |
+| Cache revocation failure (Transaction rolled back) | `50001` | 500 |
+
+---
+
+#### `POST /api/admin/companies/{id}/unban` — Unban Company Account
+
+Restores company operational status while maintaining pre-ban token invalidation for all associated recruiters.
+
+**Path Parameters**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `id` | Long | Company ID to unban |
+
+**Request Body**
+
+```json
+{
+  "unbanReason": "Legal documentation re-validated; corporate identity dispute resolved."
+}
+```
+
+**Validation**
+
+| Field | Rule |
+|---|---|
+| `unbanReason` | Mandatory (min 5 chars, max 1000 chars) |
+
+**Response `200 OK`**
+
+```json
+{
+  "status": 200,
+  "message": "Company unbanned successfully; recruiters must re-authenticate to manage jobs",
+  "data": {
+    "targetType": "COMPANY",
+    "targetId": 105,
+    "isBanned": false,
+    "unbannedBy": 1,
+    "unbannedAt": "2026-09-21T11:45:00Z",
+    "unbanReason": "Legal documentation re-validated; corporate identity dispute resolved."
+  }
+}
+```
+
+**Error Responses**
+
+| Condition | Error Code | HTTP |
+|---|---|---|
+| Company not found | `40011` | 404 |
+| Company not currently banned | `40031` | 400 |
 
 ---
 
@@ -1246,29 +1419,56 @@ Retrieves an immutable record of historical administrative actions.
 ```
 Implementation:     AdminRedisService
 Spring Client:      StringRedisTemplate
-Key Expire Policy:  Explicit volatile TTLs
+Key Expire Policy:  Explicit volatile TTLs & Dynamic ban duration persistence
 ```
 
-* **Distributed Session Revocation:** When an account is banned, its ID is pushed to Redis set `auth:revoked_tokens:{userId}` with a 24-hour TTL (matching the maximum JWT token lifetime). The JWT authentication filter checks this key on every incoming HTTP request.
+* **Distributed Session Revocation & Invalidation Epoch:** When an account is banned, the system atomically records the invalidation epoch `auth:token_invalid_before:{userId} = banTimestamp` in Redis.
+  - **Dynamic TTL:** For permanent bans (`expiresAt == null`), the key has no TTL (persists indefinitely until unbanned). For temporary bans, TTL is set to `max(86400, expiresAt - now())` seconds, ensuring revocation persists for the entire penalty duration.
+  - **Atomic Revocation Guarantee:** Invalidation must succeed within the ban transaction boundary; on Redis write failure, the database rolls back (`50001 CACHE_REVOCATION_FAILED`).
+  - **AuthFilter Verification:** For every incoming request, the JWT filter checks `jwt.iat < token_invalid_before`. If Redis is unavailable or on cache miss, the filter safely falls back to querying persistent entity status (`users.status == 'BANNED'` or `companies.is_banned == true`) to prevent fail-open authentication bypasses.
+  - **Safe Unbanning (Pre-ban JWT Protection):** Upon unban, `auth:token_invalid_before:{userId}` is updated to `unbanTimestamp` with a 24-hour TTL (matching max JWT lifetime). This guarantees that any JWT issued before the ban or during the penalty period remains strictly invalid; the unbanned user must log in again to acquire a new token.
 * **Transient Ticket Locks:** When an admin reviews a report ticket, a key `admin:review_lock:report:{reportId}` is written with a 15-minute TTL to signal active review to peer admins.
 
 ---
 
-### 9.2 Relational Schema & Flyway Migration
+### 9.2 Relational Schema & Planned Flyway Migration
 
-Introduced via **Flyway migration V2** (`V2__admin_governance_and_audit.sql`):
+To be introduced via **planned Flyway migration V2** (`V2__admin_governance_and_audit.sql`) [Pending Implementation]:
+
+> **Note:** Only `V1__create_users.sql` is currently present in the backend repository (`backend/src/main/resources/db/migration/`). Migration `V2__admin_governance_and_audit.sql` is planned for Phase 0 and Phase 1 implementation.
 
 ```
 users (1) ─────────── (many) audit_logs
 companies (1) ─────── (many) jobs
 users (1) ─────────── (many) violation_reports
-users (1) ─────────── (many) user_account_bans
+users (1) ─────────── (many) account_bans (target_type = 'USER')
+companies (1) ─────── (many) account_bans (target_type = 'COMPANY')
 ```
 
 **Security DDL Hardening:**
 ```sql
--- Revoke UPDATE and DELETE permissions on audit_logs from app user
-REVOKE UPDATE, DELETE ON audit_logs FROM guardian_app_user;
+-- 1. Restrict all operational database roles from mutating audit records
+REVOKE ALL ON audit_logs FROM PUBLIC;
+REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM guardian_app_user, guardian_batch_user, guardian_read_user;
+
+-- 2. Grant strictly append and read capabilities to operational application user
+GRANT INSERT, SELECT ON audit_logs TO guardian_app_user;
+GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO guardian_app_user;
+
+-- 3. Assign schema ownership to dedicated non-runtime administrative role
+ALTER TABLE audit_logs OWNER TO guardian_schema_owner;
+
+-- 4. Engine-level trigger to enforce append-only immutability against all roles
+CREATE OR REPLACE FUNCTION prevent_audit_logs_mutation()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'audit_logs table is append-only: UPDATE, DELETE, and TRUNCATE are prohibited.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_protect_audit_logs
+BEFORE UPDATE OR DELETE OR TRUNCATE ON audit_logs
+FOR EACH STATEMENT EXECUTE FUNCTION prevent_audit_logs_mutation();
 ```
 
 ---
@@ -1298,7 +1498,7 @@ To protect customer-facing operations from being starved of database connections
 | Constant | Default Value | Config Key | Purpose |
 |---|---|---|---|
 | `REPORT_REVIEW_LOCK_TTL_SECONDS` | `900` | `app.admin.report-lock-ttl-seconds` | Expiration of peer admin review lock |
-| `REVOKED_TOKEN_TTL_SECONDS` | `86400` | `app.admin.revoked-token-ttl-seconds` | Blacklist TTL matching JWT validity |
+| `TOKEN_INVALIDATION_UNBAN_TTL_SECONDS` | `86400` | `app.admin.token-invalidation-unban-ttl-seconds` | TTL applied to unban token invalidation epoch matching maximum JWT token lifetime |
 | `METRICS_CACHE_TTL_SECONDS` | `60` | `app.admin.metrics-cache-ttl-seconds` | Refresh rate of cached health snapshot |
 | `MAX_AUDIT_LOG_PAGE_SIZE` | `100` | `app.admin.max-audit-page-size` | Prevents high memory consumption during log exports |
 
@@ -1309,10 +1509,10 @@ To protect customer-facing operations from being starved of database connections
 | ID | Category | Requirement |
 |---|---|---|
 | **NFR-ADM-01** | **Security (RBAC)** | Global security filters **must** enforce role-level authorization (`role: "ADMIN"`) on all `/api/admin/**` endpoints prior to controller invocation. |
-| **NFR-ADM-02** | **Security (Audit Immutability)** | All admin mutations **must** produce audit logs that cannot be altered or deleted, even by the originating admin. |
+| **NFR-ADM-02** | **Security (Audit Immutability)** | All admin mutations **must** produce audit logs that cannot be altered, deleted, or truncated by any operational database account, enforced by both SQL privilege revocations and PostgreSQL engine triggers. |
 | **NFR-ADM-03** | **Security (Data Privacy)** | Administrative APIs **shall not** expose unencrypted passwords or internal private communications unless explicitly attached as evidence in an active violation ticket. |
-| **NFR-ADM-04** | **Consistency (Optimistic Locking)** | Violation report resolutions **must** enforce optimistic concurrency control (`@Version`) to reject conflicting concurrent resolutions with HTTP `409 Conflict`. |
+| **NFR-ADM-04** | **Consistency (Optimistic Locking)** | Both violation report resolutions and company verification decisions **must** enforce optimistic concurrency control (`@Version`, `expectedVersion`) to reject conflicting concurrent resolutions with HTTP `409 Conflict`. |
 | **NFR-ADM-05** | **Performance (OLTP Isolation)** | Telemetry and analytics endpoints **must not** perform table scans on primary transactional tables. Queries must route to Read Replicas or Redis caches. |
-| **NFR-ADM-06** | **Reliability (Session Revocation)** | Account ban token revocation **must** take effect across all distributed application nodes within < 100 milliseconds via Redis distributed set lookup. |
+| **NFR-ADM-06** | **Reliability (Session Revocation)** | Account ban token revocation **must** take effect atomically across all distributed application nodes within < 100 milliseconds; fallback to database status check **must** prevent fail-open authentication during Redis cache misses. |
 | **NFR-ADM-07** | **Observability** | All failed attempts to access admin endpoints without administrative privileges **must** be logged at `WARN` level with client IP, requested URI, and user ID for intrusion detection. |
 | **NFR-ADM-08** | **Extensibility** | Background cron job triggers **must** execute asynchronously on an isolated thread pool to prevent blocking admin HTTP request worker threads. |
