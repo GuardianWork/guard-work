@@ -6,9 +6,9 @@
 | **Project** | GuardWork |
 | **Module** | Company Membership |
 | **File** | `company-membership-spec.md` |
-| **Version** | 0.1.0 |
+| **Version** | 0.1.1 |
 | **Date** | 2026-09-27 |
-| **Last Updated** | 2026-09-27 |
+| **Last Updated** | 2026-09-30 |
 | **Owner** | Thinh |
 | **Approver** | Thinh |
 | **Status** | Draft |
@@ -118,6 +118,39 @@ ACTIVE -> LEFT
 | GW-CM-042 | Candidate-facing suspension information shall follow the shared platform-enforcement specification. |
 | GW-CM-043 | GuardWork shall create mandatory in-app notifications for Company Invitation acceptance, Company Membership removal, Company Role change, ownership transfer, and applicable security or enforcement events. |
 | GW-CM-044 | Notification delivery failure shall not reverse an otherwise committed membership or ownership action. |
+
+### 3.6 Cross-module RBAC matrix
+
+`Platform Administrator` is a platform-scoped actor, not a Company Role. Owner, Admin, and Recruiter are Company Roles evaluated within the actor's active Company Membership. A Recruiter's recruitment permissions additionally require a current Job Assignment.
+
+This matrix summarizes the requirements across the recruiter specifications; the referenced module requirements remain authoritative if a summary row is unclear.
+
+| Capability | Platform Administrator | Owner | Admin | Recruiter |
+|---|---|---|---|---|
+| Enter a Company Workspace | No | Own Company | Own Company | Own Company |
+| Invite an Admin | No | Yes | No | No |
+| Invite a Recruiter | No | Yes | Yes | No |
+| Change a member between Admin and Recruiter | No | Yes | No | No |
+| Remove an Admin | No | Yes | No | No |
+| Remove a Recruiter | No | Yes | Yes | No |
+| Transfer Company ownership | No | Yes | No | No |
+| Access all Company Job Postings | No routine access | Yes | Yes | No |
+| Create a Job Posting | No | Yes | Yes | Yes; creator is assigned |
+| Manage Job Assignments | No | Yes | Yes | No |
+| Edit or submit a Job Posting Revision | No | Any Company Job Posting | Any Company Job Posting | Assigned Job Postings only |
+| Pause, resume, or close a Job Posting | No | Any Company Job Posting | Any Company Job Posting | Assigned Job Postings only |
+| Archive a Job Posting | No | Yes | Yes | No |
+| Approve or reject a Job Posting Revision | Yes | No | No | No |
+| Apply Platform Removal to a Job Posting | Yes | No | No | No |
+| Access and process Applications | No routine access | Any Company Job Posting | Any Company Job Posting | Assigned Job Postings only |
+| View or download an individual submitted CV | No routine access | Any Company Job Posting | Any Company Job Posting | Assigned Job Postings only |
+| Add or view Internal Notes | No routine access | Any Company Job Posting | Any Company Job Posting | Assigned Job Postings only |
+| Schedule Interviews and manage Offers | No | Any Company Job Posting | Any Company Job Posting | Assigned Job Postings only |
+| Perform Hiring Confirmation | No | Any Company Job Posting | Any Company Job Posting | Assigned Job Postings only |
+| View basic recruitment metrics | No routine access | All Company Job Postings | All Company Job Postings | Assigned Job Postings only |
+| Verify or suspend a Company | Platform enforcement specification | No | No | No |
+
+“No routine access” means the Company RBAC model grants no access. A separate approved platform-enforcement specification may authorize narrowly scoped access for moderation, investigation, appeals, or legal obligations.
 
 ## 4. Business rules
 
