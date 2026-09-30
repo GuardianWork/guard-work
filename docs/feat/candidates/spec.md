@@ -179,11 +179,6 @@ erDiagram
     JOBS ||--o{ SAVED_JOBS : "bookmarked in (1:N)"
 
     USERS {
-        uuid id PK
-        string email
-        string phone_number
-        string role
-        string status
     }
 
     CANDIDATE_PROFILES {
@@ -208,21 +203,9 @@ erDiagram
     }
 
     COMPANIES {
-        uuid id PK
-        string name
-        string logo_url
     }
 
     JOBS {
-        uuid id PK
-        uuid company_id FK
-        string title
-        string location
-        numeric salary_min
-        numeric salary_max
-        string employment_type
-        string status
-        timestamptz expires_at
     }
 
     JOB_APPLICATIONS {
@@ -248,13 +231,20 @@ erDiagram
 ### 3.2 Candidate User & Profile Tables
 
 #### `users` Table (Auth Domain Reference)
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | UUID | PK, DEFAULT `gen_random_uuid()` | Unique user account identifier |
-| `email` | VARCHAR(255) | NOT NULL, UNIQUE | User email address |
-| `phone_number` | VARCHAR(20) | NULLABLE | Contact phone number |
-| `role` | VARCHAR(30) | NOT NULL, DEFAULT `'CANDIDATE'` | Role marker (`CANDIDATE`, `EMPLOYER`, `ADMIN`) |
-| `status` | VARCHAR(30) | NOT NULL, DEFAULT `'UNVERIFIED'` | Account state (`UNVERIFIED`, `ACTIVE`, `LOCKED`) |
+
+[//]: # (| Column | Type | Constraints | Description |)
+
+[//]: # (|---|---|---|---|)
+
+[//]: # (| `id` | UUID | PK, DEFAULT `gen_random_uuid&#40;&#41;` | Unique user account identifier |)
+
+[//]: # (| `email` | VARCHAR&#40;255&#41; | NOT NULL, UNIQUE | User email address |)
+
+[//]: # (| `phone_number` | VARCHAR&#40;20&#41; | NULLABLE | Contact phone number |)
+
+[//]: # (| `role` | VARCHAR&#40;30&#41; | NOT NULL, DEFAULT `'CANDIDATE'` | Role marker &#40;`CANDIDATE`, `EMPLOYER`, `ADMIN`&#41; |)
+
+[//]: # (| `status` | VARCHAR&#40;30&#41; | NOT NULL, DEFAULT `'UNVERIFIED'` | Account state &#40;`UNVERIFIED`, `ACTIVE`, `LOCKED`&#41; |)
 
 #### `candidate_profiles` Table
 | Column | Type | Constraints | Description |
@@ -288,24 +278,39 @@ erDiagram
 
 ---
 
-### 3.4 Job Posting (`jobs` table — Candidate View Read Model)
+[//]: # (### 3.4 Job Posting &#40;`jobs` table — Candidate View Read Model&#41;)
 
-| Column | Type | Constraints | Description |
-|---|---|---|---|
-| `id` | UUID | PK | Job posting ID |
-| `company_id` | UUID | NOT NULL, FK(`companies.id`) | Employer / Company identifier |
-| `title` | VARCHAR(200) | NOT NULL | Job title |
-| `location` | VARCHAR(150) | NOT NULL | Office / Remote work location |
-| `salary_min` | NUMERIC(12,2) | NULLABLE | Minimum salary |
-| `salary_max` | NUMERIC(12,2) | NULLABLE | Maximum salary |
-| `employment_type` | VARCHAR(50) | NOT NULL | `FULL_TIME`, `PART_TIME`, `CONTRACT`, `REMOTE` |
-| `description` | TEXT | NOT NULL | Job description |
-| `requirements` | TEXT | NOT NULL | Candidate requirements |
-| `benefits` | TEXT | NULLABLE | Perks & benefits |
-| `status` | VARCHAR(30) | NOT NULL, DEFAULT `'ACTIVE'` | Job status (`DRAFT`, `ACTIVE`, `EXPIRED`, `CLOSED`) |
-| `expires_at` | TIMESTAMPTZ | NOT NULL | Job posting deadline |
+[//]: # ()
+[//]: # (| Column | Type | Constraints | Description |)
 
----
+[//]: # (|---|---|---|---|)
+
+[//]: # (| `id` | UUID | PK | Job posting ID |)
+
+[//]: # (| `company_id` | UUID | NOT NULL, FK&#40;`companies.id`&#41; | Employer / Company identifier |)
+
+[//]: # (| `title` | VARCHAR&#40;200&#41; | NOT NULL | Job title |)
+
+[//]: # (| `location` | VARCHAR&#40;150&#41; | NOT NULL | Office / Remote work location |)
+
+[//]: # (| `salary_min` | NUMERIC&#40;12,2&#41; | NULLABLE | Minimum salary |)
+
+[//]: # (| `salary_max` | NUMERIC&#40;12,2&#41; | NULLABLE | Maximum salary |)
+
+[//]: # (| `employment_type` | VARCHAR&#40;50&#41; | NOT NULL | `FULL_TIME`, `PART_TIME`, `CONTRACT`, `REMOTE` |)
+
+[//]: # (| `description` | TEXT | NOT NULL | Job description |)
+
+[//]: # (| `requirements` | TEXT | NOT NULL | Candidate requirements |)
+
+[//]: # (| `benefits` | TEXT | NULLABLE | Perks & benefits |)
+
+[//]: # (| `status` | VARCHAR&#40;30&#41; | NOT NULL, DEFAULT `'ACTIVE'` | Job status &#40;`DRAFT`, `ACTIVE`, `EXPIRED`, `CLOSED`&#41; |)
+
+[//]: # (| `expires_at` | TIMESTAMPTZ | NOT NULL | Job posting deadline |)
+
+[//]: # ()
+[//]: # (---)
 
 ### 3.5 Job Application (`job_applications` table)
 
@@ -330,7 +335,7 @@ erDiagram
 | `idx_candidate_cvs_candidate` | `candidate_cvs` | `candidate_id` | Fast fetch of candidate CV list |
 | `idx_job_applications_unique` | `job_applications` | `(candidate_id, job_id)` (UNIQUE) | Prevent duplicate job applications |
 | `idx_job_applications_candidate` | `job_applications` | `candidate_id, applied_at DESC` | Paginated listing of candidate applications |
-| `idx_jobs_search_active` | `jobs` | `status, expires_at` | Accelerate search for active listings |
+
 
 ---
 

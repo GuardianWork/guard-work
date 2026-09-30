@@ -23,7 +23,7 @@
 | **UC-CAN-17** Đánh giá công ty | Đánh giá | Thấp |
 | **UC-CAN-02** Quản lý CV (tổng) | CV | — |
 
-> **Ghi chú:** Các use case liên quan đến Quản lý tài khoản & Xác thực (Đăng ký, Đăng nhập, Đăng xuất, Đổi mật khẩu...) thuộc về module Authentication dùng chung của hệ thống và đã được tách khỏi phạm vi riêng của vai trò Ứng viên.
+
 
 ---
 
@@ -364,13 +364,13 @@
 
 ### 5.3 Tương tác & Ứng tuyển (`UC-CAN-11` - `UC-CAN-16`)
 
-| Mã Edge Case | Tên trường hợp biên | Mô tả chi tiết & Cách xử lý hệ thống |
-|---|---|---|
-| **EC-CAN-APP-01** | **Ứng tuyển đồng thời từ nhiều thiết bị (Race Condition)** | Ứng viên mở 2 tab/thiết bị và nhấn "Ứng tuyển" cho cùng 1 công việc tại cùng một thời điểm.<br>$\rightarrow$ **Xử lý:** Ràng buộc duy nhất `UNIQUE(candidate_id, job_id)` ở tầng Database catch ngoại lệ duplicate key, trả về `409 Conflict` kèm thông báo *"Bạn đã ứng tuyển công việc này rồi"*. |
-| **EC-CAN-APP-02** | **CV bị xóa ngay trước khi nhấn Gửi hồ sơ** | Ứng viên mở form ứng tuyển, xóa CV ở tab khác, rồi quay lại nhấn "Gửi hồ sơ".<br>$\rightarrow$ **Xử lý:** Backend kiểm tra sự tồn tại và quyền sở hữu đối với `cv_id` ngay trong transaction nộp đơn. Nếu không tìm thấy, trả về lỗi `404 CV_NOT_FOUND` và yêu cầu chọn CV khác. |
+| Mã Edge Case | Tên trường hợp biên | Mô tả chi tiết & Cách xử lý hệ thống                                                                                                                                                                                                                                                                                                                                                                                              |
+|---|---|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **EC-CAN-APP-01** | **Ứng tuyển đồng thời từ nhiều thiết bị (Race Condition)** | Ứng viên mở 2 tab/thiết bị và nhấn "Ứng tuyển" cho cùng 1 công việc tại cùng một thời điểm.<br>$\rightarrow$ **Xử lý:** Ràng buộc duy nhất `UNIQUE(candidate_id, job_id)` ở tầng Database catch ngoại lệ duplicate key, trả về `409 Conflict` kèm thông báo *"Bạn đã ứng tuyển công việc này rồi"*.                                                                                                                               |
+| **EC-CAN-APP-02** | **CV bị xóa ngay trước khi nhấn Gửi hồ sơ** | Ứng viên mở form ứng tuyển, xóa CV ở tab khác, rồi quay lại nhấn "Gửi hồ sơ".<br>$\rightarrow$ **Xử lý:** Backend kiểm tra sự tồn tại và quyền sở hữu đối với `cv_id` ngay trong transaction nộp đơn. Nếu không tìm thấy, trả về lỗi `404 CV_NOT_FOUND` và yêu cầu chọn CV khác.                                                                                                                                                  |
 | **EC-CAN-APP-03** | **Lỗi Broker Kafka khi gửi sự kiện sau khi lưu DB** | Hồ sơ nộp đã được lưu thành công vào cơ sở dữ liệu PostgreSQL nhưng tiến trình gửi message sang Kafka `guardianwork.application.submitted` bị lỗi (Kafka down/network drop).<br>$\rightarrow$ **Xử lý:** Áp dụng mô hình Transactional Outbox Pattern. Message được ghi vào bảng `outbox_events` trong cùng DB transaction, một Worker background riêng sẽ quét và retry đảm bảo tính nhất quán cuối cùng (Eventual Consistency). |
-| **EC-CAN-APP-04** | **Tài khoản bị khóa trong lúc nộp hồ sơ** | Tài khoản ứng viên bị Admin khóa/đình chỉ (`status = 'LOCKED'`) trong khi ứng viên đang soạn thư giới thiệu.<br>$\rightarrow$ **Xử lý:** Spring Security Interceptor kiểm tra trạng thái tài khoản active trên JWT authentication filter ở mọi protected request, từ chối giao dịch với lỗi `403 Forbidden`. |
-| **EC-CAN-APP-05** | **Xem việc đã lưu nhưng việc bị nhà tuyển dụng xóa hoàn toàn** | Công việc được lưu trong danh sách bookmark nhưng sau đó bị sếp xóa hẳn (Hard Delete) khỏi database.<br>$\rightarrow$ **Xử lý:** Danh sách việc đã lưu sử dụng `LEFT JOIN`. Nếu bài đăng không tồn tại, hiển thị item dạng Disabled với nhãn *"Công việc không còn tồn tại"* kèm nút *"Bỏ lưu"*. |
+| **EC-CAN-APP-04** | **Tài khoản bị khóa trong lúc nộp hồ sơ** | Tài khoản ứng viên bị Admin khóa/đình chỉ (`status = 'BANNED'`) trong khi ứng viên đang soạn thư giới thiệu.<br>$\rightarrow$ **Xử lý:** Spring Security Interceptor kiểm tra trạng thái tài khoản active trên JWT authentication filter ở mọi protected request, từ chối giao dịch với lỗi `403 Forbidden`.                                                                                                                      |
+| **EC-CAN-APP-05** | **Xem việc đã lưu nhưng việc bị nhà tuyển dụng xóa hoàn toàn** | Công việc được lưu trong danh sách bookmark nhưng sau đó bị sếp xóa hẳn (Hard Delete) khỏi database.<br>$\rightarrow$ **Xử lý:** Danh sách việc đã lưu sử dụng `LEFT JOIN`. Nếu bài đăng không tồn tại, hiển thị item dạng Disabled với nhãn *"Công việc không còn tồn tại"* kèm nút *"Bỏ lưu"*.                                                                                                                                  |
 
 ---
 
