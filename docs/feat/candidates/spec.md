@@ -23,6 +23,10 @@
    - 3.5 [Job Application](#35-job-application-job_applications-table)
    - 3.6 [Database Indexes](#36-database-indexes)
 4. [Functional Requirements](#4-functional-requirements)
+   - 4.1 [Profile & CV Management Module](#41-profile--cv-management-module-mvp)
+   - 4.2 [Job Discovery Module](#42-job-discovery-module-mvp)
+   - 4.3 [Job Application & Status Tracking Module](#43-job-application--status-tracking-module-mvp)
+   - 4.4 [Personal Data Protection & Legal Compliance Module](#44-personal-data-protection--legal-compliance-module-law-912025qh15)
 5. [Flow Diagrams](#5-flow-diagrams)
 6. [Business Rules](#6-business-rules)
 7. [Error Catalogue](#7-error-catalogue)
@@ -54,6 +58,7 @@ All high-priority candidate domain use cases ([`docs/feat/candidates/usecase.md`
 | **Select / Attach CV** | UC-CAN-12 | Choose CV file to attach to job application (included in UC-CAN-11) | **MVP** |
 | **View Applied Jobs** | UC-CAN-13 | Display candidate's job application history | **MVP** |
 | **Track Application Status** | UC-CAN-14 | View current status & milestone updates of submitted application | **MVP** |
+| **Personal Data Protection** | UC-CAN-01, 03 | Explicit consent, profile privacy controls, storage encryption, presigned URLs, right to erasure, sensitive data masking (Law 91/2025/QH15) | **MVP** |
 | CV Management | UC-CAN-02,04..06| Edit, delete, set default CV | Phase 2 |
 | Filter Search Results | UC-CAN-08 | Refine search results by salary range, work type, experience | Phase 2 |
 | Company Details | UC-CAN-10 | View company profile and open positions | Phase 2 |
@@ -377,6 +382,21 @@ erDiagram
 
 ---
 
+### 4.4 Personal Data Protection
+
+| Requirement ID | Priority    | Description                                                                                                                                                                                                                           | Use Case Ref |
+|---|-------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---|
+| **REQ-CAN-DATA-01** | **MVP**     | **Data Minimization & Sensitive Data Masking:** Limit collection to recruitment fields. Display warnings against uploading sensitive IDs (CCCD, bank, health). Auto-scan (AI/regex) to flag/mask sensitive data before employer view. | UC-CAN-01, 03 |
+| **REQ-CAN-DATA-02** | **MVP**     | **Explicit Consent Agreement:** Require mandatory recruitment consent and unbundled optional marketing consent before account registration or CV upload, saving timestamped audit logs.                                               | UC-CAN-01 |
+| **REQ-CAN-DATA-03** | **MVP**     | **Profile Visibility Modes:** Support candidate profile visibility controls: `PUBLIC` (all verified employers), `HIDDEN` (applied job employers only), and `DRAFT` (fully hidden).                                                    | UC-CAN-01 |
+| **REQ-CAN-DATA-05** | **Phase 2** | **Right to Erasure (Danger Zone):** Provide self-service deletion cascade: delete physical CVs from object storage, wipe PII from PostgreSQL, and anonymize historical application logs.                                              | UC-CAN-01, 03 |
+| **REQ-CAN-DATA-06** | **Phase 2** | **Storage Encryption:** Encrypt CV files at rest (S3 AES-256) and in transit (TLS 1.3 / HTTPS). Disable direct public bucket URL access.                                                                                              | UC-CAN-03 |
+| **REQ-CAN-DATA-07** | **Phase 2** | **Presigned Short-Lived URL Access:** Restrict CV access to temporary presigned URLs (TTL 5–15 min) generated exclusively for document owners and authorized job application reviewers.                                               | UC-CAN-03, 11 |
+| **REQ-CAN-DATA-08** | **Phase 2** | **Contact Masking:** Mask candidate email and phone (`ngu***@gmail.com`, `0912***89`) for unverified employer accounts until company verification is completed.                                                                       | UC-CAN-11 |
+
+
+---
+
 ## 5. Flow Diagrams
 
 ### 5.1 Job Application Submission Flow (MVP)
@@ -411,6 +431,11 @@ Candidate               Frontend API              Backend Service             S3
 | **BR-CAN-03** | **Active Job Constraint:** Applications are accepted only for jobs with `status = 'ACTIVE'` and `expires_at > CURRENT_TIMESTAMP`. |
 | **BR-CAN-04** | **Immutability of Submitted CV:** The CV file associated with a submitted application must remain accessible to the hiring manager even if the candidate uploads newer CV versions later. |
 | **BR-CAN-05** | **Resource Access Control (RBAC):** Candidates can only view and query their own profile, CVs, and application history. Accessing another candidate's resources returns HTTP 403 Forbidden. |
+| **BR-CAN-06** | **Sensitive Data Minimization:** Candidates are warned against uploading sensitive identifiers (CCCD/National ID, bank details, health records). AI parsing automatically flags/masks sensitive data. |
+| **BR-CAN-07** | **Explicit Consent Mandate:** Personal data processing requires explicit, timestamped candidate consent under Law 91/2025/QH15. Secondary marketing consents must remain optional and unbundled. |
+| **BR-CAN-08** | **Data Erasure & Anonymization:** Account deletion mandates physical CV removal from cloud storage, PII purge from PostgreSQL, and anonymization of historical application records. |
+| **BR-CAN-09** | **Short-Lived Signed File Access:** CV access URLs must be time-limited presigned URLs (TTL ≤ 15 minutes) generated exclusively for authenticated owners or authorized application reviewers. |
+
 
 ---
 
