@@ -1,11 +1,11 @@
 # [Feature Name]
 
-| Field | Value |                                                                                                                                                                               
-    |---|---|
-| **Target User/Role** | Candidate / Employer / Admin / System |                                                                                                                                
-| **Parent Feature** | [Parent feature or epic name, or N/A] |                                                                                                                                  
-| **Owner** | [Name] |                                                                                                                                                                          
-| **Date** | YYYY-MM-DD |      
+| Field | Value                                  |                                                                                                                                                                               
+    |---|----------------------------------------|
+| **Target User/Role** | Candidate / Recruiter / Admin / System |                                                                                                                                
+| **Parent Feature** | [Parent feature or epic name, or N/A]  |                                                                                                                                  
+| **Owner** | [Name]                                 |                                                                                                                                                                          
+| **Date** | YYYY-MM-DD                             |      
 
 
 # Problem
@@ -40,9 +40,9 @@
 
 > What rules, constraints, or policies govern this feature?
 
-| ID | Rule / Constraint | Notes |                                                                                                                                                              
-|---|---|---|                                                                                                                                                                                   
-| BR-01 | Jobs posted by unverified employers require admin approval. | Moderation rule |                                                                                                       
+| ID | Rule / Constraint | Notes           |                                                                                                                                                              
+|---|---|-----------------|                                                                                                                                                                                   
+| BR-01 | Jobs posted by unverified employers require admin approval. |                 |                                                                                                       
 | BR-02 | User interface copy must support Vietnamese (`vi-VN`). | GuardWork standard |                                                                                                         
                                                                                                                                                                                                  
 # Sub-tasks                                                                                                                                                                  
