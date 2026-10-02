@@ -1,45 +1,57 @@
-# Feature Name
+# [Feature Name]
 
-→ What should be true after this feature is implemented?
+| Field | Value |                                                                                                                                                                               
+    |---|---|
+| **Target User/Role** | Candidate / Employer / Admin / System |                                                                                                                                
+| **Parent Feature** | [Parent feature or epic name, or N/A] |                                                                                                                                  
+| **Owner** | [Name] |                                                                                                                                                                          
+| **Date** | YYYY-MM-DD |      
 
-# Parent Work
-Is this feature a child of one else? Name it!
 
 # Problem
+> What problem are we solving?
+>
 
-What problems?
+# Solution & Goal
+>What should be true after this feature is implemented?
+>
 
-# Solution
 
-What is your suggestion?
+# Scope
 
-# Sub Tasks
-
-Can we divide it into smaller tasks?
-
-- [ ]  Task 1
-- [ ]  Task 2
-- [ ]  Task 3
+### In Scope                                                                                                                                                                                    
+> Core behavior or capabilities included in this phase.                                                                                                                                     
+>                                                                                                                                                                                               
+### Out of Scope                                                                                                                                                                 
+> How it can be better in feature
 
 # Feature Requirements
 
-> What can the user or system actually do?
->
-| ID | Requirement |
-|----|-------------|
- 
 
+> What can the user or system actually do?                                                                                                                                                      
+                                                                                                                                                                                                
+| ID | Requirement / User Story | Priority |                                                                                                                                     
+|---|-|----------|                                                                                                                                                                               
+| REQ-01  | User can search jobs by location and salary range. | High     |                                                                                                              
+| REQ-02  | Employer can filter applicants by verification status. | Medium   |   
 
 
 # Business Logic
 
-> How does the business operate under specific rules?
->
+> What rules, constraints, or policies govern this feature?
 
-| ID | Requirement |
-|----|-------------|
+| ID | Rule / Constraint | Notes |                                                                                                                                                              
+|---|---|---|                                                                                                                                                                                   
+| BR-01 | Jobs posted by unverified employers require admin approval. | Moderation rule |                                                                                                       
+| BR-02 | User interface copy must support Vietnamese (`vi-VN`). | GuardWork standard |                                                                                                         
+                                                                                                                                                                                                 
+# Sub-tasks                                                                                                                                                                  
+
+- [ ] Complete initial design sketch / wireframe                                                                                                                                                
+- [ ] Validate business rules with team                                                                                                                                                         
+
 
 # Changelogs
 
-- xx-xx-xxxx: I made it!
+- xx-xx-xxxx:  Initial draft created by `@owner`.
 - xx-xx-xxxx: I changed something :P!
