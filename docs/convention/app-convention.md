@@ -449,7 +449,16 @@ public enum PredefinedRole {
 Located under `src/main/resources`.
 
 ### 4.1 Multi-Profile Configuration Pattern
-Organize configuration files using Spring profile grouping:
+Organize configuration files using Spring Boot profile grouping and environment-specific property files:
+
+- **Profile File Structure**:
+  - `application.yaml`: Root loader that sets the default active profile and defines profile groups.
+  - `application-common.yaml`: Base shared settings (e.g., JPA, Flyway, Jackson, pagination defaults) inherited across all profiles.
+  - `application-{profile}.yaml` (e.g., `application-local.yaml`, `application-dev.yaml`, `application-prod.yaml`): Environment-specific overrides (database URLs, credentials, logging levels, caching/messaging adapters).
+- **Profile Grouping**: Configured via `spring.profiles.group` so that activating an environment profile (e.g., `local`, `dev`, `prod`) automatically loads `common` properties.
+- **Activation & Overrides**:
+  - Default profile fallback is `local` using `${SPRING_PROFILES_ACTIVE:local}`.
+  - Override via environment variable `SPRING_PROFILES_ACTIVE=<profile>` or JVM argument `-Dspring.profiles.active=<profile>` at runtime without rebuilding the application artifact.
 
 ```yaml
 # application.yaml (Root loader)
