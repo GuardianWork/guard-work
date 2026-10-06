@@ -10,6 +10,9 @@ public class User {
     private String username;
     private String email;
     private String password;
+    private String role = "USER";
+    private String status = "ACTIVE";
+    private boolean emailVerified = true;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -59,6 +62,30 @@ public class User {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
     }
 
     public Instant getCreatedAt() {
