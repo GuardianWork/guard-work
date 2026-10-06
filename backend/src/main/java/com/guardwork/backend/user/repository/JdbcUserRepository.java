@@ -30,6 +30,9 @@ public class JdbcUserRepository implements UserRepository {
         user.setUsername(rs.getString("username"));
         user.setEmail(rs.getString("email"));
         user.setPassword(rs.getString("password"));
+        user.setRole(rs.getString("role"));
+        user.setStatus(rs.getString("status"));
+        user.setEmailVerified(rs.getBoolean("email_verified"));
         user.setCreatedAt(rs.getTimestamp("created_at").toInstant());
         user.setUpdatedAt(rs.getTimestamp("updated_at").toInstant());
         return user;
@@ -38,8 +41,8 @@ public class JdbcUserRepository implements UserRepository {
     @Override
     public User save(User user) {
         String sql = """
-                INSERT INTO users (first_name, last_name, username, email, password, created_at, updated_at)
-                VALUES (:firstName, :lastName, :username, :email, :password, :createdAt, :updatedAt)
+                INSERT INTO users (first_name, last_name, username, email, password, role, status, email_verified, created_at, updated_at)
+                VALUES (:firstName, :lastName, :username, :email, :password, :role, :status, :emailVerified, :createdAt, :updatedAt)
                 """;
 
         Instant now = Instant.now();
@@ -49,6 +52,9 @@ public class JdbcUserRepository implements UserRepository {
                 .addValue("username", user.getUsername())
                 .addValue("email", user.getEmail())
                 .addValue("password", user.getPassword())
+                .addValue("role", user.getRole() != null ? user.getRole() : "USER")
+                .addValue("status", user.getStatus() != null ? user.getStatus() : "ACTIVE")
+                .addValue("emailVerified", user.isEmailVerified())
                 .addValue("createdAt", Timestamp.from(now))
                 .addValue("updatedAt", Timestamp.from(now));
 
@@ -65,6 +71,12 @@ public class JdbcUserRepository implements UserRepository {
     }
 
     @Override
+    public Optional<User> findById(Long id) {
+        return jdbcTemplate.query("SELECT * FROM users WHERE id = :id",
+                new MapSqlParameterSource("id", id), USER_MAPPER).stream().findFirst();
+    }
+
+    @Override
     public Optional<User> findByUsername(String username) {
         return jdbcTemplate.query("SELECT * FROM users WHERE username = :username",
                 new MapSqlParameterSource("username", username), USER_MAPPER).stream().findFirst();
@@ -74,5 +86,15 @@ public class JdbcUserRepository implements UserRepository {
     public Optional<User> findByEmail(String email) {
         return jdbcTemplate.query("SELECT * FROM users WHERE email = :email",
                 new MapSqlParameterSource("email", email), USER_MAPPER).stream().findFirst();
+    }
+
+    @Override
+    public void updatePassword(Long id, String newPassword) {
+        String sql = "UPDATE users SET password = :password, updated_at = :updatedAt WHERE id = :id";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("id", id)
+                .addValue("password", newPassword)
+                .addValue("updatedAt", Timestamp.from(Instant.now()));
+        jdbcTemplate.update(sql, params);
     }
 }
