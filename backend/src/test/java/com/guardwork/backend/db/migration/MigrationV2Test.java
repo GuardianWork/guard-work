@@ -8,17 +8,17 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
-import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import com.guardwork.backend.audit.model.AuditLog;
-import com.guardwork.backend.audit.repository.JdbcAuditLogRepository;
+import com.guardwork.backend.audit.repository.AuditLogRepository;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.model.VerificationStatus;
-import com.guardwork.backend.company.repository.JdbcCompanyRepository;
+import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.user.model.User;
-import com.guardwork.backend.user.repository.JdbcUserRepository;
+import com.guardwork.backend.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,13 +27,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class MigrationV2Test {
 
     @Autowired
-    private JdbcCompanyRepository companyRepository;
+    private CompanyRepository companyRepository;
 
     @Autowired
-    private JdbcAuditLogRepository auditLogRepository;
+    private AuditLogRepository auditLogRepository;
 
     @Autowired
-    private JdbcUserRepository userRepository;
+    private UserRepository userRepository;
 
     @Autowired
     private NamedParameterJdbcTemplate jdbcTemplate;
@@ -119,7 +119,7 @@ class MigrationV2Test {
         c2.setRegistrationCertificateUrl("https://storage.guardwork.vn/certs/2.pdf");
 
         assertThatThrownBy(() -> companyRepository.save(c2))
-                .isInstanceOf(DuplicateKeyException.class);
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test

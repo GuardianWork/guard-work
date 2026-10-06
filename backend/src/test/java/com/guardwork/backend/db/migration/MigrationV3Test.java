@@ -9,10 +9,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import com.guardwork.backend.auth.model.PasswordResetToken;
 import com.guardwork.backend.auth.model.RefreshToken;
-import com.guardwork.backend.auth.repository.JdbcPasswordResetTokenRepository;
-import com.guardwork.backend.auth.repository.JdbcRefreshTokenRepository;
+import com.guardwork.backend.auth.repository.PasswordResetTokenRepository;
+import com.guardwork.backend.auth.repository.RefreshTokenRepository;
 import com.guardwork.backend.user.model.User;
-import com.guardwork.backend.user.repository.JdbcUserRepository;
+import com.guardwork.backend.user.repository.UserRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -20,13 +20,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MigrationV3Test {
 
     @Autowired
-    private JdbcUserRepository userRepository;
+    private UserRepository userRepository;
 
     @Autowired
-    private JdbcRefreshTokenRepository refreshTokenRepository;
+    private RefreshTokenRepository refreshTokenRepository;
 
     @Autowired
-    private JdbcPasswordResetTokenRepository passwordResetTokenRepository;
+    private PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Test
     void testUserRoleAndStatusPersistence() {

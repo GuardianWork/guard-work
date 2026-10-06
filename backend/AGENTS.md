@@ -10,7 +10,7 @@ Preserve the feature-first MVC structure:
 
 - keep controllers as thin HTTP adapters;
 - keep business behavior and validation in services;
-- keep SQL in repository implementations using Spring JDBC; and
+- keep persistence access in repository interfaces using Spring Data JPA; and
 - use one top-level package per feature, splitting larger features by layer as documented.
 
 Preserve scoped behavior when a shared backend contract is absent. A project-wide authentication, authorization, validation, pagination, error-envelope, or notification convention requires the approval defined by the root guide.
