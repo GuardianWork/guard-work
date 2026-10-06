@@ -35,8 +35,7 @@ src/main/java/com/guardwork/backend/
 │   ├── model/
 │   │   └── User.java
 │   └── repository/
-│       ├── UserRepository.java        # interface
-│       └── JdbcUserRepository.java    # JdbcTemplate impl
+│       └── UserRepository.java        # Spring Data JPA repository interface
 ├── auth/                          # Auth feature (flat — few files)
 ├── company/                       # Company management & verification request
 │   ├── model/
@@ -58,8 +57,8 @@ src/main/java/com/guardwork/backend/
 
 | Layer        | Responsibility                                                     |
 | ------------- | ------------------------------------------------------------------- |
-| `model`       | Entity POJOs (e.g. `User`)                                          |
-| `repository`  | Data access — interface + `JdbcTemplate` (Spring JDBC) implementation |
+| `model`       | Entity POJOs with JPA annotations (e.g. `User`)                    |
+| `repository`  | Data access — Spring Data JPA repository interfaces                 |
 | `service`     | Business logic and validation (e.g. `AuthService`)                  |
 | `controller`  | Thin HTTP layer, maps DTOs ↔ service                                |
 | `dto`         | Request/response objects (flat in the feature package)              |
@@ -69,7 +68,7 @@ src/main/java/com/guardwork/backend/
 - One feature = one top-level package (`user`, `auth`, ...).
 - Business logic lives in `service`, never in `controller`.
 - `service` depends on `repository`/`model` only, no direct SQL.
-- DB access via `JdbcTemplate` (no JPA).
+- DB access via Spring Data JPA.
 
 ## API Docs
 
