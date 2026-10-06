@@ -34,6 +34,9 @@ public class Company {
     @Column(name = "tax_code", nullable = false, unique = true, length = 50)
     private String taxCode;
 
+    @Column(name = "email", length = 255)
+    private String email;
+
     @Column(name = "registration_certificate_url", nullable = false, columnDefinition = "TEXT")
     private String registrationCertificateUrl;
 
