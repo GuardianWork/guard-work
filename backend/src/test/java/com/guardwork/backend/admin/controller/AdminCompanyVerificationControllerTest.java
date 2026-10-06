@@ -125,4 +125,65 @@ class AdminCompanyVerificationControllerTest {
                 .andExpect(jsonPath("$.data.verificationStatus").value("VERIFIED"))
                 .andExpect(jsonPath("$.data.version").value(1));
     }
+
+    @Test
+    void rejectCompany_MissingAdminId_Returns401() throws Exception {
+        VerificationDecisionRequest request = new VerificationDecisionRequest("Invalid registration documents provided.", 0L);
+
+        mockMvc.perform(put("/api/admin/companies/1/reject")
+                        .header("X-Admin-Role", "ADMIN")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void rejectCompany_NonAdminRole_Returns403() throws Exception {
+        VerificationDecisionRequest request = new VerificationDecisionRequest("Invalid registration documents provided.", 0L);
+
+        mockMvc.perform(put("/api/admin/companies/1/reject")
+                        .header("X-Admin-Id", "100")
+                        .header("X-Admin-Role", "RECRUITER")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rejectCompany_ValidAdmin_Returns200WithRejectedCompany() throws Exception {
+        String reason = "Giấy phép kinh doanh đã hết hạn hoặc không hợp lệ.";
+        VerificationDecisionRequest request = new VerificationDecisionRequest(reason, 0L);
+        CompanyVerificationResponse response = new CompanyVerificationResponse(
+                1L, "Alpha Corp", "0101234567", "https://cert.pdf",
+                VerificationStatus.REJECTED, reason, 100L, Instant.now(), 1L, Instant.now()
+        );
+
+        when(verificationService.rejectCompany(eq(1L), any(VerificationDecisionRequest.class), eq(100L), anyString(), any()))
+                .thenReturn(response);
+
+        mockMvc.perform(put("/api/admin/companies/1/reject")
+                        .header("X-Admin-Id", "100")
+                        .header("X-Admin-Role", "ADMIN")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(200))
+                .andExpect(jsonPath("$.message").value("Company verification rejected successfully"))
+                .andExpect(jsonPath("$.data.verificationStatus").value("REJECTED"))
+                .andExpect(jsonPath("$.data.rejectionReason").value(reason))
+                .andExpect(jsonPath("$.data.version").value(1));
+    }
+
+    @Test
+    void rejectCompany_ViaPostMethod_Returns405MethodNotAllowed() throws Exception {
+        String reason = "Giấy phép kinh doanh đã hết hạn hoặc không hợp lệ.";
+        VerificationDecisionRequest request = new VerificationDecisionRequest(reason, 0L);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/admin/companies/1/reject")
+                        .header("X-Admin-Id", "100")
+                        .header("X-Admin-Role", "ADMIN")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isMethodNotAllowed());
+    }
 }

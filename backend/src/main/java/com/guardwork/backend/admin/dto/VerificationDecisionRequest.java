@@ -7,4 +7,7 @@ public record VerificationDecisionRequest(
         String rejectionReason,
         Long expectedVersion
 ) {
+    public VerificationDecisionRequest(String rejectionReason, Long expectedVersion) {
+        this(VerificationStatus.REJECTED, rejectionReason, expectedVersion);
+    }
 }

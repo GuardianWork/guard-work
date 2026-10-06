@@ -72,6 +72,32 @@ public class AdminCompanyVerificationController {
         return ApiResponse.ok("Company verification status updated successfully", result);
     }
 
+    @PutMapping("/{id}/reject")
+    public ApiResponse<CompanyVerificationResponse> rejectCompany(
+            @PathVariable("id") Long id,
+            @RequestBody VerificationDecisionRequest request,
+            @RequestHeader(value = "X-Admin-Id", required = false) Long adminId,
+            @RequestHeader(value = "X-Admin-Role", required = false) String adminRole,
+            HttpServletRequest httpRequest
+    ) {
+        UserPrincipal principal = getAuthenticatedPrincipal();
+        Long effectiveAdminId = adminId != null ? adminId
+                : (principal != null ? principal.getId() : null);
+        String effectiveRole = (adminRole != null && !adminRole.isBlank()) ? adminRole
+                : (principal != null ? principal.getRole() : null);
+
+        if (effectiveAdminId == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40100 UNAUTHORIZED: Missing admin authentication or X-Admin-Id header");
+        }
+        validateAdminRole(effectiveRole);
+
+        String ipAddress = extractClientIp(httpRequest);
+        String userAgent = httpRequest.getHeader("User-Agent");
+
+        CompanyVerificationResponse result = verificationService.rejectCompany(id, request, effectiveAdminId, ipAddress, userAgent);
+        return ApiResponse.ok("Company verification rejected successfully", result);
+    }
+
     private UserPrincipal getAuthenticatedPrincipal() {
         var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.getPrincipal() instanceof UserPrincipal p) {
