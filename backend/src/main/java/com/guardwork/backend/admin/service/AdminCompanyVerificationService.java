@@ -80,6 +80,20 @@ public class AdminCompanyVerificationService {
     }
 
     @Transactional
+    public CompanyVerificationResponse rejectCompany(Long companyId,
+                                                     VerificationDecisionRequest request,
+                                                     Long adminId,
+                                                     String ipAddress,
+                                                     String userAgent) {
+        VerificationDecisionRequest decisionRequest = new VerificationDecisionRequest(
+                VerificationStatus.REJECTED,
+                request != null ? request.rejectionReason() : null,
+                request != null ? request.expectedVersion() : null
+        );
+        return verifyCompany(companyId, decisionRequest, adminId, ipAddress, userAgent);
+    }
+
+    @Transactional
     public CompanyVerificationResponse verifyCompany(Long companyId,
                                                      VerificationDecisionRequest request,
                                                      Long adminId,

@@ -213,4 +213,38 @@ class AdminCompanyVerificationServiceTest {
                 .extracting(e -> ((ResponseStatusException) e).getStatusCode())
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
+
+    @Test
+    void rejectCompany_WithValidReason_Success() {
+        Company pending = createSampleCompany(10L, VerificationStatus.PENDING, 0L);
+        Company rejected = createSampleCompany(10L, VerificationStatus.REJECTED, 1L);
+        String reason = "Giấy phép kinh doanh scan bị mờ và thiếu con dấu đỏ.";
+        rejected.setRejectionReason(reason);
+        rejected.setVerifiedBy(99L);
+
+        when(companyRepository.findById(10L))
+                .thenReturn(Optional.of(pending))
+                .thenReturn(Optional.of(rejected));
+        when(companyRepository.updateVerification(eq(10L), eq(VerificationStatus.REJECTED), eq(reason), eq(99L), any(), eq(0L)))
+                .thenReturn(1);
+
+        VerificationDecisionRequest request = new VerificationDecisionRequest(reason, 0L);
+        CompanyVerificationResponse result = service.rejectCompany(10L, request, 99L, "127.0.0.1", "JUnit");
+
+        assertThat(result.verificationStatus()).isEqualTo(VerificationStatus.REJECTED);
+        assertThat(result.rejectionReason()).isEqualTo(reason);
+        assertThat(result.version()).isEqualTo(1L);
+
+        verify(auditService).recordLog(
+                eq(99L),
+                eq("COMPANY_VERIFICATION"),
+                eq("COMPANY"),
+                eq("10"),
+                anyString(),
+                anyString(),
+                eq(reason),
+                eq("127.0.0.1"),
+                eq("JUnit")
+        );
+    }
 }

@@ -9,6 +9,7 @@ public record CompanyVerificationResponse(
         Long id,
         String name,
         String taxCode,
+        String email,
         String registrationCertificateUrl,
         VerificationStatus verificationStatus,
         String rejectionReason,
@@ -17,11 +18,27 @@ public record CompanyVerificationResponse(
         Long version,
         Instant createdAt
 ) {
+    public CompanyVerificationResponse(
+            Long id,
+            String name,
+            String taxCode,
+            String registrationCertificateUrl,
+            VerificationStatus verificationStatus,
+            String rejectionReason,
+            Long verifiedBy,
+            Instant verifiedAt,
+            Long version,
+            Instant createdAt
+    ) {
+        this(id, name, taxCode, null, registrationCertificateUrl, verificationStatus, rejectionReason, verifiedBy, verifiedAt, version, createdAt);
+    }
+
     public static CompanyVerificationResponse from(Company company) {
         return new CompanyVerificationResponse(
                 company.getId(),
                 company.getName(),
                 company.getTaxCode(),
+                company.getEmail(),
                 company.getRegistrationCertificateUrl(),
                 company.getVerificationStatus(),
                 company.getRejectionReason(),
