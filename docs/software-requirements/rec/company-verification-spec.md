@@ -6,9 +6,9 @@
 | **Project** | GuardWork |
 | **Module** | Recruiter & Company Verification / Admin KYB Gatekeeper |
 | **File** | `company-verification-spec.md` |
-| **Version** | 0.1.0 |
+| **Version** | 0.2.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-05 |
+| **Last Updated** | 2026-10-06 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |
@@ -40,7 +40,7 @@ This document defines the formal software requirements for the **Company Verific
 
 | Sub-feature | Responsibility |
 |---|---|
-| **Company Verification Request** | Recruiter submission of company registration details (tax code, legal name, certificate storage URL), initializing verification status to `PENDING`. |
+| **Company Verification Request** | Recruiter submission of company registration details (tax code, legal name, official contact email, certificate storage URL), initializing verification status to `PENDING`. |
 | **Admin Verification Queue** | Paginated, status-filtered, FIFO-sorted review queue for platform administrators (`GET /api/admin/companies/verifications`). |
 | **Deterministic Verification Decision** | Administrative approval (`VERIFIED`) or rejection (`REJECTED` with mandatory 10–1000 character feedback) via `PUT /api/admin/companies/{id}/verify` with optimistic concurrency control (`expectedVersion`). |
 | **Immutable Audit Logging** | Atomic append-only logging in `audit_logs` protected by database-level triggers against `UPDATE`, `DELETE`, and `TRUNCATE`. |
@@ -79,14 +79,20 @@ Admin (Decision)        ──> [PUT /api/admin/companies/{id}/verify]
 ```text
 [REGISTERED / DRAFT]
          │
-         ▼ submitVerification()
+         ▼ submitVerification() [POST /api/companies/verification-request]
      [PENDING]
       │     │
       │     └── adminReject(reason >= 10 chars) ──> [REJECTED]
       │                                                   │
-      │                                                   └── resubmit() ──> [PENDING]
+      │                                                   └── resubmit(id, expectedVersion) [PUT /api/companies/{id}/resubmit] ──> [PENDING]
       └── adminApprove() ──────────────────────────> [VERIFIED]
 ```
+
+#### Strict Resubmission Forcing Policy
+Once a company has been rejected (`REJECTED`), attempting to submit a fresh registration form (`POST /api/companies/verification-request`) using the registered tax code or email is strictly blocked with HTTP 409 Conflict (`40902 RESUBMISSION_REQUIRED`). The platform forces the company to resubmit via their existing record (`PUT /api/companies/{id}/resubmit`) along with `expectedVersion`. This policy:
+1. **Prevents Orphan Records & Tax Collisions:** Avoids duplicate entries for the same legal tax code or corporate email.
+2. **Preserves Audit & Version Lineage:** Retains optimistic locking counters, previous rejection notes, and timestamps.
+3. **Ensures Newest Status Delivery:** Guarantees that the company tracks their existing application lifecycle and receives the newest verification status and reviewer feedback upon re-evaluation.
 
 ### 2.3 Response Envelope
 
@@ -134,6 +140,7 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 | `id` | BIGSERIAL | PK, auto | Unique company identifier |
 | `name` | VARCHAR(255) | NOT NULL | Registered company legal name |
 | `tax_code` | VARCHAR(50) | NOT NULL, UNIQUE | Unique national tax registration code |
+| `email` | VARCHAR(255) | NULL | Official company contact/verification email |
 | `registration_certificate_url` | TEXT | NOT NULL | Storage URL of business license certificate |
 | `verification_status` | VARCHAR(30) | NOT NULL, DEFAULT `'PENDING'` | Status: `'PENDING'`, `'VERIFIED'`, `'REJECTED'` |
 | `rejection_reason` | TEXT | NULL | Actionable feedback if status is `'REJECTED'` |
@@ -165,6 +172,7 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 - `companies_tax_code_key`: `UNIQUE (tax_code)`
 - `companies_verification_status_check`: `CHECK (verification_status IN ('PENDING', 'VERIFIED', 'REJECTED'))`
 - `idx_companies_verification_queue`: `(verification_status, created_at)` for FIFO queue lookups.
+- `idx_companies_email`: `(email)` for company lookup by email.
 - `idx_audit_logs_admin_created`: `(admin_id, created_at DESC)` for admin activity auditing.
 - `idx_audit_logs_target`: `(target_type, target_id)` for entity audit lookups.
 - PostgreSQL Immutability Trigger `trg_protect_audit_logs`: `BEFORE DELETE OR UPDATE OR TRUNCATE ON audit_logs` calling `prevent_audit_logs_mutation()` which aborts with an exception to guarantee append-only immutability.
@@ -175,7 +183,7 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 
 | ID | Requirement | Priority |
 |---|---|---|
-| **REQ-REC-01** | The system shall allow recruiters to submit company verification details (name, tax code, certificate URL), creating or updating the record with status `PENDING` and version `0`. | High |
+| **REQ-REC-01** | The system shall allow recruiters to submit company verification details (name, tax code, email, certificate URL), creating the record with status `PENDING` and version `0`. The email field is required and validated against standard email format. If the company (by tax code or email) was previously rejected, new form submission is strictly blocked with HTTP 409 (`40902 RESUBMISSION_REQUIRED`), forcing resubmission via REQ-REC-09. | High |
 | **REQ-REC-02** | The system shall provide an administrative queue endpoint (`GET /api/admin/companies/verifications`) with pagination, FIFO sorting (`created_at ASC`), and filtering by status (`PENDING`, `VERIFIED`, `REJECTED`, or `ALL`). | High |
 | **REQ-REC-03** | The system shall provide details of a company's verification dossier to authorized admins. | High |
 | **REQ-REC-04** | The system shall allow admins to approve a company in `PENDING` status, updating `verification_status = 'VERIFIED'`, recording `verified_by` and `verified_at`, and incrementing `version`. | High |
@@ -183,7 +191,7 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 | **REQ-REC-06** | The system shall enforce optimistic concurrency control via `expectedVersion`. If `expectedVersion` does not match the current database `version`, the decision transaction shall abort with HTTP 409 Conflict (`40022 CONCURRENT_MODIFICATION`). | High |
 | **REQ-REC-07** | The system shall atomically record an immutable entry into `audit_logs` capturing admin ID, IP address, user agent, old payload, new payload, and reason within the decision transaction. | High |
 | **REQ-REC-08** | The system shall emit an asynchronous notification event (`CompanyVerificationEvent`) upon verification decision to notify the recruiter. | High |
-| **REQ-REC-09** | The system shall allow a rejected company to update details and resubmit, transitioning status from `REJECTED` back to `PENDING`. | High |
+| **REQ-REC-09** | The system shall require a rejected company to update details and resubmit via their existing company record (`PUT /api/companies/{id}/resubmit`) along with `expectedVersion`, transitioning status from `REJECTED` back to `PENDING` and receiving the newest status. Recruiters may query their existing dossier via `GET /api/companies/tax-code/{taxCode}`. | High |
 
 ---
 
@@ -227,6 +235,7 @@ Admin Client              AdminController             VerificationService       
 | **BR-REC-06** | **Immutable Audit Trail** | Every decision atomically inserts a record into `audit_logs`. Database triggers prevent any `UPDATE`, `DELETE`, or `TRUNCATE` operations on `audit_logs`. |
 | **BR-REC-07** | **Transactional Notification Delivery** | The database transaction updating company status and writing audit log must commit before or with event notification dispatch. |
 | **BR-REC-08** | **Vietnamese Localization & UTF-8** | Rejection reasons, audit notes, and notifications must fully support UTF-8 Vietnamese text and `Asia/Ho_Chi_Minh` timezone. |
+| **BR-REC-09** | **Forced Resubmission for Rejected Companies** | If a company whose verification was previously `REJECTED` attempts to submit a new verification form (`POST /api/companies/verification-request`) instead of resubmitting on their existing record, the system shall reject the new submission with HTTP 409 Conflict (`40902 RESUBMISSION_REQUIRED`) and mandate that they resubmit via `PUT /api/companies/{id}/resubmit` using their existing record ID and `expectedVersion` to preserve audit history and receive the newest status. |
 
 ---
 
@@ -236,12 +245,16 @@ Admin Client              AdminController             VerificationService       
 |---|---|---|---|
 | `40010` | 400 | `COMPANY_NOT_PENDING` | Target company is not in `PENDING` status. |
 | `40011` | 400 | `INVALID_REJECTION_REASON` | Rejection reason is missing or shorter than 10 characters. |
+| `40012` | 400 | `COMPANY_NOT_REJECTED` | Target company is not in `REJECTED` status for resubmission. |
 | `40000` | 400 | `BAD_REQUEST` | Malformed request body or invalid status value. |
 | `40100` | 401 | `UNAUTHORIZED` | Caller is not authenticated. |
 | `40300` | 403 | `FORBIDDEN` | Caller is not an Administrator (`role: "ADMIN"`). |
-| `40400` | 404 | `COMPANY_NOT_FOUND` | Specified company ID does not exist. |
+| `40400` | 404 | `COMPANY_NOT_FOUND` | Specified company ID or tax code does not exist. |
 | `40022` | 409 | `CONCURRENT_MODIFICATION` | `expectedVersion` does not match current database `version`. |
 | `40901` | 409 | `DUPLICATE_TAX_CODE` | Tax code is already registered by another company. |
+| `40902` | 409 | `RESUBMISSION_REQUIRED` | Company was previously REJECTED. Submitting a new form is rejected; company must resubmit via existing form `PUT /api/companies/{id}/resubmit`. |
+| `40903` | 409 | `COMPANY_ALREADY_PENDING` | Company verification request is already pending review. |
+| `40904` | 409 | `COMPANY_ALREADY_VERIFIED` | Company is already verified. |
 
 ---
 
@@ -275,6 +288,7 @@ Retrieves a paginated FIFO queue of companies filtered by status.
         "id": 1,
         "name": "Công ty TNHH Giải Pháp Công Nghệ Alpha",
         "taxCode": "0101234567",
+        "email": "contact@alpha.com.vn",
         "registrationCertificateUrl": "https://storage.guardwork.vn/licenses/alpha-license.pdf",
         "verificationStatus": "PENDING",
         "rejectionReason": null,
@@ -336,6 +350,7 @@ Or for rejection:
     "id": 1,
     "name": "Công ty TNHH Giải Pháp Công Nghệ Alpha",
     "taxCode": "0101234567",
+    "email": "contact@alpha.com.vn",
     "registrationCertificateUrl": "https://storage.guardwork.vn/licenses/alpha-license.pdf",
     "verificationStatus": "VERIFIED",
     "rejectionReason": null,
@@ -349,16 +364,167 @@ Or for rejection:
 
 ---
 
+### 8.3 Rejection Action
+
+#### `PUT /api/admin/companies/{id}/reject`
+
+Dedicated action to reject a pending company verification request with mandatory actionable feedback.
+
+**Request Headers**
+- `X-Admin-Id`: `1` (Admin user ID)
+- `X-Admin-Role`: `ADMIN`
+
+**Request Body**
+
+```json
+{
+  "rejectionReason": "Giấy chứng nhận đăng ký kinh doanh đã hết hiệu lực hoặc bản chụp bị mờ không rõ con dấu.",
+  "expectedVersion": 0
+}
+```
+
+**Response `200 OK`**
+
+```json
+{
+  "status": 200,
+  "message": "Company verification rejected successfully",
+  "data": {
+    "id": 1,
+    "name": "Công ty TNHH Giải Pháp Công Nghệ Alpha",
+    "taxCode": "0101234567",
+    "email": "contact@alpha.com.vn",
+    "registrationCertificateUrl": "https://storage.guardwork.vn/licenses/alpha-license.pdf",
+    "verificationStatus": "REJECTED",
+    "rejectionReason": "Giấy chứng nhận đăng ký kinh doanh đã hết hiệu lực hoặc bản chụp bị mờ không rõ con dấu.",
+    "verifiedBy": 1,
+    "verifiedAt": "2026-10-05T12:00:00Z",
+    "version": 1,
+    "createdAt": "2026-10-05T08:00:00Z"
+  }
+}
+```
+
+---
+
+### 8.4 Recruiter Company Verification Submission & Resubmission
+
+#### `POST /api/companies/verification-request`
+
+Recruiter submits company details for initial verification.
+
+> **Note:** If a company was previously `REJECTED`, attempting to submit a new form via this endpoint will be rejected with HTTP 409 Conflict (`40902 RESUBMISSION_REQUIRED`), forcing the company to use `PUT /api/companies/{id}/resubmit` to update the existing form and receive the newest status.
+
+**Request Body**
+
+```json
+{
+  "name": "Công ty TNHH Giải Pháp Công Nghệ Alpha",
+  "taxCode": "0101234567",
+  "email": "contact@alpha.com.vn",
+  "registrationCertificateUrl": "https://storage.guardwork.vn/licenses/alpha-license.pdf"
+}
+```
+
+**Response `201 Created`**
+
+```json
+{
+  "status": 200,
+  "message": "Company submitted for verification",
+  "data": {
+    "id": 1,
+    "name": "Công ty TNHH Giải Pháp Công Nghệ Alpha",
+    "taxCode": "0101234567",
+    "email": "contact@alpha.com.vn",
+    "registrationCertificateUrl": "https://storage.guardwork.vn/licenses/alpha-license.pdf",
+    "verificationStatus": "PENDING",
+    "rejectionReason": null,
+    "verifiedBy": null,
+    "verifiedAt": null,
+    "version": 0,
+    "createdAt": "2026-10-05T08:00:00Z"
+  }
+}
+```
+
+#### `GET /api/companies/tax-code/{taxCode}`
+
+Retrieves current company dossier, verification status, rejection reason, and optimistic version by tax code. Recruiter uses this to retrieve their existing record ID and `expectedVersion` before resubmission.
+
+**Response `200 OK`**
+
+```json
+{
+  "status": 200,
+  "message": "Company retrieved successfully",
+  "data": {
+    "id": 1,
+    "name": "Công ty TNHH Giải Pháp Công Nghệ Alpha",
+    "taxCode": "0101234567",
+    "email": "contact@alpha.com.vn",
+    "registrationCertificateUrl": "https://storage.guardwork.vn/licenses/alpha-license.pdf",
+    "verificationStatus": "REJECTED",
+    "rejectionReason": "Giấy chứng nhận đăng ký kinh doanh đã hết hiệu lực hoặc bản chụp bị mờ không rõ con dấu.",
+    "verifiedBy": 1,
+    "verifiedAt": "2026-10-05T12:00:00Z",
+    "version": 1,
+    "createdAt": "2026-10-05T08:00:00Z"
+  }
+}
+```
+
+#### `PUT /api/companies/{id}/resubmit`
+
+Recruiter resubmits corrected company details following rejection using their existing form ID and `expectedVersion`.
+
+**Request Body**
+
+```json
+{
+  "name": "Công ty TNHH Giải Pháp Công Nghệ Alpha (Cập nhật)",
+  "email": "contact@alpha.com.vn",
+  "registrationCertificateUrl": "https://storage.guardwork.vn/licenses/alpha-license-v2.pdf",
+  "expectedVersion": 1
+}
+```
+
+**Response `200 OK`**
+
+```json
+{
+  "status": 200,
+  "message": "Company resubmitted for verification successfully",
+  "data": {
+    "id": 1,
+    "name": "Công ty TNHH Giải Pháp Công Nghệ Alpha (Cập nhật)",
+    "taxCode": "0101234567",
+    "email": "contact@alpha.com.vn",
+    "registrationCertificateUrl": "https://storage.guardwork.vn/licenses/alpha-license-v2.pdf",
+    "verificationStatus": "PENDING",
+    "rejectionReason": null,
+    "verifiedBy": null,
+    "verifiedAt": null,
+    "version": 2,
+    "createdAt": "2026-10-05T08:00:00Z"
+  }
+}
+```
+
+---
+
 ## 9. Infrastructure Architecture
 
 ### 9.1 Relational Schema & Persistence
 
-Flyway Migration Script: `V2__admin_governance_and_audit.sql`
-
-Creates:
-1. `companies` table with primary key `id`, unique constraint on `tax_code`, check constraint on `verification_status`, and index `idx_companies_verification_queue`.
-2. `audit_logs` table with foreign key `admin_id -> users(id)` and index `idx_audit_logs_admin_created`.
-3. PostgreSQL function `prevent_audit_logs_mutation()` and trigger `trg_protect_audit_logs` enforcing append-only immutability.
+Flyway Migration Scripts:
+- `V2__admin_governance_and_audit.sql`:
+  1. `companies` table with primary key `id`, unique constraint on `tax_code`, check constraint on `verification_status`, and index `idx_companies_verification_queue`.
+  2. `audit_logs` table with foreign key `admin_id -> users(id)` and index `idx_audit_logs_admin_created`.
+  3. PostgreSQL function `prevent_audit_logs_mutation()` and trigger `trg_protect_audit_logs` enforcing append-only immutability.
+- `V4__add_company_email.sql`:
+  1. Adds `email VARCHAR(255)` column to `companies` table.
+  2. Creates index `idx_companies_email` on `companies(email)`.
 
 ### 9.2 Event Publishing
 

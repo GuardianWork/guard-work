@@ -48,4 +48,10 @@ public class CompanyController {
         Company company = companyService.getCompany(id);
         return ApiResponse.ok("Company retrieved successfully", CompanyVerificationResponse.from(company));
     }
+
+    @GetMapping("/tax-code/{taxCode}")
+    public ApiResponse<CompanyVerificationResponse> getCompanyByTaxCode(@PathVariable("taxCode") String taxCode) {
+        Company company = companyService.getCompanyByTaxCode(taxCode);
+        return ApiResponse.ok("Company retrieved successfully", CompanyVerificationResponse.from(company));
+    }
 }
