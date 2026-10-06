@@ -16,6 +16,8 @@ public interface CompanyRepository extends JpaRepository<Company, Long>, Company
 
     Optional<Company> findByTaxCode(String taxCode);
 
+    Optional<Company> findByEmail(String email);
+
     @Query("SELECT COUNT(c) FROM Company c WHERE c.verificationStatus = :status")
     long countByStatus(@Param("status") VerificationStatus status);
 

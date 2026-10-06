@@ -45,12 +45,13 @@ class CompanyControllerTest {
     @Test
     void requestVerification_ValidPayload_Returns201() throws Exception {
         CompanyRegistrationRequest request = new CompanyRegistrationRequest(
-                "Công ty Gamma", "0303030303", "https://storage.guardwork.vn/gamma.pdf"
+                "Công ty Gamma", "0303030303", "contact@gamma.com.vn", "https://storage.guardwork.vn/gamma.pdf"
         );
         Company company = new Company();
         company.setId(1L);
         company.setName(request.name());
         company.setTaxCode(request.taxCode());
+        company.setEmail(request.email());
         company.setRegistrationCertificateUrl(request.registrationCertificateUrl());
         company.setVerificationStatus(VerificationStatus.PENDING);
         company.setVersion(0L);
@@ -64,18 +65,20 @@ class CompanyControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value(200))
                 .andExpect(jsonPath("$.data.name").value("Công ty Gamma"))
+                .andExpect(jsonPath("$.data.email").value("contact@gamma.com.vn"))
                 .andExpect(jsonPath("$.data.verificationStatus").value("PENDING"));
     }
 
     @Test
     void resubmitVerification_ValidPayload_Returns200() throws Exception {
         CompanyResubmissionRequest request = new CompanyResubmissionRequest(
-                "Công ty Gamma Updated", "https://new-gamma.pdf", 1L
+                "Công ty Gamma Updated", "updated@gamma.com.vn", "https://new-gamma.pdf", 1L
         );
         Company updated = new Company();
         updated.setId(1L);
         updated.setName(request.name());
         updated.setTaxCode("0303030303");
+        updated.setEmail(request.email());
         updated.setRegistrationCertificateUrl(request.registrationCertificateUrl());
         updated.setVerificationStatus(VerificationStatus.PENDING);
         updated.setVersion(2L);
@@ -89,6 +92,7 @@ class CompanyControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(200))
                 .andExpect(jsonPath("$.data.name").value("Công ty Gamma Updated"))
+                .andExpect(jsonPath("$.data.email").value("updated@gamma.com.vn"))
                 .andExpect(jsonPath("$.data.version").value(2));
     }
 
@@ -109,5 +113,29 @@ class CompanyControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(1))
                 .andExpect(jsonPath("$.data.taxCode").value("0303030303"));
+    }
+
+    @Test
+    void getCompanyByTaxCode_ExistingTaxCode_Returns200() throws Exception {
+        Company company = new Company();
+        company.setId(1L);
+        company.setName("Công ty Gamma");
+        company.setTaxCode("0303030303");
+        company.setEmail("gamma@example.com");
+        company.setRegistrationCertificateUrl("https://gamma.pdf");
+        company.setVerificationStatus(VerificationStatus.REJECTED);
+        company.setRejectionReason("Cần bổ sung giấy phép mới");
+        company.setVersion(1L);
+        company.setCreatedAt(Instant.now());
+
+        when(companyService.getCompanyByTaxCode("0303030303")).thenReturn(company);
+
+        mockMvc.perform(get("/api/companies/tax-code/0303030303"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(1))
+                .andExpect(jsonPath("$.data.taxCode").value("0303030303"))
+                .andExpect(jsonPath("$.data.verificationStatus").value("REJECTED"))
+                .andExpect(jsonPath("$.data.rejectionReason").value("Cần bổ sung giấy phép mới"))
+                .andExpect(jsonPath("$.data.version").value(1));
     }
 }
