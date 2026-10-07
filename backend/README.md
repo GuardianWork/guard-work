@@ -28,29 +28,37 @@ The app boots on `http://localhost:8080`, migrations run automatically via Flywa
 Feature-based packages, each following the **MVC** model. A feature with many files gets
 child folders (`model/`, `repository/`, ...); a small feature is kept flat in a single package.
 
-```
 src/main/java/com/guardwork/backend/
 ├── BackendApplication.java        # Spring Boot entry point
+├── common/                        # Shared response wrappers (ApiResponse, PageResponse)
 ├── user/                          # User entity + persistence (shared)
 │   ├── model/
 │   │   └── User.java
 │   └── repository/
-│       ├── UserRepository.java        # interface
-│       └── JdbcUserRepository.java    # JdbcTemplate impl
-└── auth/                          # auth feature (flat — few files)
-    ├── AuthController.java
-    ├── AuthService.java
-    ├── RegisterUserRequest.java
-    ├── LoginRequest.java
-    └── AuthResponse.java
+│       └── UserRepository.java        # Spring Data JPA repository interface
+├── auth/                          # Auth feature (flat — few files)
+├── company/                       # Company management & verification request
+│   ├── model/
+│   ├── repository/
+│   ├── dto/
+│   ├── service/
+│   └── controller/
+├── audit/                         # Append-only audit logging & immutability
+│   ├── model/
+│   ├── repository/
+│   └── service/
+└── admin/                         # Admin governance & verification queue/decisions
+    ├── dto/
+    ├── service/
+    └── controller/
 ```
 
 ### Layer responsibilities (MVC)
 
 | Layer        | Responsibility                                                     |
 | ------------- | ------------------------------------------------------------------- |
-| `model`       | Entity POJOs (e.g. `User`)                                          |
-| `repository`  | Data access — interface + `JdbcTemplate` (Spring JDBC) implementation |
+| `model`       | Entity POJOs with JPA annotations (e.g. `User`)                    |
+| `repository`  | Data access — Spring Data JPA repository interfaces                 |
 | `service`     | Business logic and validation (e.g. `AuthService`)                  |
 | `controller`  | Thin HTTP layer, maps DTOs ↔ service                                |
 | `dto`         | Request/response objects (flat in the feature package)              |
@@ -60,7 +68,7 @@ src/main/java/com/guardwork/backend/
 - One feature = one top-level package (`user`, `auth`, ...).
 - Business logic lives in `service`, never in `controller`.
 - `service` depends on `repository`/`model` only, no direct SQL.
-- DB access via `JdbcTemplate` (no JPA).
+- DB access via Spring Data JPA.
 
 ## API Docs
 
