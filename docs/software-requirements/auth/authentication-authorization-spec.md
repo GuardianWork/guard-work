@@ -8,12 +8,14 @@
 | **File** | `authentication-authorization-spec.md` |
 | **Version** | 1.0.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-05 |
+| **Last Updated** | 2026-10-08 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |
 
 ---
+
+> Company Membership MVP coordination (2026-10-08): the user confirmed completion of GW-001 and authorized dependent implementation under [GW-SR-REC-02](../rec/company-membership-mvp-spec.md). Company creation requires an active authenticated User; Company authority is read from current persisted membership and Company state on every request. `/api/auth/me` returns the existing `activeMembership` contract, including `joinedAt`, without adding Company roles to tokens. Private Company identifiers return a non-enumerating not-found response for inaccessible resources; principal-scoped operations follow the companion contract. Ownership transfer, Admin membership management, Job/Application permissions, and own-Company application restrictions remain subsequent milestones; REQ-AUTH-13/14 are not implemented by this MVP.
 
 ## Table of Contents
 
@@ -586,3 +588,14 @@ The following variables must be added to `.env.example` and backend configuratio
 | **NFR-AUTH-03** | Resilience | Database transactions updating password or refresh tokens must roll back cleanly on uncaught exceptions. |
 | **NFR-AUTH-04** | Privacy | Passwords, password reset tokens, and refresh tokens must never appear in server log files or audit traces. |
 | **NFR-AUTH-05** | Localization | All error messages returned to clients must support UTF-8 Vietnamese descriptions while maintaining English code constants. |
+
+## 11. Draft Company Membership context amendment — pending Thinh approval
+
+[GW-SR-REC-02-AMEND-01](../rec/company-membership-mvp-spec.md#15-draft-amendment-bind-departure-to-a-membership-period)
+proposes adding `membershipId` to `/api/auth/me`'s existing `activeMembership` object so clients can
+identify the exact membership period in a departure request. The proposed object is
+`{ membershipId, companyId, companyName, companyRole, joinedAt }`; it remains null without an active
+period. JWT platform roles and claims are unchanged, and current persistence remains the authority.
+The existing approved example above is retained for comparison. The review branch prepared this proposal; the
+current implementation retains the approved response fields and bodyless departure request until human approval.
+The coordinated amendment remains pending human approval before merge.

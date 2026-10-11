@@ -12,7 +12,8 @@ public record CurrentUserResponse(
     public record ActiveMembershipDto(
             Long companyId,
             String companyName,
-            String companyRole
+            String companyRole,
+            java.time.Instant joinedAt
     ) {
     }
 }
