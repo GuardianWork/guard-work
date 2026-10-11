@@ -1,5 +1,6 @@
 package com.guardwork.backend.company.service;
 
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -10,9 +11,16 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.guardwork.backend.company.dto.CompanyRegistrationRequest;
 import com.guardwork.backend.company.dto.CompanyResubmissionRequest;
+import com.guardwork.backend.company.dto.CurrentCompanyResponse;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.model.VerificationStatus;
 import com.guardwork.backend.company.repository.CompanyRepository;
+import com.guardwork.backend.membership.model.CompanyMembership;
+import com.guardwork.backend.membership.model.CompanyRole;
+import com.guardwork.backend.membership.model.MembershipStatus;
+import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
+import com.guardwork.backend.membership.service.CompanyAccessService;
+import com.guardwork.backend.membership.service.MembershipAuditService;
 
 @Service
 public class CompanyService {
@@ -21,11 +29,44 @@ public class CompanyService {
 
     private final CompanyRepository companyRepository;
 
-    public CompanyService(CompanyRepository companyRepository) {
+    private final CompanyMembershipRepository memberships;
+    private final MembershipAuditService audit;
+    private final CompanyAccessService access;
+
+    public CompanyService(CompanyRepository companyRepository,
+                          CompanyMembershipRepository memberships, MembershipAuditService audit, CompanyAccessService access) {
         this.companyRepository = companyRepository;
+        this.memberships = memberships;
+        this.audit = audit;
+        this.access = access;
     }
 
-    public Company registerCompany(CompanyRegistrationRequest request) {
+    @Transactional
+    public Company registerCompany(Long actorId, CompanyRegistrationRequest request) {
+        access.requireActiveUser(actorId);
+        var activeMembership = memberships.findByUserIdAndStatus(actorId, MembershipStatus.ACTIVE);
+        if (activeMembership.isPresent()) {
+            if (activeMembership.get().getRole() == CompanyRole.OWNER
+                    && access.requireOwner(actorId).company().getVerificationStatus() == VerificationStatus.REJECTED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "40902 RESUBMISSION_REQUIRED: Correct and resubmit your existing rejected Company");
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "40910 ACTIVE_COMPANY_MEMBERSHIP_EXISTS: Active Company membership already exists");
+        }
+        Company company = createCompanyRecord(request);
+        company.setOwnerUserId(actorId);
+        companyRepository.saveAndFlush(company);
+        CompanyMembership membership = new CompanyMembership();
+        membership.setCompanyId(company.getId());
+        membership.setUserId(actorId);
+        membership.setRole(CompanyRole.OWNER);
+        membership.setStatus(MembershipStatus.ACTIVE);
+        memberships.saveAndFlush(membership);
+        audit.record(actorId, actorId, company.getId(), "COMPANY_CREATED", membership.getId(), null, null, null);
+        return company;
+    }
+
+    private Company createCompanyRecord(CompanyRegistrationRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
@@ -45,39 +86,18 @@ public class CompanyService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Registration certificate URL is required");
         }
 
+        validateLength(request.name().trim(), 255, "Company name");
+        validateLength(request.taxCode().trim(), 50, "Tax code");
+        validateLength(request.email().trim(), 255, "Company email");
+
         String taxCode = request.taxCode().trim();
-        String email = request.email().trim().toLowerCase();
+        String email = request.email().trim().toLowerCase(Locale.ROOT);
 
         Optional<Company> existingByTaxCode = companyRepository.findByTaxCode(taxCode);
-        Optional<Company> existingByEmail = companyRepository.findByEmail(email);
+        boolean existingByEmail = companyRepository.existsByEmail(email);
 
-        Optional<Company> existingOpt = existingByTaxCode.isPresent() ? existingByTaxCode : existingByEmail;
-        if (existingOpt.isPresent()) {
-            Company existing = existingOpt.get();
-            if (existing.getVerificationStatus() == VerificationStatus.REJECTED) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "40902 RESUBMISSION_REQUIRED: Company with tax code '" + existing.getTaxCode() +
-                        "' was previously REJECTED. Please resubmit using your existing company record (PUT /api/companies/" +
-                        existing.getId() + "/resubmit) with expectedVersion " + existing.getVersion() +
-                        " to update your submission and receive newest verification status."
-                );
-            }
-            if (existing.getVerificationStatus() == VerificationStatus.PENDING) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "40903 COMPANY_ALREADY_PENDING: A verification request for tax code '" + existing.getTaxCode() +
-                        "' is already pending review (Company ID: " + existing.getId() + ")."
-                );
-            }
-            if (existing.getVerificationStatus() == VerificationStatus.VERIFIED) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "40904 COMPANY_ALREADY_VERIFIED: Company with tax code '" + existing.getTaxCode() +
-                        "' is already verified."
-                );
-            }
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 DUPLICATE_TAX_CODE: Tax code already registered: " + taxCode);
+        if (existingByTaxCode.isPresent() || existingByEmail) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 DUPLICATE_TAX_CODE: Company registration details already registered");
         }
 
         Company company = new Company();
@@ -92,16 +112,22 @@ public class CompanyService {
     }
 
     @Transactional
-    public Company resubmitCompany(Long companyId, CompanyResubmissionRequest request) {
+    public Company resubmitCompany(Long actorId, Long companyId, CompanyResubmissionRequest request) {
+        return correctRejectedCompany(access.requireOwnerOf(actorId, companyId), request);
+    }
+
+    @Transactional
+    public Company resubmitCurrentCompany(Long actorId, CompanyResubmissionRequest request) {
+        return correctRejectedCompany(access.requireOwner(actorId).company(), request);
+    }
+
+    private Company correctRejectedCompany(Company company, CompanyResubmissionRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
         if (request.expectedVersion() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: expectedVersion is required");
         }
-
-        Company company = companyRepository.findById(companyId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40400 COMPANY_NOT_FOUND: Company not found"));
 
         if (company.getVerificationStatus() != VerificationStatus.REJECTED) {
             throw new ResponseStatusException(
@@ -117,37 +143,73 @@ public class CompanyService {
             );
         }
 
-        if (request.name() != null && !request.name().isBlank()) {
-            company.setName(request.name().trim());
+        if (request.name() != null) {
+            String name = requireCorrectionValue(request.name(), "Company name");
+            validateLength(name, 255, "Company name");
+            company.setName(name);
         }
-        if (request.email() != null && !request.email().isBlank()) {
-            String trimmedEmail = request.email().trim();
+        if (request.email() != null) {
+            String trimmedEmail = requireCorrectionValue(request.email(), "Company email");
+            validateLength(trimmedEmail, 255, "Company email");
             if (!EMAIL_PATTERN.matcher(trimmedEmail).matches()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Invalid company email format");
             }
-            company.setEmail(trimmedEmail.toLowerCase());
+            String email = trimmedEmail.toLowerCase(Locale.ROOT);
+            if (companyRepository.existsByEmailAndIdNot(email, company.getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "40901 DUPLICATE_TAX_CODE: Company registration details already registered");
+            }
+            company.setEmail(email);
         }
-        if (request.registrationCertificateUrl() != null && !request.registrationCertificateUrl().isBlank()) {
-            company.setRegistrationCertificateUrl(request.registrationCertificateUrl().trim());
+        if (request.registrationCertificateUrl() != null) {
+            company.setRegistrationCertificateUrl(requireCorrectionValue(request.registrationCertificateUrl(), "Registration certificate URL"));
         }
 
         company.setVerificationStatus(VerificationStatus.PENDING);
         company.setRejectionReason(null);
         company.setVersion(company.getVersion() + 1);
 
-        return companyRepository.save(company);
+        return companyRepository.saveAndFlush(company);
     }
 
-    public Company getCompany(Long id) {
-        return companyRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40400 COMPANY_NOT_FOUND: Company not found"));
+    @Transactional
+    public Company getCompany(Long actorId, Long id) {
+        return access.requireOwnerOf(actorId, id);
     }
 
-    public Company getCompanyByTaxCode(String taxCode) {
-        if (taxCode == null || taxCode.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Tax code is required");
+    @Transactional
+    public Company getCompanyByTaxCode(Long actorId, String taxCode) {
+        var current = access.findCurrentCompanyAccess(actorId);
+        if (current == null || current.membership().getRole() != CompanyRole.OWNER
+                || taxCode == null || !current.company().getTaxCode().equals(taxCode.trim())) {
+            throw CompanyAccessService.notFound();
         }
-        return companyRepository.findByTaxCode(taxCode.trim())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40400 COMPANY_NOT_FOUND: Company not found with tax code: " + taxCode.trim()));
+        return current.company();
+    }
+
+    @Transactional
+    public CurrentCompanyResponse getCurrentCompany(Long actorId) {
+        var current = access.findCurrentCompanyAccess(actorId);
+        return current == null ? null : new CurrentCompanyResponse(current.company().getId(), current.company().getName(),
+                current.membership().getRole().name());
+    }
+
+    @Transactional
+    public Company getOwnerVerification(Long actorId) {
+        return access.requireOwner(actorId).company();
+    }
+
+    private void validateLength(String value, int maximum, String field) {
+        if (value.codePointCount(0, value.length()) > maximum) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "40000 BAD_REQUEST: " + field + " exceeds " + maximum + " characters");
+        }
+    }
+
+    private String requireCorrectionValue(String value, String field) {
+        if (value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: " + field + " is required");
+        }
+        return value.trim();
     }
 }

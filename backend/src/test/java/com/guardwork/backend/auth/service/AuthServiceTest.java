@@ -61,7 +61,9 @@ class AuthServiceTest {
                 refreshTokenRepository,
                 passwordResetTokenRepository,
                 jwtService,
-                passwordEncoder
+                passwordEncoder,
+                org.mockito.Mockito.mock(com.guardwork.backend.membership.repository.CompanyMembershipRepository.class),
+                org.mockito.Mockito.mock(com.guardwork.backend.company.repository.CompanyRepository.class)
         );
     }
 

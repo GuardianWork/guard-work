@@ -28,6 +28,9 @@ public class Company {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "owner_user_id")
+    private Long ownerUserId;
+
     @Column(nullable = false, length = 255)
     private String name;
 
