@@ -1,0 +1,59 @@
+package com.guardwork.backend.candidate;
+
+import com.guardwork.backend.candidate.dto.CandidateProfileResponse;
+import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
+import lombok.AccessLevel;
+import com.guardwork.backend.candidate.dto.UpdateCandidateProfileRequest;
+import com.guardwork.backend.common.ApiResponse;
+import com.guardwork.backend.auth.security.UserPrincipal;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/v1/candidates")
+@RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
+public class CandidateProfileController {
+
+    CandidateProfileService profileService;
+
+    @GetMapping("/profile")
+    @ResponseStatus(HttpStatus.OK)
+    public ApiResponse<CandidateProfileResponse> getProfile(@AuthenticationPrincipal UserPrincipal principal) {
+        CandidateProfile profile = profileService.getOrCreateProfile(principal.getId());
+        return ApiResponse.ok(mapToResponse(profile));
+    }
+
+    @PutMapping("/profile")
+    @ResponseStatus(HttpStatus.OK)
+    public ApiResponse<CandidateProfileResponse> updateProfile(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody UpdateCandidateProfileRequest request) {
+        CandidateProfile updated = profileService.updateProfile(principal.getId(), request);
+        return ApiResponse.ok(mapToResponse(updated));
+    }
+
+    private CandidateProfileResponse mapToResponse(CandidateProfile profile) {
+        return new CandidateProfileResponse(
+                profile.getId(),
+                profile.getUserId(),
+                profile.getFullName(),
+                profile.getAvatarUrl(),
+                profile.getPhoneNumber(),
+                profile.getSkills(),
+                profile.getExperienceSummary(),
+                profile.getEducationSummary(),
+                profile.isPublic(),
+                profile.getCreatedAt(),
+                profile.getUpdatedAt()
+        );
+    }
+}
