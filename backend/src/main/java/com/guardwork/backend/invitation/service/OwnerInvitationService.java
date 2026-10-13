@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.regex.Pattern;
+import jakarta.validation.Validator;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
@@ -25,13 +25,13 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class OwnerInvitationService {
   private static final ZoneId VIETNAM = ZoneId.of("Asia/Ho_Chi_Minh");
-  private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
   private final CompanyAccessService access;
   private final CompanyInvitationRepository invitations;
   private final CompanyRepository companies;
   private final MembershipAuditService audit;
   private final CompanyInvitationMailer mailer;
   private final Clock clock;
+  private final Validator validator;
   private final TransactionTemplate transaction;
 
   public OwnerInvitationService(
@@ -41,13 +41,15 @@ public class OwnerInvitationService {
       MembershipAuditService audit,
       CompanyInvitationMailer mailer,
       Clock clock,
-      PlatformTransactionManager manager) {
+      PlatformTransactionManager manager,
+      Validator validator) {
     this.access = access;
     this.invitations = invitations;
     this.companies = companies;
     this.audit = audit;
     this.mailer = mailer;
     this.clock = clock;
+    this.validator = validator;
     this.transaction = new TransactionTemplate(manager);
   }
 
@@ -228,10 +230,11 @@ public class OwnerInvitationService {
         });
   }
 
-  private static String normalize(String value) {
+  private String normalize(String value) {
     if (value == null) throw badRequest();
     String email = value.trim().toLowerCase(Locale.ROOT);
-    if (email.length() > 255 || !EMAIL.matcher(email).matches()) throw badRequest();
+    if (!validator.validateValue(IssueInvitationRequest.class, "email", email).isEmpty())
+      throw badRequest();
     return email;
   }
 

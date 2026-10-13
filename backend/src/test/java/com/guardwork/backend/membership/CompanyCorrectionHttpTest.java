@@ -72,6 +72,7 @@ class CompanyCorrectionHttpTest {
         for (Map<String, Object> invalid : java.util.List.<Map<String, Object>>of(
                 Map.of("expectedVersion", 1, "name", "Á".repeat(256)),
                 Map.of("expectedVersion", 1, "name", "Tên không được lưu", "email", "invalid"),
+                Map.of("expectedVersion", 1, "email", "person..name@example.vn"),
                 Map.of("expectedVersion", 1, "email", "a".repeat(245) + "@example.vn"),
                 Map.of("expectedVersion", 1, "name", "  "),
                 Map.of("expectedVersion", 1, "registrationCertificateUrl", "  "),
