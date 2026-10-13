@@ -240,6 +240,30 @@ class CompanyInvitationHttpTest {
   }
 
   @Test
+  void beanValidationRejectsMalformedMailboxWithoutPersistenceOrDelivery() throws Exception {
+    String owner = account();
+    long company = verifiedCompany(owner);
+    for (String email : new String[] {"", "   ", ".person@example.vn", "person..name@example.vn",
+        "person@-example.vn", "person@example..vn", "a".repeat(65) + "@example.vn"}) {
+      http.perform(post("/api/companies/me/invitations")
+              .header("Authorization", owner)
+              .contentType(MediaType.APPLICATION_JSON)
+              .content(mapper.writeValueAsString(Map.of("email", email))))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.status").value(400))
+          .andExpect(jsonPath("$.message").value("40000 BAD_REQUEST: Invalid invitation request"));
+    }
+    http.perform(post("/api/companies/me/invitations")
+            .header("Authorization", owner)
+            .contentType(MediaType.APPLICATION_JSON).content("{}"))
+        .andExpect(status().isBadRequest());
+    assertThat(mailer.secrets).isEmpty();
+    assertThat(database.queryForObject(
+        "SELECT count(*) FROM company_invitations WHERE company_id=?", Long.class, company))
+        .isZero();
+  }
+
+  @Test
   void invalidEmailAndPaginationAreSafeValidationErrors() throws Exception {
     String owner = account();
     verifiedCompany(owner);

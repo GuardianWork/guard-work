@@ -2,7 +2,7 @@ package com.guardwork.backend.company.service;
 
 import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Pattern;
+import jakarta.validation.Validator;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -25,20 +25,20 @@ import com.guardwork.backend.membership.service.MembershipAuditService;
 @Service
 public class CompanyService {
 
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
-
     private final CompanyRepository companyRepository;
 
     private final CompanyMembershipRepository memberships;
     private final MembershipAuditService audit;
     private final CompanyAccessService access;
+    private final Validator validator;
 
     public CompanyService(CompanyRepository companyRepository,
-                          CompanyMembershipRepository memberships, MembershipAuditService audit, CompanyAccessService access) {
+                          CompanyMembershipRepository memberships, MembershipAuditService audit, CompanyAccessService access, Validator validator) {
         this.companyRepository = companyRepository;
         this.memberships = memberships;
         this.audit = audit;
         this.access = access;
+        this.validator = validator;
     }
 
     @Transactional
@@ -70,19 +70,19 @@ public class CompanyService {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
-        if (request.name() == null || request.name().isBlank()) {
+        if (!validator.validateProperty(request, "name").isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Company name is required");
         }
-        if (request.taxCode() == null || request.taxCode().isBlank()) {
+        if (!validator.validateProperty(request, "taxCode").isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Tax code is required");
         }
         if (request.email() == null || request.email().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Company email is required");
         }
-        if (!EMAIL_PATTERN.matcher(request.email().trim()).matches()) {
+        if (!validator.validateValue(CompanyRegistrationRequest.class, "email", request.email().trim()).isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Invalid company email format");
         }
-        if (request.registrationCertificateUrl() == null || request.registrationCertificateUrl().isBlank()) {
+        if (!validator.validateProperty(request, "registrationCertificateUrl").isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Registration certificate URL is required");
         }
 
@@ -125,7 +125,7 @@ public class CompanyService {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
-        if (request.expectedVersion() == null) {
+        if (!validator.validateProperty(request, "expectedVersion").isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: expectedVersion is required");
         }
 
@@ -151,7 +151,7 @@ public class CompanyService {
         if (request.email() != null) {
             String trimmedEmail = requireCorrectionValue(request.email(), "Company email");
             validateLength(trimmedEmail, 255, "Company email");
-            if (!EMAIL_PATTERN.matcher(trimmedEmail).matches()) {
+            if (!validator.validateValue(CompanyResubmissionRequest.class, "email", trimmedEmail).isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Invalid company email format");
             }
             String email = trimmedEmail.toLowerCase(Locale.ROOT);

@@ -114,6 +114,27 @@ class RecipientInvitationHttpTest {
   }
 
   @Test
+  void malformedSecretsRemainPrivateUnavailableResponses() throws Exception {
+    String recipient = account();
+    for (String action : new String[] {"preview", "accept", "decline"}) {
+      for (String body : new String[] {"{}", "{\"secret\":null}", "{\"secret\":\"\"}",
+          mapper.writeValueAsString(Map.of("secret", " ")),
+          mapper.writeValueAsString(Map.of("secret", "x".repeat(129), "confirm", false))}) {
+        http.perform(post("/api/company-invitations/" + action)
+                .header("Authorization", recipient)
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.message")
+                .value("40410 INVITATION_UNAVAILABLE: Invitation unavailable"))
+            .andExpect(header().string("Cache-Control", "no-store"))
+            .andExpect(header().string("Referrer-Policy", "no-referrer"))
+            .andExpect(content().string(org.hamcrest.Matchers.not(
+                org.hamcrest.Matchers.containsString("x".repeat(129)))));
+      }
+    }
+  }
+
+  @Test
   void emailPossessionAndAccountIdentityAreBothRequiredAndUnavailableErrorsHideState()
       throws Exception {
     String owner = account(), recipient = account(), stranger = account();

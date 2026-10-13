@@ -38,6 +38,28 @@ class CompanyOwnershipHttpTest {
     }
 
     @Test
+    void invalidRegistrationFieldsDoNotCreateCompanyOrMembership() throws Exception {
+        String token = account();
+        Map<String, Object> valid = mapper.readValue(company(UUID.randomUUID().toString()),
+                new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        for (Map<String, Object> override : java.util.List.<Map<String, Object>>of(
+                Map.of("name", "  "), Map.of("taxCode", "  "),
+                Map.of("registrationCertificateUrl", "  "), Map.of("email", ""),
+                Map.of("email", "person..name@example.vn"))) {
+            Map<String, Object> body = new java.util.HashMap<>(valid);
+            body.putAll(override);
+            http.perform(post("/api/companies/verification-request").header("Authorization", token)
+                            .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(body)))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.data").isEmpty());
+        }
+        http.perform(get("/api/auth/me").header("Authorization", token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.activeMembership").isEmpty());
+        assertThat(database.queryForObject("SELECT count(*) FROM companies WHERE tax_code=?",
+                Long.class, valid.get("taxCode"))).isZero();
+    }
+
+    @Test
     void eligibleUserCreatesPendingCompanyAndSeesFreshOwnerContext() throws Exception {
         String token = account();
         http.perform(get("/api/auth/me").header("Authorization", token))

@@ -417,3 +417,22 @@ unimplemented until the API amendment receives named human approval. The same re
 the approved narrow shared-service composition exception, names the optional authorization lookup
 `findCurrentCompanyAccess`, and replaces singular Company-email lookup with an existence query so
 multiple historical email rows return the existing generic duplicate-details conflict.
+
+### Scoped request validation for Company Membership
+
+Company registration/correction and invitation requests use Jakarta Bean Validation from
+`spring-boot-starter-validation` (Spring Boot manages the provider version). Services evaluate DTO
+constraints at the existing workflow checkpoints rather than adding controller `@Valid`: Owner
+access and Company eligibility retain their precedence, and direct service callers are validated.
+Email is trimmed before `@Email`; the existing dotted-domain rule is retained as its `regexp`.
+The provider additionally rejects malformed mailbox syntax such as consecutive dots in an unquoted
+local part. Normalization remains trim/lowercase; no mailbox ownership or delivery is inferred.
+Company name/tax-code/email limits still count Unicode code points, matching PostgreSQL lengths.
+Correction fields remain optional and supplied blank values remain invalid.
+
+Recipient secret constraints map to the same sanitized `40410 INVITATION_UNAVAILABLE` result.
+Acceptance-only confirmation constraints are evaluated after secret, identity and eligibility checks;
+preview/decline do not require confirmation. Violations are never rendered or logged with rejected
+values. Existing status/error envelopes, pagination, business eligibility and database constraints
+remain in their services. AUTH/password recovery and the draft departure amendment are unchanged.
+No schema migration or client payload update is required.

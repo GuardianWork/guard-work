@@ -9,6 +9,7 @@ import com.guardwork.backend.membership.model.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.membership.service.*;
 import com.guardwork.backend.notification.service.*;
+import jakarta.validation.Validator;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Locale;
@@ -29,6 +30,7 @@ public class RecipientInvitationService {
   private final NotificationIntentService notifications;
   private final NotificationDispatcher dispatcher;
   private final Clock clock;
+  private final Validator validator;
   private final TransactionTemplate transaction;
 
   public RecipientInvitationService(
@@ -40,7 +42,8 @@ public class RecipientInvitationService {
       NotificationIntentService notifications,
       NotificationDispatcher dispatcher,
       Clock clock,
-      PlatformTransactionManager manager) {
+      PlatformTransactionManager manager,
+      Validator validator) {
     this.access = access;
     this.companies = companies;
     this.invitations = invitations;
@@ -49,6 +52,7 @@ public class RecipientInvitationService {
     this.notifications = notifications;
     this.dispatcher = dispatcher;
     this.clock = clock;
+    this.validator = validator;
     transaction = new TransactionTemplate(manager);
   }
 
@@ -150,10 +154,8 @@ public class RecipientInvitationService {
   }
 
   private CompanyInvitationRepository.Candidate candidate(RecipientInvitationRequest request) {
-    if (request == null
-        || request.secret() == null
-        || request.secret().isBlank()
-        || request.secret().length() > 128) throw unavailable();
+    if (request == null || !validator.validateProperty(request, "secret").isEmpty())
+      throw unavailable();
     return invitations
         .findCandidateBySecretHash(InvitationSecrets.hash(request.secret()))
         .orElseThrow(RecipientInvitationService::unavailable);
@@ -187,8 +189,8 @@ public class RecipientInvitationService {
         || c.getOwnerUserId() == null) throw unavailable();
   }
 
-  private static void requireConfirmation(RecipientInvitationRequest request) {
-    if (!Boolean.TRUE.equals(request.confirm()))
+  private void requireConfirmation(RecipientInvitationRequest request) {
+    if (!validator.validateProperty(request, "confirm", RecipientInvitationRequest.Acceptance.class).isEmpty())
       throw new ResponseStatusException(
           HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Explicit confirmation required");
   }

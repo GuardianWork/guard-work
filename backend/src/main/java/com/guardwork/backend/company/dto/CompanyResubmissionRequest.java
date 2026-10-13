@@ -1,10 +1,13 @@
 package com.guardwork.backend.company.dto;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotNull;
+
 public record CompanyResubmissionRequest(
         String name,
-        String email,
+        @Email(regexp = "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$") String email,
         String registrationCertificateUrl,
-        Long expectedVersion
+        @NotNull Long expectedVersion
 ) {
     public CompanyResubmissionRequest(String name, String registrationCertificateUrl, Long expectedVersion) {
         this(name, null, registrationCertificateUrl, expectedVersion);
