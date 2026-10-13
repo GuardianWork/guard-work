@@ -6,6 +6,14 @@ This directory contains the GitHub Actions workflow specifications for the **Gua
 
 The `ci.yml` pipeline automates testing, packaging, and artifact retention for backend code changes.
 
+Each job creates a temporary PostgreSQL 18 service with `backend_test_db` on runner port 5432.
+The job exports `BACKEND_TEST_DATABASE_URL`, `BACKEND_TEST_DATABASE_USER`, and
+`BACKEND_TEST_DATABASE_PASSWORD` so Maven uses that service instead of the local test default
+on port 55432. The readiness check uses the same database and User. These credentials are
+temporary CI-only values; no repository secrets or developer database are required.
+GitHub Actions discards the service after the job. Local test configuration and the guard
+that rejects `backend_db` remain unchanged.
+
 ### How to use
 - **Push**: Any code push to the `dev` branch.
 - **Pull Request**: Any pull request targeting the `main` or `dev` branches.
