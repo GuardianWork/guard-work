@@ -1,91 +1,122 @@
 package com.guardwork.backend.candidate;
 
+import com.guardwork.backend.candidate.dto.UpdateCandidateProfileRequest;
+import com.guardwork.backend.auth.security.UserPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import java.util.List;
+import java.util.UUID;
+
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.when;
+import org.mockito.MockedStatic;
+import com.guardwork.backend.common.utils.SecurityUtils;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Web‑slice tests for {@link CandidateProfileController}.
- * They verify the HTTP contract, request/response mapping and that the controller
- * correctly delegates to {@link CandidateProfileService}.
+ * Tests the full request/response flow of {@link CandidateProfileController}.
+ * The service layer is mocked so that we can assert the controller correctly
+ * maps the domain object to the DTO and returns the expected JSON payload.
  */
-@WebMvcTest(CandidateProfileController.class)
+@ExtendWith(MockitoExtension.class)
+@DisplayName("CandidateProfileController flow tests")
 class CandidateProfileControllerTest {
 
-    @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @MockBean
+    @Mock
     private CandidateProfileService profileService;
 
-    @Test
-    @DisplayName("GET /api/v1/candidates/profile – returns existing profile")
-    void getProfile_success() throws Exception {
-        CandidateProfile dummy = new CandidateProfile();
-        dummy.setId(java.util.UUID.randomUUID());
-        dummy.setUserId(1L);
-        dummy.setFullName("John Doe");
-        dummy.setPublic(true);
-        dummy.setSkills(java.util.List.of());
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-        Mockito.when(profileService.getOrCreateProfile(1L)).thenReturn(dummy);
+    private final UserPrincipal testPrincipal = new UserPrincipal(1L, "testuser", "test@example.com", "USER");
 
-        mockMvc.perform(get("/api/v1/candidates/profile")
-                .param("userId", "1"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath("$.fullName").value("John Doe"));
+    private CandidateProfile sampleProfile() {
+        CandidateProfile profile = new CandidateProfile();
+        profile.setId(UUID.randomUUID());
+        profile.setUserId(testPrincipal.getId());
+        profile.setFullName("John Doe");
+        profile.setAvatarUrl("https://example.com/avatar.png");
+        profile.setPhoneNumber("0123456789");
+        profile.setSkills(List.of("Kotlin", "Docker"));
+        profile.setExperienceSummary("5 years");
+        profile.setEducationSummary("BS Computer Science");
+        profile.setPublic(true);
+        profile.setCreatedAt(java.time.Instant.now());
+        profile.setUpdatedAt(java.time.Instant.now());
+        return profile;
+    }
+
+
+    @BeforeEach
+    void setUp() {
+        CandidateProfileController controller = new CandidateProfileController(profileService);
+        this.mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+
+
     }
 
     @Test
-    @DisplayName("PATCH /api/v1/candidates/profile – updates profile fields")
-    void patchProfile_success() throws Exception {
+    void getProfile_returnsMappedResponse() throws Exception {
+        CandidateProfile profile = sampleProfile();
+        when(profileService.getOrCreateProfile(anyLong())).thenReturn(profile);
+
+        try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
+            mockedSecurity.when(SecurityUtils::getCurrentUserId).thenReturn(testPrincipal.getId());
+            mockMvc.perform(get("/api/v1/candidates/profile"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.status").value("200"))
+                    .andExpect(jsonPath("$.data.fullName").value(profile.getFullName()))
+                    .andExpect(jsonPath("$.data.avatarUrl").value(profile.getAvatarUrl()))
+                    .andExpect(jsonPath("$.data.skills[0]").value("Kotlin"))
+                    .andExpect(jsonPath("$.data.isPublic").value(true));
+        }
+    }
+
+    @Test
+    void updateProfile_returnsUpdatedResponse() throws Exception {
+        CandidateProfile updated = sampleProfile();
+        updated.setFullName("Jane Doe");
+        updated.setPhoneNumber("0987654321");
+        updated.setPublic(false);
+
         UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
                 "Jane Doe",
-                "0123456789",
-                "https://example.com/avatar.png",
-                java.util.List.of("Kotlin", "Docker"),
-                "5 years",
-                "BS Computer Science",
-                true);
+                "0987654321",
+                "https://example.com/new-avatar.png",
+                List.of("Java", "Spring"),
+                "6 years",
+                "MSc Computer Science",
+                false
+        );
 
-        CandidateProfile updated = new CandidateProfile();
-        updated.setId(java.util.UUID.randomUUID());
-        updated.setUserId(1L);
-        updated.setFullName("Jane Doe");
-        updated.setPhoneNumber("0123456789");
-        updated.setAvatarUrl("https://example.com/avatar.png");
-        updated.setSkills(java.util.List.of("Kotlin", "Docker"));
-        updated.setExperienceSummary("5 years");
-        updated.setEducationSummary("BS Computer Science");
-        updated.setPublic(true);
-
-        Mockito.when(profileService.updateProfile(eq(1L), any(UpdateCandidateProfileRequest.class)))
+        when(profileService.updateProfile(anyLong(), any(UpdateCandidateProfileRequest.class)))
                 .thenReturn(updated);
 
-        mockMvc.perform(patch("/api/v1/candidates/profile")
-                .param("userId", "1")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.fullName").value("Jane Doe"))
-                .andExpect(jsonPath("$.phoneNumber").value("0123456789"))
-                .andExpect(jsonPath("$.skills[0]").value("Kotlin"))
-                .andExpect(jsonPath("$.skills[1]").value("Docker"));
+        try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
+            mockedSecurity.when(SecurityUtils::getCurrentUserId).thenReturn(testPrincipal.getId());
+            mockMvc.perform(put("/api/v1/candidates/profile")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.status").value("200"))
+                    .andExpect(jsonPath("$.data.fullName").value("Jane Doe"))
+                    .andExpect(jsonPath("$.data.phoneNumber").value("0987654321"))
+                    .andExpect(jsonPath("$.data.isPublic").value(false));
+        }
     }
 }
