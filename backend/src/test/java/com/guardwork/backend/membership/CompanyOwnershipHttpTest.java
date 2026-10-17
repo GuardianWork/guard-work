@@ -73,6 +73,16 @@ class CompanyOwnershipHttpTest {
                 .andExpect(jsonPath("$.data.activeMembership.companyName").value("Công ty Giải Pháp Ánh Dương"))
                 .andExpect(jsonPath("$.data.activeMembership.companyRole").value("OWNER"))
                 .andExpect(jsonPath("$.data.activeMembership.joinedAt").isNotEmpty());
+        long actorId = userId(token);
+        assertThat(database.queryForObject("""
+                SELECT count(*) FROM company_membership_audit_events a
+                JOIN company_memberships m ON m.id = a.membership_id
+                JOIN companies c ON c.id = a.company_id
+                WHERE a.actor_user_id = ? AND a.subject_user_id = ?
+                  AND a.event_type = 'COMPANY_CREATED'
+                  AND m.company_id = c.id AND m.user_id = c.owner_user_id
+                  AND m.user_id = ? AND m.role = 'OWNER' AND m.status = 'ACTIVE'
+                """, Long.class, actorId, actorId, actorId)).isEqualTo(1L);
     }
 
     @Test
