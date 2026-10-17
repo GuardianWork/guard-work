@@ -14,11 +14,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /** No @ActiveProfiles: ordinary Maven runs must still select the isolated database profile. */
-@SpringBootTest(properties = {
-        "spring.datasource.url=${BACKEND_TEST_DATABASE_URL:jdbc:postgresql://127.0.0.1:55432/backend_test_db}",
-        "spring.datasource.username=${BACKEND_TEST_DATABASE_USER:backend_test}",
-        "spring.datasource.password=${BACKEND_TEST_DATABASE_PASSWORD:}"
-})
+@SpringBootTest
 class TestProfileHttpTest {
     @Autowired Environment environment;
     @Autowired WebApplicationContext context;

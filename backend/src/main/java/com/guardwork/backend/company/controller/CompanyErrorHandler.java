@@ -1,5 +1,6 @@
 package com.guardwork.backend.company.controller;
 
+import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -10,6 +11,7 @@ import com.guardwork.backend.common.ApiResponse;
 
 /** Scoped AUTH response convention for the protected Company API. */
 @RestControllerAdvice(basePackages = {"com.guardwork.backend.company", "com.guardwork.backend.membership", "com.guardwork.backend.invitation", "com.guardwork.backend.notification"})
+@Order(0)
 public class CompanyErrorHandler {
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiResponse<Void>> status(ResponseStatusException error) {
