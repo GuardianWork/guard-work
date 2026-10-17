@@ -2,6 +2,9 @@ package com.guardwork.backend.auth;
 
 import java.time.Instant;
 import java.util.Optional;
+import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
+import com.guardwork.backend.membership.model.MembershipStatus;
+import com.guardwork.backend.company.repository.CompanyRepository;
 import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
@@ -30,17 +33,21 @@ public class AuthService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final CompanyMembershipRepository memberships;
+    private final CompanyRepository companies;
 
     public AuthService(UserRepository userRepository,
                        RefreshTokenRepository refreshTokenRepository,
                        PasswordResetTokenRepository passwordResetTokenRepository,
                        JwtService jwtService,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder, CompanyMembershipRepository memberships, CompanyRepository companies) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.jwtService = jwtService;
         this.passwordEncoder = passwordEncoder;
+        this.memberships = memberships;
+        this.companies = companies;
     }
 
     public UserDto register(RegisterUserRequest request) {
@@ -167,6 +174,7 @@ public class AuthService {
         }
     }
 
+    @Transactional(readOnly = true)
     public CurrentUserResponse getCurrentUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40401 USER_NOT_FOUND: User not found"));
@@ -177,7 +185,11 @@ public class AuthService {
                 user.getUsername(),
                 user.getEmail(),
                 user.getRole(),
-                null // Active membership to be populated by CompanyMembership feature
+                memberships.findByUserIdAndStatus(userId, MembershipStatus.ACTIVE)
+                        .map(m -> companies.findById(m.getCompanyId())
+                                .map(c -> new CurrentUserResponse.ActiveMembershipDto(
+                                    c.getId(), c.getName(), m.getRole().name(), m.getJoinedAt()))
+                                .orElse(null)).orElse(null)
         );
     }
 

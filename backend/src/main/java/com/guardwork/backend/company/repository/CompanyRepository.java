@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,9 +16,15 @@ import com.guardwork.backend.company.model.VerificationStatus;
 
 public interface CompanyRepository extends JpaRepository<Company, Long>, CompanyRepositoryCustom {
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Company c WHERE c.id = :id")
+    Optional<Company> findByIdForUpdate(@Param("id") Long id);
+
     Optional<Company> findByTaxCode(String taxCode);
 
-    Optional<Company> findByEmail(String email);
+    boolean existsByEmail(String email);
+
+    boolean existsByEmailAndIdNot(String email, Long id);
 
     @Query("SELECT COUNT(c) FROM Company c WHERE c.verificationStatus = :status")
     long countByStatus(@Param("status") VerificationStatus status);
