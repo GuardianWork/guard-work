@@ -28,7 +28,6 @@ import com.guardwork.backend.membership.service.MembershipAuditService;
 public class CompanyService {
 
     private static final Logger log = LoggerFactory.getLogger(CompanyService.class);
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     private final CompanyRepository companyRepository;
 
@@ -46,8 +45,34 @@ public class CompanyService {
         this.validator = validator;
     }
 
-    public Company registerCompany(CompanyRegistrationRequest request) {
+    @Transactional
+    public Company registerCompany(Long actorId, CompanyRegistrationRequest request) {
         log.debug("event=company_registration outcome=started");
+        access.requireActiveUser(actorId);
+        var activeMembership = memberships.findByUserIdAndStatus(actorId, MembershipStatus.ACTIVE);
+        if (activeMembership.isPresent()) {
+            if (activeMembership.get().getRole() == CompanyRole.OWNER
+                    && access.requireOwner(actorId).company().getVerificationStatus() == VerificationStatus.REJECTED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "40902 RESUBMISSION_REQUIRED: Correct and resubmit your existing rejected Company");
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "40910 ACTIVE_COMPANY_MEMBERSHIP_EXISTS: Active Company membership already exists");
+        }
+        Company company = createCompanyRecord(request);
+        company.setOwnerUserId(actorId);
+        companyRepository.saveAndFlush(company);
+        CompanyMembership membership = new CompanyMembership();
+        membership.setCompanyId(company.getId());
+        membership.setUserId(actorId);
+        membership.setRole(CompanyRole.OWNER);
+        membership.setStatus(MembershipStatus.ACTIVE);
+        memberships.saveAndFlush(membership);
+        audit.record(actorId, actorId, company.getId(), "COMPANY_CREATED", membership.getId(), null, null, null);
+        log.debug("event=company_registration outcome=saved_pending_verification");
+        return company;
+    }
+
+    private Company createCompanyRecord(CompanyRegistrationRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
@@ -77,34 +102,9 @@ public class CompanyService {
         Optional<Company> existingByTaxCode = companyRepository.findByTaxCode(taxCode);
         boolean existingByEmail = companyRepository.existsByEmail(email);
 
-        Optional<Company> existingOpt = existingByTaxCode.isPresent() ? existingByTaxCode : existingByEmail;
-        if (existingOpt.isPresent()) {
+        if (existingByTaxCode.isPresent() || existingByEmail) {
             log.debug("event=company_registration outcome=existing_record");
-            Company existing = existingOpt.get();
-            if (existing.getVerificationStatus() == VerificationStatus.REJECTED) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "40902 RESUBMISSION_REQUIRED: Company with tax code '" + existing.getTaxCode() +
-                        "' was previously REJECTED. Please resubmit using your existing company record (PUT /api/companies/" +
-                        existing.getId() + "/resubmit) with expectedVersion " + existing.getVersion() +
-                        " to update your submission and receive newest verification status."
-                );
-            }
-            if (existing.getVerificationStatus() == VerificationStatus.PENDING) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "40903 COMPANY_ALREADY_PENDING: A verification request for tax code '" + existing.getTaxCode() +
-                        "' is already pending review (Company ID: " + existing.getId() + ")."
-                );
-            }
-            if (existing.getVerificationStatus() == VerificationStatus.VERIFIED) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "40904 COMPANY_ALREADY_VERIFIED: Company with tax code '" + existing.getTaxCode() +
-                        "' is already verified."
-                );
-            }
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 DUPLICATE_TAX_CODE: Tax code already registered: " + taxCode);
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 DUPLICATE_TAX_CODE: Company registration details already registered");
         }
 
         Company company = new Company();
@@ -115,13 +115,20 @@ public class CompanyService {
         company.setVerificationStatus(VerificationStatus.PENDING);
         company.setVersion(0L);
 
-        Company saved = companyRepository.save(company);
-        log.debug("event=company_registration outcome=saved_pending_verification");
-        return saved;
+        return companyRepository.save(company);
     }
 
     @Transactional
-    public Company resubmitCompany(Long companyId, CompanyResubmissionRequest request) {
+    public Company resubmitCompany(Long actorId, Long companyId, CompanyResubmissionRequest request) {
+        return correctRejectedCompany(access.requireOwnerOf(actorId, companyId), request);
+    }
+
+    @Transactional
+    public Company resubmitCurrentCompany(Long actorId, CompanyResubmissionRequest request) {
+        return correctRejectedCompany(access.requireOwner(actorId).company(), request);
+    }
+
+    private Company correctRejectedCompany(Company company, CompanyResubmissionRequest request) {
         log.debug("event=company_resubmission outcome=started");
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
@@ -170,7 +177,7 @@ public class CompanyService {
         company.setRejectionReason(null);
         company.setVersion(company.getVersion() + 1);
 
-        Company saved = companyRepository.save(company);
+        Company saved = companyRepository.saveAndFlush(company);
         log.debug("event=company_resubmission outcome=saved_pending_verification");
         return saved;
     }
