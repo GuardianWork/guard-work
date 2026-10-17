@@ -4,6 +4,7 @@ import com.guardwork.backend.common.api.ErrorApiResponse;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
@@ -18,6 +19,7 @@ import java.util.Map;
 @Hidden
 @Slf4j
 @RestControllerAdvice
+@Order(0)
 public class GlobalExceptionalHandler {
 
     @ExceptionHandler(AppException.class)

@@ -85,6 +85,11 @@ Swagger UI is exposed via [springdoc-openapi](https://springdoc.org/):
 Admin API `ResponseStatusException`s use the standard response envelope with the original HTTP
 status and reason.
 
+Company, Admin and known application-error advice use order `0`, ahead of the global
+`InternalServerExceptionHandler` at `LOWEST_PRECEDENCE`. Spring selects the first applicable
+advice with a matching handler; this ordering preserves existing status codes and response
+envelopes before the catch-all maps unexpected exceptions to a generic HTTP 500.
+
 ## Database
 
 - Schema managed via Flyway: `src/main/resources/db/migration` (`V{version}__{description}.sql`).
@@ -96,11 +101,29 @@ status and reason.
 ## Tooling
 
 ```bash
+docker compose -f docker-compose.test.yml up -d --wait  # start test database once
 ./mvnw test            # run tests
 ./mvnw package         # build
+docker compose -f docker-compose.test.yml down          # discard test database
 ```
 
-See [Company Membership backend tests](../docs/backend/company-membership-testing.md) for the isolated PostgreSQL 18 test setup and database safety boundary.
+See [Backend tests](../docs/backend/testing.md) for the shared PostgreSQL 18 test setup,
+environment overrides and database safety boundary.
+
+### Shared PostgreSQL test environment
+
+The `test` profile reads `BACKEND_TEST_DATABASE_URL`, `BACKEND_TEST_DATABASE_USER` and
+`BACKEND_TEST_DATABASE_PASSWORD`; its local defaults target `backend_test_db` on port 55432.
+The test classpath activates this profile automatically. Start the separate disposable database
+with Compose; its loopback-only port, User and test-only password match the test defaults.
+Never point this profile at `backend_db`.
+
+```bash
+docker compose -f docker-compose.test.yml up -d --wait
+./mvnw test
+./mvnw package
+```
+
 ## Company ownership and protected Workspace (GW-002)
 
 Company registration at `POST /api/companies/verification-request` requires an active authenticated
@@ -126,19 +149,7 @@ Protected business transactions use `CompanyAccessService` to lock actor, then C
 membership until commit. Revocation must use the same Company/membership guards and must not acquire
 a target User lock after locking the Company, to avoid reversing the creation/admission lock order.
 
-### Isolated PostgreSQL behavioral tests
-
-The `test` profile reads `BACKEND_TEST_DATABASE_URL`, `BACKEND_TEST_DATABASE_USER` and
-`BACKEND_TEST_DATABASE_PASSWORD`; its local defaults target `backend_test_db` on port 55432.
-Provision a separate PostgreSQL database for tests. Never point this profile at `backend_db`.
-
-```bash
-BACKEND_TEST_DATABASE_URL=jdbc:postgresql://127.0.0.1:55432/backend_test_db \
-BACKEND_TEST_DATABASE_USER=backend_test \
-BACKEND_TEST_DATABASE_PASSWORD= \
-./mvnw -Dspring.profiles.active=test test
-./mvnw -Dspring.profiles.active=test package
-```
+### Company behavioral tests
 
 Company HTTP tests use real registration/login, the Security filter chain and Flyway/PostgreSQL.
 Fixtures simulate moderation/suspension or a failed audit write; all business results are observed

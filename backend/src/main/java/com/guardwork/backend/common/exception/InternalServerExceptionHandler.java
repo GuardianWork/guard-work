@@ -5,12 +5,16 @@ import com.guardwork.backend.common.api.ErrorApiResponse;
 import io.swagger.v3.oas.annotations.Hidden;
 import lombok.extern.slf4j.Slf4j;
 
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
+// Keep the catch-all behind advice that maps known application and feature errors.
+@Order(Ordered.LOWEST_PRECEDENCE)
 @Hidden
 @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
 @Slf4j
