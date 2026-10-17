@@ -539,6 +539,10 @@ throw new AppException(ErrorCode.INVALID_INPUT, "Detailed description of validat
 
 ### 5.4 Error Code Taxonomy Template
 
+For current GuardWork log identifiers, use [Error codes in operational logs](error-codes.md).
+The following table is a generic template; approved feature catalogs retain their
+existing meanings and HTTP mappings. It does not establish a new API contract.
+
 | Numeric Range | Domain Category | HTTP Status | Example Codes |
 |---|---|---|---|
 | `40000` | General Input Validation | 400 BAD REQUEST | `INVALID_INPUT` |

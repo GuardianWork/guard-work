@@ -7,6 +7,8 @@ import com.guardwork.backend.membership.model.MembershipStatus;
 import com.guardwork.backend.company.repository.CompanyRepository;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ import com.guardwork.backend.user.repository.UserRepository;
 @Service
 public class AuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{3,50}$");
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,128}$");
@@ -51,6 +54,7 @@ public class AuthService {
     }
 
     public UserDto register(RegisterUserRequest request) {
+        log.debug("event=auth_registration outcome=started");
         validateRegistration(request);
 
         if (userRepository.findByUsername(request.username()).isPresent()) {
@@ -71,11 +75,13 @@ public class AuthService {
         user.setEmailVerified(true);
 
         User saved = userRepository.save(user);
+        log.debug("event=auth_registration outcome=saved");
         return UserDto.from(saved);
     }
 
     @Transactional
     public TokenPairResponse login(LoginRequest request, String ipAddress, String userAgent) {
+        log.debug("event=auth_login outcome=started");
         if (request == null || blank(request.usernameOrEmail()) || blank(request.password())) {
             throw badRequest("40001 INVALID_INPUT: usernameOrEmail and password are required");
         }
@@ -86,6 +92,7 @@ public class AuthService {
                 : userRepository.findByEmail(identifier.toLowerCase());
 
         if (userOpt.isEmpty() || !passwordEncoder.matches(request.password(), userOpt.get().getPassword())) {
+            log.debug("event=auth_login outcome=invalid_credentials");
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40101 INVALID_CREDENTIALS: invalid credentials");
         }
 
@@ -109,11 +116,13 @@ public class AuthService {
         refreshToken.setUserAgent(userAgent);
         refreshTokenRepository.save(refreshToken);
 
+        log.debug("event=auth_login outcome=token_pair_issued");
         return TokenPairResponse.of(accessToken, rawRefreshToken, jwtService.getAccessExpirationMs() / 1000, UserDto.from(user));
     }
 
     @Transactional
     public TokenPairResponse refreshToken(RefreshTokenRequest request, String ipAddress, String userAgent) {
+        log.debug("event=auth_refresh outcome=started");
         if (request == null || blank(request.refreshToken())) {
             throw badRequest("40001 INVALID_INPUT: refreshToken is required");
         }
@@ -130,6 +139,7 @@ public class AuthService {
 
         // Reuse attack detection: if token is already revoked, revoke its entire family!
         if (token.isRevoked()) {
+            log.debug("event=auth_refresh outcome=reuse_detected");
             refreshTokenRepository.revokeFamily(token.getFamilyId(), Instant.now());
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40104 REVOKED_REFRESH_TOKEN: Token reuse detected. Session family revoked.");
         }
@@ -163,10 +173,12 @@ public class AuthService {
         newToken.setUserAgent(userAgent);
         refreshTokenRepository.save(newToken);
 
+        log.debug("event=auth_refresh outcome=token_pair_rotated");
         return TokenPairResponse.of(newAccessToken, newRawRefreshToken, jwtService.getAccessExpirationMs() / 1000, UserDto.from(user));
     }
 
     public void logout(String rawRefreshToken) {
+        log.debug("event=auth_logout outcome=started");
         if (!blank(rawRefreshToken)) {
             String tokenHash = jwtService.hashToken(rawRefreshToken.trim());
             refreshTokenRepository.findByTokenHash(tokenHash)
@@ -195,6 +207,7 @@ public class AuthService {
 
     @Transactional
     public void changePassword(Long userId, ChangePasswordRequest request) {
+        log.debug("event=auth_password_change outcome=started");
         if (request == null || blank(request.currentPassword()) || blank(request.newPassword())) {
             throw badRequest("40001 INVALID_INPUT: currentPassword and newPassword are required");
         }
@@ -212,9 +225,12 @@ public class AuthService {
         userRepository.updatePassword(userId, passwordEncoder.encode(request.newPassword()));
         // Invalidate all refresh tokens on password change
         refreshTokenRepository.revokeAllForUser(userId, Instant.now());
+        log.debug("event=auth_password_change outcome=password_updated_sessions_revoked");
     }
 
     public void forgotPassword(ForgotPasswordRequest request) {
+        // Keep the same event regardless of whether an account exists.
+        log.debug("event=auth_password_reset_request outcome=received");
         if (request == null || blank(request.email()) || !EMAIL_PATTERN.matcher(request.email()).matches()) {
             return; // Return silently to avoid email enumeration
         }
@@ -236,6 +252,7 @@ public class AuthService {
 
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
+        log.debug("event=auth_password_reset outcome=started");
         if (request == null || blank(request.token()) || blank(request.newPassword())) {
             throw badRequest("40001 INVALID_INPUT: token and newPassword are required");
         }
@@ -254,6 +271,7 @@ public class AuthService {
         passwordResetTokenRepository.markConsumed(resetToken.getId());
         userRepository.updatePassword(resetToken.getUserId(), passwordEncoder.encode(request.newPassword()));
         refreshTokenRepository.revokeAllForUser(resetToken.getUserId(), Instant.now());
+        log.debug("event=auth_password_reset outcome=password_updated_sessions_revoked");
     }
 
     private void validateRegistration(RegisterUserRequest request) {

@@ -44,14 +44,13 @@ class AuthControllerTest {
     @Test
     void register_ValidPayload_Returns201() throws Exception {
         RegisterUserRequest request = new RegisterUserRequest(
-                "Trần", "Bình", "binh_tran", "binh@example.com", "Password123"
-        );
+                "Trần", "Bình", "binh_tran", "binh@example.com", "Password123");
         UserDto userDto = new UserDto(10L, "Trần", "Bình", "binh_tran", "binh@example.com", "USER");
         when(authService.register(any(RegisterUserRequest.class))).thenReturn(userDto);
 
         mockMvc.perform(post("/api/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value(200))
                 .andExpect(jsonPath("$.data.username").value("binh_tran"))
@@ -67,8 +66,8 @@ class AuthControllerTest {
         when(authService.login(any(LoginRequest.class), anyString(), any())).thenReturn(tokenPair);
 
         mockMvc.perform(post("/api/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(200))
                 .andExpect(jsonPath("$.data.accessToken").value("access-token-jwt"))
@@ -84,8 +83,8 @@ class AuthControllerTest {
         when(authService.refreshToken(any(RefreshTokenRequest.class), anyString(), any())).thenReturn(tokenPair);
 
         mockMvc.perform(post("/api/auth/refresh")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(200))
                 .andExpect(jsonPath("$.data.accessToken").value("new-access-token"));
@@ -96,8 +95,8 @@ class AuthControllerTest {
         RefreshTokenRequest request = new RefreshTokenRequest("to-revoke-refresh-token");
 
         mockMvc.perform(post("/api/auth/logout")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value(200))
                 .andExpect(jsonPath("$.message").value("Logged out successfully"));
