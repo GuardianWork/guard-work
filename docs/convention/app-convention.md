@@ -556,7 +556,22 @@ throw new AppException(ErrorCode.INVALID_INPUT, "Detailed description of validat
 Located under `src/main/resources/db/migration/`.
 
 ### 6.1 Migration File Naming Conventions
-- **Format**: `V{Version}__{short_description}.sql`
+
+
+-  **Format**: V{CURRENT_DATE}.{TASK_ID}__{DESCRIPTION}.sql
+   
+   Migration naming pattern is composite and contains of several blocks:
+   
+       {CURRENT_DATE} is the date when the developer added the migration with the pattern YYYY.MM.DD.
+       {TASK_ID} is the unique task id that demands to create new migration. It could be Jira task, Trello, YouTrack and so on.
+       {DESCRIPTION} is the description that clarifies the migration purpose.
+   
+   For example, this is how creating the new users table can look like with the new migration naming rules:
+   
+   V2023.01.12.4343__create_users_table.sql
+   
+   Meaning that one added the migration on 12th January 2023 and the corresponding task has id 4343.
+
 - **Rule**: Use a **double underscore** (`__`) between version and description.
 
 ### 6.2 Immutability Rule
