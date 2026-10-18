@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>GuardWork · Xác minh nhà tuyển dụng</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header><a href="/" class="brand">GuardWork<span>Nhà tuyển dụng</span></a><button id="logout" hidden>Đăng xuất</button></header>
+  <main>
+    <div class="intro"><p class="eyebrow">BẮT ĐẦU TUYỂN DỤNG</p><h1>Xác minh để kết nối<br>với ứng viên.</h1><p>Hoàn thiện thông tin cá nhân và hồ sơ công ty trong một quy trình rõ ràng.</p></div>
+    <p id="message" role="status" aria-live="polite"></p>
+    <section id="confirm" hidden><h2>Xác thực email</h2><p>Xác nhận đăng ký bằng mật khẩu và mã tiếp tục của đúng lần đăng ký này.</p>
+      <form id="confirm-form"><label>Mã tiếp tục đăng ký<input name="continuationToken" autocomplete="off" required></label><label>Mật khẩu đã đăng ký<input name="password" type="password" autocomplete="current-password" required></label><button>Xác nhận email</button></form>
+    </section>
+    <div id="anonymous" class="columns">
+      <section><h2>Tạo tài khoản tuyển dụng</h2><form id="registration-form">
+        <label>Họ và tên<input name="fullName" autocomplete="name" maxlength="200" required></label>
+        <div class="row"><label>Số điện thoại<input name="phone" type="tel" autocomplete="tel" placeholder="0912345678" required></label>
+        <label>Giới tính<select name="gender" required><option value="">Chọn giới tính</option><option value="MALE">Nam</option><option value="FEMALE">Nữ</option><option value="OTHER">Khác</option><option value="UNDISCLOSED">Không muốn tiết lộ</option></select></label></div>
+        <label>Tên công ty<input name="companyName" autocomplete="organization" maxlength="255" required></label>
+        <label>Địa chỉ làm việc<input name="workAddress" autocomplete="street-address" maxlength="1000" required></label>
+        <label>Email<input name="email" type="email" autocomplete="email" maxlength="255" required></label>
+        <div class="row"><label>Mật khẩu<input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required></label><label>Nhập lại mật khẩu<input name="passwordConfirmation" type="password" autocomplete="new-password" required></label></div>
+        <p class="hint">Mật khẩu gồm ít nhất 8 ký tự, có chữ hoa, chữ thường và chữ số.</p><button>Đăng ký và xác thực email</button>
+      </form><div id="registration-result" hidden><p id="registration-instructions"></p><button id="resend-email" type="button" class="secondary">Gửi lại email xác thực</button></div></section>
+      <section class="login"><p class="eyebrow">ĐÃ CÓ TÀI KHOẢN</p><h2>Đăng nhập</h2><p>Xác thực email trước khi đăng nhập tài khoản mới.</p><form id="login-form"><label>Email hoặc tên đăng nhập<input name="usernameOrEmail" autocomplete="username" required></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" required></label><button>Đăng nhập</button></form></section>
+    </div>
+    <section id="settings" hidden><p class="eyebrow">CÀI ĐẶT TÀI KHOẢN</p><h2 id="greeting"></h2><ol class="steps"><li id="step-email">1. Email</li><li id="step-phone">2. Điện thoại</li><li id="step-company">3. Công ty</li></ol><p id="stage"></p>
+      <div id="member-email" hidden><button id="member-email-send">Gửi email xác thực</button><button id="member-email-confirm" hidden>Xác nhận email từ liên kết</button></div>
+      <div id="phone-section" hidden><h3>Xác thực số điện thoại</h3><form id="phone-form"><label>Số di động Việt Nam<input name="phone" type="tel" required></label><button>Gửi mã OTP</button></form><form id="otp-form"><label>Mã OTP<input name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required></label><button>Xác thực SĐT</button></form><p class="hint">Mã có hiệu lực 5 phút, tối đa 5 lần nhập sai. Chờ 60 giây trước khi gửi lại.</p></div>
+      <div id="legal-section" hidden><h3>Hồ sơ pháp lý công ty</h3><form id="legal-form">
+        <label>Tên công ty<input name="companyName" maxlength="255" required></label><label>Địa chỉ làm việc<input name="workAddress" maxlength="1000" required></label><label>Mã số thuế<input name="taxCode" maxlength="50" required></label><label>Chức vụ người nộp<input name="submitterPosition" maxlength="200" required></label>
+        <label>Người nộp<select name="representation" required><option value="LEGAL_REPRESENTATIVE">Người đại diện theo pháp luật</option><option value="AUTHORIZED_REPRESENTATIVE">Người được ủy quyền</option></select></label>
+        <label>Giấy phép kinh doanh<input name="file" type="file" accept="application/pdf,image/jpeg,image/png" required></label><p class="hint">PDF, JPEG hoặc PNG; tối đa 10 MiB. Hồ sơ được lưu để phục vụ xác minh và đối soát.</p>
+        <label class="checkbox"><input name="declarationAccepted" type="checkbox" required><span>Tôi cam kết thông tin và giấy tờ cung cấp là chính xác. Tôi là người đại diện theo pháp luật hoặc người được ủy quyền hợp lệ để thực hiện thủ tục này cho công ty. Tôi hiểu rằng hồ sơ và nội dung cam kết sẽ được lưu trong hệ thống để phục vụ việc xác minh và đối soát.</span></label><button>Gửi hồ sơ xác minh</button>
+      </form></div>
+      <div id="history"></div><p id="support" hidden>Mã số thuế này đã tồn tại. Bạn không thể tạo yêu cầu xác thực mới. Vui lòng liên hệ bộ phận hỗ trợ. Thông tin liên hệ sẽ được cập nhật.</p>
+    </section>
+    <section id="admin" hidden><p class="eyebrow">QUẢN TRỊ NỀN TẢNG</p><h2>Kiểm tra hồ sơ công ty</h2><div class="row"><select id="queue-filter" aria-label="Lọc hồ sơ"><option value="PENDING">Đang chờ</option><option value="VERIFIED">Đã xác minh</option><option value="REJECTED">Đã từ chối</option><option value="ALL">Tất cả</option></select><button id="load-queue">Tải danh sách</button></div><div id="queue"></div></section>
+  </main><footer>GuardWork · Kết nối việc làm có trách nhiệm</footer>
+</body>
+</html>
