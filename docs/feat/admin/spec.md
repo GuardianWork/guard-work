@@ -2,1517 +2,261 @@
 
 | Field | Value |
 |---|---|
-| **Project** | GuardianWork |
-| **Module** | Admin Management & System Governance |
-| **File** | `admin_software_requirements.md` |
-| **Version** | 1.0.0 |
-| **Date** | 2026-09-21 |
-| **Status** | Draft |
+| Specification ID | GW-SR-ADM |
+| Project | GuardWork |
+| File | `docs/feat/admin/spec.md` |
+| Version | 1.1.0 — UC 9–20 alignment |
+| Status | Draft |
+| Owner | GuardWork thesis team |
+| Human approver | Not recorded; formal approval remains pending |
+| Last updated | 2026-10-18 |
+| Product source | User-revised UC 9–20 in [usecase.md](usecase.md) |
 
----
+## 1. Purpose and scope
 
-## Table of Contents
+This revision translates the user’s twelve revised Admin use cases into testable functional requirements. It replaces the previous broad Admin draft as the description of this selected scope. It does not change runtime behavior, existing API compatibility, committed migrations, or approved requirements in other documents.
 
-1. [Introduction](#1-introduction)
-2. [Overall Description](#2-overall-description)
-3. [Data Models](#3-data-models)
-4. [Functional Requirements](#4-functional-requirements)
-5. [Flow Diagrams](#5-flow-diagrams)
-6. [Business Rules](#6-business-rules)
-7. [Error Catalogue](#7-error-catalogue)
-8. [API Specification](#8-api-specification)
-9. [Infrastructure Architecture](#9-infrastructure-architecture)
-10. [Non-Functional Requirements](#10-non-functional-requirements)
+The actor is the System Administrator with Platform role `ADMIN`. The role is distinct from Company Workspace Owner/Admin membership. Login is a prerequisite, not a use case in this revision. Viewing a job remains navigation context for hiding it and inspecting history; standalone job viewing and job closure are not included as separate features.
 
----
-
-## 1. Introduction
-
-### 1.1 Purpose
-
-This document defines the software requirements for the **Admin Management & System Governance** module of GuardianWork. It translates the business workflows, technical considerations, and security constraints outlined in the system administrator role specification ([`docs/usecase/admin_role.md`](../usecase/admin_role.md)) and company verification guide ([`docs/company_verification.md`](../company_verification.md)) into engineering specifications. This document serves as the single source of truth for software engineers, QA teams, DevOps, and project stakeholders regarding system administrator capabilities, operational boundaries, database schemas, and API definitions.
-
-### 1.2 Scope
-
-| Sub-feature | Responsibility | Priority (MVP Plan) |
-|---|---|---|
-| **Audit Logging & Governance (Security)** | Capture append-only audit trail records for all state-mutating administrative actions for zero-trust compliance. | **P0 — Critical (Foundation)**<br>Architectural prerequisite for all state-mutating admin actions (`audit_logs`). |
-| **Company Verification (UC-ADM-01)** | Review submitted Business Registration Certificates and business profiles; approve or reject verification requests with feedback; trigger notification pipelines. | **P0 — Must Have (Phase 1)**<br>Core value proposition; validates and activates legitimate recruiters on the platform. |
-| **Account Ban & Suspension (UC-ADM-03)** | Suspend or reactivate user and company accounts; invalidate active session tokens immediately across distributed services via Redis blacklists. | **P0 — Must Have (Phase 1)**<br>Essential security kill-switch; prerequisite for sanctioning accounts in UC-ADM-02. |
-| **Job Posting Moderation (UC-ADM-04)** | Takedown or suspend fraudulent/violating job postings; purge associated cached documents from Redis and Elasticsearch search indices. | **P1 — Should Have (Phase 2)**<br>Direct content safety control; required for job takedown sanction in UC-ADM-02. |
-| **Violation Report Resolution (UC-ADM-02)** | Moderate community violation reports filed by candidates or recruiters; resolve tickets; apply sanctions (warnings, bans); enforce optimistic concurrency to avoid race conditions. | **P1 — Should Have (Phase 2)**<br>Community moderation workflow; orchestrates sanctions via UC-ADM-03 and UC-ADM-04. |
-| **System Health & Traffic Monitoring (UC-ADM-05)** | Expose real-time infrastructure metrics (CPU, RAM, DB connection pool) and application traffic (CCU, request rates) routed through read replicas and pre-aggregated metric buffers. | **P2 — Could Have (Post-MVP)**<br>Can initially rely on native Spring Boot Actuator and external APM / Prometheus / Grafana dashboards. |
-| **Background Cron Job Management (UC-ADM-06)** | Inspect scheduled jobs, trigger ad-hoc manual runs, adjust execution frequencies, and track runtime execution logs. | **P3 — Won't Have (Post-MVP)**<br>Automated via Spring `@Scheduled` / cron jobs initially; custom UI management is non-blocking for launch. |
-
-#### 1.2.1 MVP Implementation Phasing & Roadmap
-
-To guide sprint planning toward a Minimum Viable Product (MVP), the admin use cases are sequenced by architectural dependency and business criticality:
-
-```mermaid
-flowchart TD
-    subgraph Phase0 ["Phase 0: Security & Audit Foundation"]
-        AUD["Audit Logging & Governance\n(Append-Only audit_logs Table)"]
-    end
-
-    subgraph Phase1 ["Phase 1: Core Trust & Safety (MVP Must-Have)"]
-        ADM01["UC-ADM-01: Company Verification\n(KYB Document Verification & Approval)"]
-        ADM03["UC-ADM-03: Account Ban & Suspension\n(Token Revocation via Redis Blacklist)"]
-    end
-
-    subgraph Phase2 ["Phase 2: Community Moderation (MVP Hardening)"]
-        ADM04["UC-ADM-04: Job Posting Moderation\n(Takedown & ES/Redis Cache Purge)"]
-        ADM02["UC-ADM-02: Violation Report Resolution\n(Ticket Queue, Optimistic Lock, Sanctions)"]
-    end
-
-    subgraph Phase3 ["Phase 3: Operational Tooling (Post-MVP)"]
-        ADM05["UC-ADM-05: System Health Monitoring\n(Read Replica Routing & Buffer Metrics)"]
-        ADM06["UC-ADM-06: Cron Job Management\n(Ad-hoc Triggers & Dynamic UI)"]
-    end
-
-    Phase0 --> Phase1
-    Phase1 --> Phase2
-    Phase2 --> Phase3
-
-    ADM03 -.->|Invoked as Ban Sanction| ADM02
-    ADM04 -.->|Invoked as Takedown Sanction| ADM02
-```
-
-1. **Phase 0 — Foundation (`P0`):** Implement `Audit Logging & Governance` to provide the append-only `audit_logs` persistence mechanism required by all subsequent mutating admin operations.
-2. **Phase 1 — Core Trust & Enforcement (`P0` — Essential for MVP Launch):**
-   - **UC-ADM-01 (Company Verification):** Critical onboarding gatekeeper ensuring only legitimate employers post vacancies.
-   - **UC-ADM-03 (Account Ban & Suspension):** Primary administrative defense to immediately neutralize rogue accounts and revoke active tokens.
-3. **Phase 2 — Community Moderation & Sanctions (`P1` — Essential for Active Platform Operation):**
-   - **UC-ADM-04 (Job Posting Moderation):** Allows targeted suspension of fraudulent postings without banning the entire employer account.
-   - **UC-ADM-02 (Violation Report Resolution):** Formal reporting workflow that orchestrates the enforcement actions built in UC-ADM-03 and UC-ADM-04.
-4. **Phase 3 — Operational Tooling & Observability (`P2` / `P3` — Post-MVP):**
-   - **UC-ADM-05 & UC-ADM-06:** Day-1 operations can leverage standard Spring Boot Actuator endpoints, Prometheus/Grafana, and hardcoded `@Scheduled` tasks, deferring custom administrative UI tools to future iterations.
-
-
-### 1.3 Technology Stack
-
-| Layer | Technology |
-|---|---|
-| Runtime | Java 25 |
-| Framework | Spring Boot 4.1.1 (`spring-boot-starter-webmvc`) |
-| Persistence & Migrations | PostgreSQL 16+ with Flyway (`flyway-database-postgresql`) |
-| Data Access | Spring Data JDBC / Spring Data JPA & Hibernate |
-| In-Memory Cache & Session Store | Redis via `StringRedisTemplate` / Redisson |
-| Search & Indexing | Elasticsearch / OpenSearch |
-| Metrics & Observability | Spring Boot Actuator, Micrometer, Prometheus, Grafana |
-| Scheduling | Spring Task Scheduling (`@Scheduled`) / Quartz Scheduler |
-| Message Broker | Apache Kafka (notification events, cache eviction events) |
-| Security & Auth | Spring Security, JWT (Bearer tokens), Role-Based Access Control (RBAC) |
-
----
-
-## 2. Overall Description
-
-### 2.1 High-Level Flow
-
-```
-+-----------------------------------------------------------------------------------+
-|                            Admin Web Management Console                           |
-+-----------------------------------------------------------------------------------+
-                                         │
-                                         ▼
-                     [HTTPS / TLS 1.3 Bearer JWT Authorization]
-                                         │
-                                         ▼
-+───────────────────────────────────────────────────────────────────────────────────+
-|                  API Gateway & Global RBAC Security Filter                        |
-|   (Validates JWT signature, expiration, and role == "ADMIN"; prevents IDOR)     |
-+───────────────────────────────────────────────────────────────────────────────────+
-                                         │
-                                         ▼
-+───────────────────────────────────────────────────────────────────────────────────+
-|                               Admin Controllers                                   |
-+───────────────────────────────────────────────────────────────────────────────────+
-                                         │
-                                         ▼
-+───────────────────────────────────────────────────────────────────────────────────+
-|                         Admin Business Service Layer                              |
-|   - Concurrency Check (Optimistic Locking)                                        |
-|   - Transaction Orchestration                                                     |
-|   - Asynchronous Notification Dispatch                                            |
-|   - Append-Only Audit Logging Filter                                              |
-+────────────────────────┬─────────────────────────┬────────────────────────────────+
-                         │                         │
-            ┌────────────┴──────────┐              ▼
-            ▼                       ▼       +───────────────────────────────────────+
-+──────────────────────+ +────────────────+ |               Redis                   |
-| Primary Database     | | Read Replica   | | - Active Session Revocation Blacklist |
-| (PostgreSQL Writes)  | | (Metrics/Logs) | | - Ephemeral Ticket Review Locks       |
-| - Audit Logs         | | - Analytics    | | - Job Detail Caches                   |
-| - Entity Updates     | | - Long Reads   | +───────────────────────────────────────+
-+──────────────────────+ +────────────────+                  │
-            │                                                ▼
-            ▼                               +───────────────────────────────────────+
-+──────────────────────+                    |             Apache Kafka              |
-|   Elasticsearch      |                    | - notifications.email                 |
-| (Index Eviction Sync)|                    | - audit.events                        |
-+──────────────────────+                    +───────────────────────────────────────+
-```
-
-### 2.2 Entity Lifecycles & State Machines
-
-#### Company Verification Lifecycle (UC-ADM-01)
-
-```
-[REGISTERED]
-     │
-     └── submitDocuments() ──► [PENDING]
-                                  │
-                                  ├── approveVerification() ──► [VERIFIED] (Badge Granted)
-                                  │
-                                  └── rejectVerification()  ──► [REJECTED] (Requires Resubmission)
-```
-
-#### Violation Report Ticket Lifecycle (UC-ADM-02)
-
-```
-[OPEN] (Created by Candidate / Recruiter)
-  │
-  ├── assignReviewer() / lockTicket() ──► [IN_REVIEW]
-                                              │
-                                              ├── dismissReport() ──► [REJECTED] (No violation found)
-                                              │
-                                              └── sanction()      ──► [RESOLVED] (Action: WARNING / BAN / TAKEDOWN)
-```
-
-#### Account Status Lifecycle (UC-ADM-03)
-
-```
-[ACTIVE]
-   │
-   └── banAccount() ──► [BANNED] (Sessions revoked in Redis, login blocked)
-                           │
-                           └── unbanAccount() ──► [ACTIVE]
-```
-
-#### Job Posting Moderation Lifecycle (UC-ADM-04)
-
-```
-[DRAFT] ──► [PUBLISHED]
-                 │
-                 ├── takedownJob() ──► [SUSPENDED] (Purged from Search Index & Cache)
-                 │                        │
-                 │                        └── restoreJob() ──► [PUBLISHED]
-                 │
-                 └── closeJob()    ──► [CLOSED]
-```
-
-### 2.3 Response Envelope
-
-All API responses follow the standard GuardianWork JSON envelope:
-
-```json
-{
-  "status": 200,
-  "message": "Human-readable response message",
-  "data": { ... }
-}
-```
-
-For paginated listing responses, `data` uses the standard `PageResponse` model:
-
-```json
-{
-  "data": {
-    "content": [ ... ],
-    "pageNumber": 0,
-    "pageSize": 20,
-    "totalElements": 150,
-    "totalPages": 8,
-    "first": true,
-    "last": false
-  }
-}
-```
-
-### 2.4 Public vs Protected Endpoints
-
-* **No Public Endpoints:** Every route under `/api/admin/**` is strictly protected.
-* **Authentication:** Requires HTTP header `Authorization: Bearer <jwt>`.
-* **Authorization / RBAC:** The JWT claims must contain `role: "ADMIN"`. Requests from any other role (`CANDIDATE`, `RECRUITER`, `GUEST`) must be rejected with HTTP `403 FORBIDDEN`.
-* **Privacy Boundary:** Admin roles are blocked at the application/ORM layer from accessing plain text sensitive data (e.g., password hashes, confidential direct applicant messages unless explicitly linked to an active violation ticket evidence payload).
-
----
-
-## 3. Data Models
-
-### 3.1 AuditLog (PostgreSQL — `audit_logs` table)
-
-The `audit_logs` table is strictly an **append-only** table. PostgreSQL table grants must explicitly deny `UPDATE`, `DELETE`, and `TRUNCATE` privileges to all operational database user accounts (`guardian_app_user`, `guardian_batch_user`, `guardian_read_user`, and `PUBLIC`). Operational accounts are granted exclusively `INSERT` and `SELECT` privileges. Schema ownership is assigned to an isolated non-runtime administrative role (`guardian_schema_owner`). A PostgreSQL statement trigger (`trg_protect_audit_logs`) enforces this immutability rule at the database engine level, rejecting any modification attempts with an exception.
-
-| Column | Type | Constraints | Notes |
+| Use case | Capability | Requirement family | Existing planning priority |
 |---|---|---|---|
-| `id` | BIGSERIAL | PK | Auto-incrementing identifier |
-| `admin_id` | BIGINT | NOT NULL, FK → `users.id` | ID of the authenticated administrator |
-| `action` | VARCHAR(100) | NOT NULL | Action constant (e.g. `COMPANY_VERIFY`, `ACCOUNT_BAN`, `COMPANY_BAN`) |
-| `target_type` | VARCHAR(50) | NOT NULL | Target entity type (`COMPANY`, `USER`, `JOB`, `REPORT`, `CRON_JOB`) |
-| `target_id` | VARCHAR(100) | NOT NULL | Identifier of the target entity |
-| `old_payload` | JSONB | nullable | Snapshot of entity state prior to mutation |
-| `new_payload` | JSONB | nullable | Snapshot of entity state after mutation |
-| `reason` | TEXT | nullable | Admin-provided justification note |
-| `ip_address` | VARCHAR(45) | NOT NULL | Client IPv4 / IPv6 address |
-| `user_agent` | VARCHAR(255) | nullable | Client User-Agent header |
-| `created_at` | TIMESTAMPTZ | NOT NULL, immutable | `DEFAULT now()` |
-
----
-
-### 3.2 Company (PostgreSQL — `companies` table)
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | BIGSERIAL | PK | Company identifier |
-| `name` | VARCHAR(255) | NOT NULL | Legal or brand name |
-| `tax_code` | VARCHAR(50) | NOT NULL, UNIQUE | Official government tax identifier |
-| `registration_certificate_url` | TEXT | NOT NULL | Document storage URL (S3 / Cloud Storage) |
-| `verification_status` | VARCHAR(30) | NOT NULL, DEFAULT `'PENDING'` | Canonical verification status: `PENDING`, `VERIFIED`, `REJECTED` (single source of truth) |
-| `rejection_reason` | TEXT | nullable | Populated if status is `REJECTED` |
-| `verified_by` | BIGINT | nullable, FK → `users.id` | Admin user ID who reviewed |
-| `verified_at` | TIMESTAMPTZ | nullable | Timestamp of verification |
-| `is_banned` | BOOLEAN | NOT NULL, DEFAULT false | Flag indicating account ban status; detailed ban records in `account_bans` |
-| `version` | BIGINT | NOT NULL, DEFAULT 0 | Optimistic concurrency control counter |
-| `created_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
-
----
-
-### 3.3 ViolationReport (PostgreSQL — `violation_reports` table)
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | BIGSERIAL | PK | Report identifier |
-| `reporter_id` | BIGINT | NOT NULL, FK → `users.id` | Filing user |
-| `target_type` | VARCHAR(30) | NOT NULL | `COMPANY`, `CANDIDATE`, `JOB` |
-| `target_id` | VARCHAR(100) | NOT NULL | Target entity ID |
-| `reason_category` | VARCHAR(50) | NOT NULL | E.g., `FRAUD`, `SPAM`, `HARASSMENT`, `FALSE_JOB` |
-| `description` | TEXT | NOT NULL | Detailed narrative from reporter |
-| `evidence_urls` | JSONB | nullable | Array of uploaded proof URLs |
-| `status` | VARCHAR(30) | NOT NULL, DEFAULT `'OPEN'` | `OPEN`, `IN_REVIEW`, `RESOLVED`, `REJECTED` |
-| `assigned_admin_id` | BIGINT | nullable, FK → `users.id` | Admin who locked/is reviewing ticket |
-| `resolution_action` | VARCHAR(50) | nullable | `WARNING`, `BAN_ACCOUNT`, `TAKEDOWN_JOB`, `NO_ACTION` |
-| `resolution_notes` | TEXT | nullable | Internal admin review notes |
-| `version` | BIGINT | NOT NULL, DEFAULT 0 | Optimistic locking version for concurrency |
-| `resolved_at` | TIMESTAMPTZ | nullable | Resolution timestamp |
-| `created_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
-
----
-
-### 3.4 AccountBan (PostgreSQL — `account_bans` table)
-
-Persists immutable penalty history and active enforcement state for both individual user accounts (`target_type = 'USER'`) and company entities (`target_type = 'COMPANY'`).
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | BIGSERIAL | PK | Ban record ID |
-| `target_type` | VARCHAR(30) | NOT NULL | `USER` or `COMPANY` |
-| `target_id` | BIGINT | NOT NULL | Target entity identifier (`users.id` or `companies.id`) |
-| `banned_by` | BIGINT | NOT NULL, FK → `users.id` | Admin who executed the ban |
-| `reason` | TEXT | NOT NULL | Violation reason |
-| `is_active` | BOOLEAN | NOT NULL, DEFAULT true | `true` = currently enforced |
-| `banned_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
-| `expires_at` | TIMESTAMPTZ | nullable | `null` = permanent ban; timestamp = temporary |
-| `unbanned_at` | TIMESTAMPTZ | nullable | Populated upon unban action |
-| `unbanned_by` | BIGINT | nullable, FK → `users.id` | Admin who unbanned |
-| `unban_reason` | TEXT | nullable | Justification for restoration |
-| `version` | BIGINT | NOT NULL, DEFAULT 0 | Optimistic locking counter |
-
-> **Operational Scope of Company Bans:**
-> 1. Sets `companies.is_banned = true`.
-> 2. Automatically cascades all published jobs of the company to `SUSPENDED` and evicts them from Redis and Elasticsearch via Kafka `jobs.eviction`.
-> 3. Revokes all active JWT sessions for linked recruiter accounts via Redis (`auth:token_invalid_before:{userId} = now()`).
-> 4. Delists company profile from candidate search results.
-
----
-
-### 3.5 JobModeration (PostgreSQL — `jobs` table moderation extension)
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | BIGSERIAL | PK | Job posting ID |
-| `company_id` | BIGINT | NOT NULL, FK → `companies.id` | Hiring company |
-| `title` | VARCHAR(255) | NOT NULL | Job title |
-| `status` | VARCHAR(30) | NOT NULL, DEFAULT `'DRAFT'` | `DRAFT`, `PUBLISHED`, `SUSPENDED`, `CLOSED` |
-| `takedown_reason` | TEXT | nullable | Stored when suspended by admin |
-| `suspended_by` | BIGINT | nullable, FK → `users.id` | Admin ID who initiated takedown |
-| `suspended_at` | TIMESTAMPTZ | nullable | Timestamp of suspension |
-| `version` | BIGINT | NOT NULL, DEFAULT 0 | Optimistic locking counter |
-| `created_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
-
----
-
-### 3.6 CronJobConfig & CronJobExecution (PostgreSQL)
-
-#### `cron_job_configs` Table
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | BIGSERIAL | PK | Job config ID |
-| `job_key` | VARCHAR(100) | NOT NULL, UNIQUE | Canonical identifier (e.g. `EXPIRED_POST_SWEEPER`) |
-| `display_name` | VARCHAR(255) | NOT NULL | Human-readable title |
-| `cron_expression` | VARCHAR(50) | NOT NULL | Quartz / Spring cron expression |
-| `status` | VARCHAR(20) | NOT NULL, DEFAULT `'ACTIVE'` | `ACTIVE`, `PAUSED` |
-| `description` | TEXT | nullable | Purpose of background worker |
-| `last_run_at` | TIMESTAMPTZ | nullable | Timestamp of latest run |
-| `last_status` | VARCHAR(30) | nullable | `SUCCESS`, `FAILED`, `RUNNING` |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | `DEFAULT now()` |
-
-#### `cron_job_executions` Table
-
-| Column | Type | Constraints | Notes |
-|---|---|---|---|
-| `id` | BIGSERIAL | PK | Execution run ID |
-| `job_key` | VARCHAR(100) | NOT NULL | Reference to `cron_job_configs.job_key` |
-| `triggered_by` | VARCHAR(50) | NOT NULL | `SCHEDULED` or `MANUAL:adminId` |
-| `start_time` | TIMESTAMPTZ | NOT NULL | Start timestamp |
-| `end_time` | TIMESTAMPTZ | nullable | Completion timestamp |
-| `execution_status` | VARCHAR(30) | NOT NULL | `RUNNING`, `SUCCESS`, `FAILED` |
-| `log_output` | TEXT | nullable | Captured stack trace or execution summary |
-
----
-
-### 3.7 Ephemeral Storage (Redis Key Formats)
-
-| Key Pattern | Data Type | TTL | Purpose |
-|---|---|---|---|
-| `auth:token_invalid_before:{userId}` | String (Unix Epoch Millis) | Dynamic: Indefinite (no TTL) for permanent bans; `max(86400, expiresAt - now())` for temporary bans; refreshed to `now()` with 24h TTL upon unban | Holds the epoch timestamp before which all JWTs issued are rejected (`jwt.iat < token_invalid_before`). Persists for full ban duration; refreshing on unban prevents pre-ban JWTs from regaining validity. |
-| `auth:banned_accounts:{targetType}:{targetId}` | String (`"BANNED"`) | Dynamic: Indefinite for permanent bans; `expiresAt - now()` for temporary bans | Fast O(1) ban status lookup for `USER` and `COMPANY` entities at API gateway. |
-| `admin:review_lock:report:{reportId}` | String (`adminId`) | 900 s (15 min) | Transient soft lock preventing two admins from reviewing the same ticket simultaneously |
-| `cache:job:{jobId}` | String (JSON) | 3,600 s | Cached job payload; purged on takedown |
-| `metrics:system:snapshot` | String (JSON) | 60 s | Cached pre-aggregated health metrics |
-
----
-
-### 3.8 Database Indexes
-
-| Index | Table | Column(s) | Purpose |
-|---|---|---|---|
-| `idx_audit_logs_admin_id` | `audit_logs` | `admin_id` | Filter audit logs by administrator |
-| `idx_audit_logs_target` | `audit_logs` | `target_type`, `target_id` | Query audit trail by entity |
-| `idx_audit_logs_created_at` | `audit_logs` | `created_at DESC` | Reverse-chronological audit timeline |
-| `idx_companies_verification_status` | `companies` | `verification_status` | Filter pending verifications |
-| `idx_violation_reports_status` | `violation_reports` | `status` | Fetch unresolved tickets |
-| `idx_violation_reports_target` | `violation_reports` | `target_type`, `target_id` | Correlate repeated violations |
-| `idx_account_bans_target_active` | `account_bans` | `target_type`, `target_id`, `is_active` | Rapid active ban verification for users and companies |
-| `idx_jobs_status` | `jobs` | `status` | Filter published vs suspended jobs |
-| `idx_cron_executions_job_time` | `cron_job_executions` | `job_key`, `start_time DESC` | Query job history logs |
-
----
-
-## 4. Functional Requirements
-
-### 4.1 Company Profile Verification (UC-ADM-01)
-
-| ID | Requirement |
-|---|---|
-| **ADM-VER-01** | The system **shall** allow an Admin to view a paginated list of company accounts filtered by verification status (`PENDING`, `VERIFIED`, `REJECTED`). |
-| **ADM-VER-02** | The system **shall** provide full read access for the Admin to the uploaded Business Registration Certificate URL, tax code, and submitted corporate profile details. |
-| **ADM-VER-03** | When approving a company, the system **shall** update `verification_status` to `VERIFIED`, and record `verified_by` and `verified_at`. |
-| **ADM-VER-04** | When rejecting a company, the system **shall** require a non-empty `rejectionReason`, set `verification_status` to `REJECTED`, and retain the reason in the database. |
-| **ADM-VER-05** | Upon status transition (`VERIFIED` or `REJECTED`), the system **shall** publish a notification event to Kafka to dispatch an email to the company's registered address. |
-| **ADM-VER-06** | The system **shall** record an immutable entry in `audit_logs` capturing the decision, old status, new status, and admin ID. |
-| **ADM-VER-07** | The system **shall** verify that the client-supplied `expectedVersion` matches the current `companies.version`; if a mismatch occurs, the transaction **must** abort and return HTTP `409 Conflict` (`40022 CONCURRENT_MODIFICATION`). On success, `version` is incremented. |
-
----
-
-### 4.2 Violation Report Resolution (UC-ADM-02)
-
-| ID | Requirement |
-|---|---|
-| **ADM-REP-01** | The system **shall** provide a filterable queue of violation reports filtered by status (`OPEN`, `IN_REVIEW`, `RESOLVED`, `REJECTED`) and target type (`COMPANY`, `CANDIDATE`, `JOB`). |
-| **ADM-REP-02** | When an Admin begins reviewing a ticket, the system **shall** acquire an ephemeral Redis review lock (`admin:review_lock:report:{reportId}`) for 15 minutes to warn other admins. |
-| **ADM-REP-03** | The system **shall** verify the entity `version` column upon resolution submission; if `version` has been changed by another admin, the transaction **must** fail with HTTP `409 Conflict`. |
-| **ADM-REP-04** | When resolving a report, the system **shall** allow the Admin to select a resolution action: `WARNING`, `BAN_ACCOUNT`, `TAKEDOWN_JOB`, or `NO_ACTION` alongside mandatory `resolutionNotes`. |
-| **ADM-REP-05** | If `BAN_ACCOUNT` is selected, the system **shall** atomically invoke the account ban procedure (UC-ADM-03). |
-| **ADM-REP-06** | If `TAKEDOWN_JOB` is selected, the system **shall** atomically invoke the job takedown procedure (UC-ADM-04). |
-| **ADM-REP-07** | The system **shall** update report status to `RESOLVED` (or `REJECTED` if dismissed) and release the Redis review lock. |
-
----
-
-### 4.3 Account Ban & Unban Management (UC-ADM-03)
-
-| ID | Requirement |
-|---|---|
-| **ADM-BAN-01** | The system **shall** permit an Admin to ban any user (`USER`) or company (`COMPANY`) account by providing `targetType`, `targetId`, `reason`, and an optional `expiresAt` timestamp (null denotes permanent ban). |
-| **ADM-BAN-02** | When an account is banned, the system **shall** set `users.status = 'BANNED'` (or `companies.is_banned = true`) and persist a row in `account_bans`. For company bans, the system **shall** automatically cascade all published jobs to `SUSPENDED`, evict them from Redis and Elasticsearch via Kafka `jobs.eviction`, and revoke tokens for all recruiters linked to the company. |
-| **ADM-BAN-03** | The ban operation **shall atomically guarantee token revocation**; writing the ban record to PostgreSQL and setting `auth:token_invalid_before:{userId} = banTimestamp` in Redis must execute synchronously within the ban transaction boundary. If writing to Redis fails, the database transaction **must roll back** and return HTTP `500` (`50001 CACHE_REVOCATION_FAILED`). |
-| **ADM-BAN-04** | The revocation record in Redis **shall persist for the full ban duration**: indefinite TTL for permanent bans (`expiresAt == null`), or `max(24h, remaining_ban_duration)` for temporary bans. Additionally, if the Redis key is absent or Redis is unreachable, the authentication filter **shall fall back** to the persistent database status (`users.status == 'BANNED'`, `companies.is_banned = true`), preventing fail-open authentication bypasses. |
-| **ADM-BAN-05** | The system **shall** allow an Admin to unban a previously banned user or company account by supplying an `unbanReason`. |
-| **ADM-BAN-06** | Upon unban, the system **shall** update `account_bans.is_active = false`, set `users.status = 'ACTIVE'` (or `companies.is_banned = false`), and **update `auth:token_invalid_before:{userId}` in Redis and DB to the unban timestamp** with a 24-hour TTL. All tokens issued prior to or during the ban (`iat < unban_timestamp`) **shall remain strictly invalid**, requiring the user to re-authenticate and obtain a new JWT. |
-| **ADM-BAN-07** | Every ban and unban operation **shall** be written to `audit_logs` with before-and-after snapshots. |
-
----
-
-### 4.4 Job Posting Moderation & Takedown (UC-ADM-04)
-
-| ID | Requirement |
-|---|---|
-| **ADM-JOB-01** | The system **shall** allow an Admin to force-suspend (`TAKEDOWN`) any job posting currently in `PUBLISHED` status by providing a mandatory `takedownReason`. |
-| **ADM-JOB-02** | Upon takedown, the system **shall** set `jobs.status = 'SUSPENDED'`, record `suspended_by` and `suspended_at`, and increment `version`. |
-| **ADM-JOB-03** | The system **shall** immediately evict the job from Redis cache key `cache:job:{jobId}`. |
-| **ADM-JOB-04** | The system **shall** publish an event `JobEvictionEvent` to Kafka topic `jobs.eviction` to trigger an immediate removal from Elasticsearch search indices. |
-| **ADM-JOB-05** | Candidates attempting to view a suspended job **shall** receive HTTP `404 NOT_FOUND` or `40061 JOB_SUSPENDED`. |
-| **ADM-JOB-06** | The system **shall** record the action, old state, new state, and reason in `audit_logs`. |
-
----
-
-### 4.5 System Health & Traffic Monitoring (UC-ADM-05)
-
-| ID | Requirement |
-|---|---|
-| **ADM-MON-01** | The system **shall** expose an administrative endpoint to retrieve live infrastructure telemetry: CPU utilization, JVM heap memory usage, active threads, and HikariCP connection pool status (active, idle, max connections). |
-| **ADM-MON-02** | The system **shall** expose application-level traffic metrics: Concurrent Active Users (CCU in last 5 minutes via active tokens), request rate (RPM), error rate (5xx errors / min). |
-| **ADM-MON-03** | All read queries for aggregated monitoring telemetry **must** be routed strictly to PostgreSQL **Read Replicas** or pre-aggregated Redis cache buffers to prevent resource contention on the primary transactional database. |
-| **ADM-MON-04** | Telemetry metrics **shall not** execute full-table scans against transactional tables during real-time dashboard polls. |
-
----
-
-### 4.6 Background Cron Job Management (UC-ADM-06)
-
-| ID | Requirement |
-|---|---|
-| **ADM-CRON-01** | The system **shall** provide an API to list all registered background workers, showing `jobKey`, `displayName`, `cronExpression`, `status` (`ACTIVE`/`PAUSED`), `lastRunAt`, and `lastStatus`. |
-| **ADM-CRON-02** | The system **shall** permit an Admin to manually trigger an immediate out-of-schedule execution of a designated cron job. |
-| **ADM-CRON-03** | When triggered manually, the worker **shall** execute asynchronously, logging the triggering admin's ID (`MANUAL:adminId`) in `cron_job_executions`. |
-| **ADM-CRON-04** | The system **shall** permit an Admin to adjust the cron expression frequency or toggle the status between `ACTIVE` and `PAUSED`. |
-| **ADM-CRON-05** | The system **shall** provide an API endpoint to retrieve the execution history and error logs for any specified cron job. |
-
----
-
-### 4.7 Audit Trail & Governance (Architectural Risk Mitigation)
-
-| ID | Requirement |
-|---|---|
-| **ADM-AUD-01** | Every state-mutating request (`POST`, `PUT`, `DELETE`, `PATCH`) handled by any Admin service **must** record an entry in `audit_logs`. |
-| **ADM-AUD-02** | Audit log entries **shall** be persisted within the same database transaction as the entity mutation, or via a reliable transactional outbox. |
-| **ADM-AUD-03** | The system and database engine **shall** strictly prevent all operational database accounts (`guardian_app_user`, `guardian_batch_user`, `guardian_read_user`, and `PUBLIC`) from executing `UPDATE`, `DELETE`, or `TRUNCATE` operations on `audit_logs` via explicit SQL privilege revocations and PostgreSQL statement triggers (`trg_protect_audit_logs`). |
-| **ADM-AUD-04** | The system **shall** expose a read-only endpoint for Admins to search and filter audit logs by `adminId`, `action`, `targetType`, and date range. |
-| **ADM-AUD-05** | Admin APIs **must not** return unmasked raw passwords or private direct applicant messages unless associated with verified ticket evidence. |
-
----
-
-## 5. Flow Diagrams
-
-### 5.1 Company Verification Flow with Optimistic Concurrency (UC-ADM-01)
-
-```
-Admin Web App                  AdminController             AdminCompanyService         Database (PostgreSQL)          Kafka
-      │                               │                             │                            │                      │
-      │── PUT /api/admin/companies/──►│                             │                            │                      │
-      │   {id}/verify                 │                             │                            │                      │
-      │   { status, reason,           │── verifyCompany(id, dto) ──►│                            │                      │
-      │     expectedVersion }         │                             │── findById(id) ───────────►│                      │
-      │                               │                             │◄── Company (PENDING, v=1) ─│                      │
-      │                               │                             │                            │                      │
-      │                               │                             │── [expectedVersion != 1]?  │                      │
-      │                               │                             │   └── throw Conflict 409──►│                      │
-      │                               │                             │                            │                      │
-      │                               │                             │── BEGIN TRANSACTION ──────►│                      │
-      │                               │                             │── UPDATE companies SET     │                      │
-      │                               │                             │   verification_status = S, │                      │
-      │                               │                             │   version = version + 1    │                      │
-      │                               │                             │   WHERE id = :id           │                      │
-      │                               │                             │   AND version = :expVer ──►│ [rows updated = 1]   │
-      │                               │                             │── insert(auditLog) ───────►│                      │
-      │                               │                             │── COMMIT ─────────────────►│                      │
-      │                               │                             │                            │                      │
-      │                               │                             │── publishNotification() ─────────────────────────►│
-      │                               │                             │                            │ (notifications.email)│
-      │                               │◄── CompanyResponse ─────────│                            │                      │
-      │◄── 200 OK { CompanyResponse }─│                             │                            │                      │
-      │                               │                             │                            │                      │
-      │── [If concurrent version mismatch: rows updated == 0] ─────►│                            │                      │
-      │◄── 409 CONFLICT (CONCURRENT_MODIFICATION) ──────────────────│                            │                      │
-```
-
----
-
-### 5.2 Violation Report Resolution Flow with Optimistic Concurrency (UC-ADM-02)
-
-```
-Admin A (Alice)          Admin B (Bob)            AdminReportService              PostgreSQL (version=1)         Redis
-      │                        │                          │                                  │                     │
-      │── GET /reports/{id} ───┼─────────────────────────►│── setReviewLock(reportId) ───────┼────────────────────►│
-      │◄── Report (version=1) ─┼──────────────────────────│◄── return report (v=1) ──────────│                     │
-      │                        │                          │                                  │                     │
-      │                        │── GET /reports/{id} ────►│── checkReviewLock(reportId) ─────┼────────────────────►│
-      │                        │                          │   (Returns warning: in review)   │                     │
-      │                        │◄── Report (version=1) ───│                                  │                     │
-      │                        │                          │                                  │                     │
-      │── PUT /resolve ────────┼─────────────────────────►│                                  │                     │
-      │   { action: "BAN",     │                          │── UPDATE reports SET             │                     │
-      │     expectedVersion:1 }│                          │   status='RESOLVED',             │                     │
-      │                        │                          │   version=2 WHERE id=X           │                     │
-      │                        │                          │   AND version=1                  │                     │
-      │                        │                          │── save() ───────────────────────►│ [rows updated = 1]  │
-      │                        │                          │── releaseReviewLock() ───────────┼────────────────────►│
-      │◄── 200 OK (Resolved) ──┼──────────────────────────│                                  │                     │
-      │                        │                          │                                  │                     │
-      │                        │── PUT /resolve ─────────►│                                  │                     │
-      │                        │   { action: "REJECT",    │── UPDATE reports SET             │                     │
-      │                        │     expectedVersion:1 }  │   status='REJECTED',             │                     │
-      │                        │                          │   version=2 WHERE id=X           │                     │
-      │                        │                          │   AND version=1                  │                     │
-      │                        │                          │── save() ───────────────────────►│ [rows updated = 0]  │
-      │                        │                          │   -> throws OptimisticLockEx     │                     │
-      │                        │◄── 409 Conflict ─────────│                                  │                     │
-```
-
----
-
-### 5.3 Account Ban, Atomic Token Invalidation, & Safe Unban Flow (UC-ADM-03)
-
-```
-Admin Web App              AdminAccountService               PostgreSQL               Redis (Token Invalidation Epoch)
-      │                             │                            │                              │
-  [BAN OPERATION]                   │                            │                              │
-      │── POST /accounts/{id}/ban ─►│                            │                              │
-      │   { reason, expiresAt }     │── checkUserExists(id) ────►│                              │
-      │                             │◄── User (ACTIVE) ──────────│                              │
-      │                             │                            │                              │
-      │                             │── BEGIN TRANSACTION        │                              │
-      │                             │── update user status ─────►│                              │
-      │                             │── insert account_bans ────►│                              │
-      │                             │── insert audit_logs ──────►│                              │
-      │                             │                            │                              │
-      │                             │── SET token_invalid_before = banTimestamp ───────────────►│
-      │                             │   (TTL: Indefinite if permanent, else max(24h, banDur))   │
-      │                             │   [On Redis write failure -> ROLLBACK DB & throw 50001]   │
-      │                             │── COMMIT ─────────────────►│                              │
-      │◄── 200 OK (Account Banned) ─│                                                           │
-      │                             │                                                           │
-Candidate Client App         AuthFilter / Gateway                                               │
-      │                             │                                                           │
-      │── GET /api/jobs (JWT) ─────►│                                                           │
-      │                             │── GET auth:token_invalid_before:{userId} ────────────────►│
-      │                             │   [Fallback to DB users.status if Redis key absent]       │
-      │                             │── [jwt.iat < token_invalid_before]?                       │
-      │◄── 401 UNAUTHENTICATED ─────│   (ACCOUNT_BANNED: Token issued before ban)              │
-      │                             │                                                           │
-  [SAFE UNBAN OPERATION]            │                                                           │
-      │── POST /accounts/{id}/unban►│                                                           │
-      │   { unbanReason }           │── BEGIN TRANSACTION        │                              │
-      │                             │── update user ACTIVE ─────►│                              │
-      │                             │── update account_bans off ─►│                             │
-      │                             │── insert audit_logs ──────►│                              │
-      │                             │── SET token_invalid_before = unbanTimestamp (TTL: 24h) ──►│
-      │                             │── COMMIT ─────────────────►│                              │
-      │◄── 200 OK (Unbanned) ───────│                                                           │
-      │                             │                                                           │
-      │── GET /api/jobs (Pre-ban JWT)───────────────────────────►│                              │
-      │                             │   (Check: jwt.iat < unbanTimestamp -> REJECTED 401)       │
-      │◄── 401 UNAUTHENTICATED ─────│   (Pre-ban tokens remain revoked; fresh login required)   │
-```
-
----
-
-### 5.4 Job Takedown & Multi-Store Eviction Flow (UC-ADM-04)
-
-```
-Admin Web App              AdminJobService                   PostgreSQL           Redis Cache      Kafka / Elasticsearch
-      │                           │                              │                     │                     │
-      │── PUT /jobs/{id}/takedown►│                              │                     │                     │
-      │   { reason: "Fraud" }     │── findById(id) ─────────────►│                     │                     │
-      │                           │◄── Job (PUBLISHED) ──────────│                     │                     │
-      │                           │                              │                     │                     │
-      │                           │── UPDATE jobs SET            │                     │                     │
-      │                           │   status = 'SUSPENDED' ─────►│                     │                     │
-      │                           │── insert audit_logs ────────►│                     │                     │
-      │                           │                              │                     │                     │
-      │                           │── DEL cache:job:{id} ─────────────────────────────►│                     │
-      │                           │                              │                     │                     │
-      │                           │── publishEvent("jobs.eviction", JobEvictionEvent) ──────────────────────►│
-      │                           │                              │                     │                     │── [Sync Eviction]
-      │                           │                              │                     │                     │   Removes from ES
-      │◄── 200 OK (Suspended) ────│                              │                     │                     │
-```
-
----
-
-## 6. Business Rules
-
-### Role & Access Governance
+| UC-09 | Monitor system health and traffic | ADM-MON | P2 / Post-MVP |
+| UC-10 | Manage background tasks | ADM-CRON | P3 / Post-MVP |
+| UC-11 | View report list | ADM-REP | P1 |
+| UC-12 | View report details | ADM-REP | P1 |
+| UC-13 | Hide Job Posting | ADM-JOB | P1 |
+| UC-14 | View posting history | ADM-JOB | P1 |
+| UC-15 | View Company verification dossier | ADM-VER | P0 |
+| UC-16 | Approve Company verification dossier | ADM-VER | P0 |
+| UC-17 | Reject Company verification dossier | ADM-VER | P0 |
+| UC-18 | View account information | ADM-ACC | P0 |
+| UC-19 | Ban account | ADM-BAN | P0 |
+| UC-20 | Unban account | ADM-BAN | P0 |
+
+Audit recording remains a prerequisite for state-changing actions. Priorities are retained planning context, not new delivery commitments or implementation claims.
+
+### 1.1 Source precedence and compatibility
+
+The user’s revised flows define this document’s selected product scope. Approved Company verification, authentication, onboarding, and membership contracts continue to constrain implementation. Concise use-case wording does not remove existing safeguards such as reviewer attribution, optimistic concurrency, atomic auditing, and field-level privacy.
+
+Stable requirement identifiers are retained where the behavior remains applicable. IDs of former report-resolution requirements are retired from this selected scope rather than reused for unrelated reads. New read/history requirements use new identifiers. No new endpoint, schema, infrastructure, dependency, role hierarchy, error envelope, or notification architecture is authorized by this draft.
+
+## 2. Common rules and state meanings
 
 | ID | Rule |
 |---|---|
-| **BR-ADM-01** | All endpoints prefixed with `/api/admin/` require the caller's JWT token to contain the explicit claim `role: "ADMIN"`. Requests with any other role or missing token are rejected with `403 FORBIDDEN` or `401 UNAUTHENTICATED`. |
-| **BR-ADM-02** | Administrators **must not** have read access to raw password hashes or unencrypted candidate-recruiter messaging channels, unless such communication was uploaded as an immutable piece of evidence in an active `violation_reports` record. |
-| **BR-ADM-03** | Self-action restriction: An administrator cannot ban their own account or modify their own role permissions. |
+| ADM-SEC-01 | Every operation shall require an authenticated Platform Admin and enforce authority on the server, including requests made without the UI. |
+| ADM-SEC-02 | Read operations shall return only information within the authorized target scope. Passwords, password hashes, tokens, and unrelated private communications shall not be exposed. |
+| ADM-SEC-03 | A read shall not change business status, apply a sanction, or imply a decision. |
+| ADM-SEC-04 | Every mutation shall recheck current target state and record the responsible Admin. A failed mandatory step shall not be reported as a successful operation. |
 
-### Company Verification Rules
-
-| ID | Rule |
+| Subject | States / meaning |
 |---|---|
-| **BR-ADM-04** | A company profile can only be approved (`VERIFIED`) or rejected (`REJECTED`) if its current status is `PENDING`. |
-| **BR-ADM-04b** | Concurrency verification: Any status mutation on `companies` requires verifying that database `version` matches `expectedVersion`. On mismatch, the API aborts and returns HTTP `409 CONFLICT` (`40022 CONCURRENT_MODIFICATION`). |
-| **BR-ADM-05** | If an admin rejects a verification request, a non-blank `rejectionReason` (at least 10 characters) is mandatory. |
-| **BR-ADM-06** | Once marked as `VERIFIED`, a company account receives verified search ranking privileges and access to direct outreach features. |
+| Company verification | `PENDING` → `VERIFIED` or `REJECTED`; later Owner correction/resubmission is governed by the existing Company workflow. |
+| Verification presentation | `PENDING` derives processing `PENDING` and no review outcome. `VERIFIED/REJECTED` derive processing `CHECKED` and the corresponding outcome. `CHECKED` does not confer approval. |
+| Job hiding | Public `PUBLISHED` → `SUSPENDED`; retain content and history. |
+| User enforcement | `ACTIVE` → `BANNED` → applicable active state after unban. |
+| Company enforcement | Non-banned/banned is represented by the existing Company flag `is_banned`, independently of verification. |
+| Reports | Display the stored status, including existing `OPEN`, `IN_REVIEW`, `RESOLVED`, and `REJECTED` values; no transitions are introduced by viewing. |
 
-### Violation Report & Moderation Rules
+The source UC 13 used `PUBLISHING` in its precondition and `PUBLISHED` in alternative 4a. `PUBLISHED` is used consistently here to match the existing Admin terminology. This correction does not introduce a new lifecycle state. Company active/banned wording similarly denotes enforcement eligibility rather than a new Company status column.
 
-| ID | Rule |
+## 3. Functional requirements
+
+### 3.1 UC-09 — Monitor System Health and Traffic
+
+Precondition: the Admin is viewing the monitoring dashboard. Postcondition: visual metrics are available without disrupting the primary database.
+
+| ID | Requirement |
 |---|---|
-| **BR-ADM-07** | A report ticket in `RESOLVED` or `REJECTED` state is terminal and cannot be reopened via standard review endpoints. |
-| **BR-ADM-08** | Concurrency resolution: Any status transition on `violation_reports` requires verifying that the database `version` matches `expectedVersion`. On mismatch, the API aborts and returns `409 CONFLICT`. |
-| **BR-ADM-09** | When taking punitive action (`BAN_ACCOUNT`), the action must be executed atomically alongside the report resolution in a single transactional unit. |
+| ADM-MON-01 | The system shall collect and display available hardware, memory, database-connection, and user-traffic health metrics from dedicated monitoring buffers. |
+| ADM-MON-02 | The dashboard shall display online-user counts, requests per minute, and error metrics with charts and sampling context. Existing draft measurement definitions are CCU over the last five minutes, request rate per minute, and 5xx failures per minute; an error percentage must identify its denominator. These definitions are not claims of implemented collection. |
+| ADM-MON-03 | Aggregated telemetry reads shall use dedicated monitoring sources/buffers without disrupting the primary transactional database. This does not select a specific cache or replica architecture. |
+| ADM-MON-04 | Dashboard polling shall not perform full-table scans of transactional business tables. |
+| ADM-MON-05 | The Admin shall be able to observe live changes or select time ranges to inspect resource trends. |
+| ADM-MON-06 | When a metric exceeds a configured safety threshold, the dashboard shall immediately change its warning color. Thresholds, refresh intervals, and history retention remain to be specified. |
+| ADM-MON-07 | Unavailable metrics shall be distinguished from zero activity or healthy operation. |
 
-### Account Suspension Rules
+### 3.2 UC-10 — Manage Background Tasks
 
-| ID | Rule |
+Precondition: the Admin is viewing task management. Postcondition: a manual execution request is accepted or a configuration change succeeds.
+
+| ID | Requirement |
 |---|---|
-| **BR-ADM-10** | **Atomic Token Invalidation & Full Duration Persistence:** When an account is banned, the ban persistence and Redis token invalidation (`auth:token_invalid_before:{userId} = now()`) must execute atomically within the transaction boundary. If the Redis write fails, the database transaction rolls back. The revocation persists for the full ban duration: indefinite TTL for permanent bans; `max(24h, remaining_ban_duration)` for temporary bans. |
-| **BR-ADM-11** | **Operational Scope of Company Bans:** Banning a company sets `companies.is_banned = true`, cascades all published jobs to `SUSPENDED` (purged from Redis and Elasticsearch via `jobs.eviction`), revokes active sessions for all linked recruiter user accounts (`auth:token_invalid_before:{userId}`), and delists the company profile from public search results. |
-| **BR-ADM-12** | **Safe Unbanning & Pre-Ban Token Defense:** Unbanning an account requires an active ban record. Upon unban, `account_bans.is_active` is set to false, and `auth:token_invalid_before:{userId}` is updated to the unban timestamp with a 24-hour TTL. Pre-ban tokens (`iat < unban_timestamp`) remain strictly invalid; the unbanned user must log in again to acquire a new JWT. |
+| ADM-CRON-01 | The system shall display registered background tasks, operational states, and latest execution results. |
+| ADM-CRON-02 | The Admin shall be able to request an immediate run of a selected task. |
+| ADM-CRON-03 | The system shall queue manual work for asynchronous execution, record the triggering Admin in execution history, and acknowledge initiation. Queued, running, and completed states shall not be conflated. |
+| ADM-CRON-04 | The Admin shall be able to change a schedule or pause a task. The system shall validate schedule syntax where applicable, save valid orchestration changes, and record an audit entry. |
+| ADM-CRON-05 | The system shall display a selected task’s execution times, success/failure states, and available error logs. |
+| ADM-CRON-06 | Invalid configuration or an unavailable execution mechanism shall be reported without claiming successful scheduling or execution. |
 
-### Job Moderation Rules
+The revised UC includes pausing; resuming is not added as a separate acceptance requirement. Existing background delivery workers do not by themselves implement this management interface.
 
-| ID | Rule |
+### 3.3 UC-11–12 — View Reports
+
+Preconditions: the common conditions hold; details require an existing accessible report. Postcondition: list/details are displayed without changing report state or applying sanctions.
+
+| ID | Requirement |
 |---|---|
-| **BR-ADM-13** | Only jobs in `PUBLISHED` status can be taken down (`SUSPENDED`). Already closed or archived jobs cannot be suspended. |
-| **BR-ADM-14** | Takedown must atomically trigger cache invalidation in Redis (`cache:job:{id}`) and asynchronous document deletion in Elasticsearch via Kafka topic `jobs.eviction` (`JobEvictionEvent`). |
+| ADM-REP-01 | The system shall display report summaries and permit filtering by stored report status and target type (`COMPANY`, `CANDIDATE`, `JOB`). Summaries shall include target information, complaint content, submission time, and current status. |
+| ADM-REP-08 | Selecting a report shall display complaint content, permitted reporter information, reported target, evidence, current status, and an existing processing outcome when present. |
+| ADM-REP-09 | No reports or no matching reports shall produce an explicit empty/no-results view. Retrieval failure shall be reported separately and permit retry. |
+| ADM-REP-10 | Missing or inaccessible reports shall not be displayed. Unavailable evidence shall be identified while the remaining retrievable details remain visible. |
+| ADM-REP-11 | Viewing the list or details shall not begin processing, acquire a processing lock, resolve/reject a report, or automatically apply sanctions. |
 
-### Audit & System Governance Rules
+Former `ADM-REP-02–07` described review locks, resolution concurrency, sanction selection, and terminal-state updates. They are outside the user’s selected read-only scope and are not acceptance requirements for UC-11–12. Existing outcomes remain readable. This revision does not authorize removal of another approved product workflow.
 
-| ID | Rule |
+### 3.4 UC-13–14 — Hide Job Posting and View History
+
+Preconditions: hiding requires a public `PUBLISHED` posting; history requires an authorized posting context. Postconditions: successful hiding produces `SUSPENDED` and removes public visibility; history inspection changes nothing.
+
+| ID | Requirement |
 |---|---|
-| **BR-ADM-15** | Every state-altering HTTP request (`POST`, `PUT`, `PATCH`, `DELETE`) executed by an Admin must generate an immutable audit log record. |
-| **BR-ADM-16** | The `audit_logs` table is strictly append-only. All operational database accounts (`guardian_app_user`, `guardian_batch_user`, `guardian_read_user`, and `PUBLIC`) are denied `UPDATE`, `DELETE`, and `TRUNCATE` grants. PostgreSQL statement trigger `trg_protect_audit_logs` enforces immutability at the engine level. |
-| **BR-ADM-17** | System monitoring and telemetry queries must read from read replicas or Redis pre-aggregated buffers to prevent disruption of transactional OLTP traffic. |
+| ADM-JOB-01 | The Admin shall be able to hide a public `PUBLISHED` posting by supplying a mandatory reason. |
+| ADM-JOB-02 | After rechecking authority and current state, the system shall set `SUSPENDED` and retain the actor, time, and reason. Existing version safeguards shall remain applicable; this draft does not remove them. |
+| ADM-JOB-03 | A hidden posting shall be removed from related public-content caches. |
+| ADM-JOB-04 | A hidden posting shall no longer appear in public display or search results. Search/cache mechanisms require an approved integration contract. |
+| ADM-JOB-05 | A Candidate following the hidden posting’s link shall receive a suspended/unavailable indication. Missing reason or a non-public current state shall prevent hiding. |
+| ADM-JOB-06 | Hiding shall record an attributable audit entry and preserve posting content/history for authorized tracing. |
+| ADM-JOB-07 | The Admin shall be able to view recorded posting-history events, including time, actor, action, status, and reason where available, and return to the posting. |
+| ADM-JOB-08 | History inspection shall not edit events or content. Empty history and retrieval failure shall be displayed distinctly. |
 
----
+This scope does not add job closure, physical deletion, a new publication state, or access to unrelated applicant data and Company communications.
 
-## 7. Error Catalogue
+### 3.5 UC-15–17 — Company Verification
 
-### Administrative Authentication & Authorization Errors
+Preconditions: dossier viewing requires an existing dossier; decisions require `PENDING`. Postconditions: viewing leaves status unchanged; a successful decision records `VERIFIED` or `REJECTED` with attributable history and the applicable notification intent.
 
-| Error Code | HTTP | Constant | Trigger |
-|---|---|---|---|
-| `40100` | 401 | `UNAUTHENTICATED` | Missing or invalid Bearer JWT token |
-| `40101` | 401 | `ACCOUNT_BANNED` | Caller account has been banned / token issued prior to ban or unban timestamp |
-| `40300` | 403 | `FORBIDDEN` | Caller lacks `ADMIN` role claim in JWT |
-| `40301` | 403 | `SELF_MODIFICATION_PROHIBITED` | Admin attempted to ban or modify their own administrative account |
-
-### Entity Verification & Moderation Errors
-
-| Error Code | HTTP | Constant | Trigger |
-|---|---|---|---|
-| `40000` | 400 | `INVALID_INPUT` | Request validation failure (missing reason, invalid syntax) |
-| `40010` | 400 | `COMPANY_NOT_PENDING` | Attempted to verify/reject a company whose status is not `PENDING` |
-| `40011` | 404 | `COMPANY_NOT_FOUND` | Company ID does not exist |
-| `40020` | 400 | `REPORT_ALREADY_RESOLVED` | Attempted to mutate a report already in `RESOLVED` or `REJECTED` status |
-| `40021` | 404 | `REPORT_NOT_FOUND` | Violation report ID does not exist |
-| `40022` | 409 | `CONCURRENT_MODIFICATION` | Entity version mismatch (Optimistic Locking failure on company or report ticket) |
-| `40030` | 400 | `ACCOUNT_ALREADY_BANNED` | Attempting to ban an already banned user or company |
-| `40031` | 400 | `ACCOUNT_NOT_BANNED` | Attempting to unban an active user or company |
-| `40032` | 404 | `ENTITY_NOT_FOUND` | Target user account or company does not exist |
-| `40040` | 400 | `JOB_NOT_PUBLISHED` | Cannot takedown a job that is not currently `PUBLISHED` |
-| `40041` | 404 | `JOB_NOT_FOUND` | Job posting ID does not exist |
-| `40050` | 404 | `CRON_JOB_NOT_FOUND` | Cron job key not registered in system |
-| `40051` | 400 | `INVALID_CRON_EXPRESSION` | Submitted cron string fails Quartz / Spring cron parser |
-| `50000` | 500 | `INTERNAL_SERVER_ERROR` | Unexpected backend or database failure |
-| `50001` | 500 | `CACHE_REVOCATION_FAILED` | Ban transaction aborted and rolled back due to Redis session revocation failure |
-
----
-
-## 8. API Specification
-
-### Conventions
-
-- **Base URL:** `http://localhost:8080`
-- **Auth:** `Authorization: Bearer <jwt>` (Required for all endpoints)
-- **Required Role:** `ADMIN`
-- **Content-Type:** `application/json`
-- **ID Type:** Numeric `Long` / `Bigserial` (e.g. `1024`)
-
----
-
-### 8.1 Company Profile Verification Endpoints
-
-#### `GET /api/admin/companies/verifications` — List Verification Queue
-
-Retrieves a paginated list of companies filtered by status.
-
-**Query Parameters**
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `status` | String | No | `PENDING` | Filter by `PENDING`, `VERIFIED`, `REJECTED`, or `ALL` |
-| `page` | Integer | No | `0` | Zero-based page index |
-| `size` | Integer | No | `20` | Items per page (max `50`) |
-| `sort` | String | No | `createdAt,asc` | Sort criteria |
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Company verification list retrieved successfully",
-  "data": {
-    "content": [
-      {
-        "id": 105,
-        "name": "Acme Cyber Security Corp",
-        "taxCode": "0312345678",
-        "registrationCertificateUrl": "https://storage.guardianwork.com/certs/acme-cert.pdf",
-        "verificationStatus": "PENDING",
-        "createdAt": "2026-09-20T10:15:30Z",
-        "version": 0
-      }
-    ],
-    "pageNumber": 0,
-    "pageSize": 20,
-    "totalElements": 1,
-    "totalPages": 1,
-    "first": true,
-    "last": true
-  }
-}
-```
-
----
-
-#### `PUT /api/admin/companies/{id}/verify` — Verify or Reject Company
-
-Issues an approval badge or rejects the company's business registration document.
-
-**Path Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `id` | Long | Unique identifier of the company |
-
-**Request Body**
-
-```json
-{
-  "status": "VERIFIED",
-  "rejectionReason": null,
-  "expectedVersion": 0
-}
-```
-
-**Validation**
-
-| Field | Rule |
+| ID | Requirement |
 |---|---|
-| `status` | Must be `VERIFIED` or `REJECTED` |
-| `rejectionReason` | Mandatory if status is `REJECTED` (min 10 chars, max 1000 chars); must be null if `VERIFIED` |
-| `expectedVersion` | Mandatory numeric version identifier matching current company `version` |
+| ADM-VER-01 | The system shall provide a paginated verification queue defaulting to `PENDING`, ordered by creation time ascending, with filters `PENDING`, `VERIFIED`, `REJECTED`, and `ALL`. |
+| ADM-VER-02 | The system shall display Company name, tax code, stored contact details, verification state, and existing decision/reason. For enhanced onboarding it shall also display retained submissions, address, submitter position, representation, declaration, and legal documents. Admins may download accessible evidence. Legacy dossiers shall display only actually retained data. |
+| ADM-VER-03 | The Admin shall be able to approve a `PENDING` dossier. The system shall set `VERIFIED`, retain reviewer/time, increment the version, and preserve the approved decision contract. |
+| ADM-VER-04 | Rejection shall require a reason of 10–1000 characters after trimming. The system shall set `REJECTED`, retain reason, reviewer/time, increment the version, and update a retained submission outcome where present. |
+| ADM-VER-05 | A decision notification shall be addressed to the user who submitted the verification request. For enhanced retained submissions the existing implementation shall record a delivery intent in the decision transaction and dispatch email asynchronously after commit. Failed delivery shall not undo a committed decision. Legacy URL-only dossiers without retained attempts remain a known notification gap, not a fulfilled delivery guarantee. |
+| ADM-VER-06 | The decision shall record an immutable audit entry, including actor, request context, and before/after data, in the same transaction. A failed transaction shall not leave a successful decision. |
+| ADM-VER-07 | Decisions shall require the current `expectedVersion`. A stale version or competing update shall be rejected without overwriting another decision. Non-pending dossiers shall receive an invalid-state response rather than a new decision. |
+| ADM-VER-08 | Empty queues shall be displayed explicitly; missing/inaccessible evidence shall not be downloaded; already-reviewed dossiers shall show their outcome without decision controls. |
+| ADM-VER-09 | After a successful decision the interface shall reload the list. On error the system shall report the cause; automatic conflict reload is not claimed by these use cases or the current interface. |
 
-**Response `200 OK`**
+Approval does not introduce a separate badge service, search-ranking boost, automatic external-registry check, or expanded communication permission. Those older reference-document claims are not established by UC-15–17. Existing Company eligibility rules continue to apply.
 
-```json
-{
-  "status": 200,
-  "message": "Company profile verification decision recorded",
-  "data": {
-    "id": 105,
-    "name": "Acme Cyber Security Corp",
-    "verificationStatus": "VERIFIED",
-    "verifiedBy": 1,
-    "verifiedAt": "2026-09-21T09:30:00Z",
-    "rejectionReason": null,
-    "version": 1
-  }
-}
-```
+### 3.6 UC-18 — View Account Information
 
-**Error Responses**
+Precondition: the target exists, subject to the common authorization conditions. Postcondition: information is displayed without changing status or access rights.
 
-| Condition | Error Code | HTTP |
-|---|---|---|
-| Company not found | `40011` | 404 |
-| Status is not PENDING | `40010` | 400 |
-| Rejection without reason | `40000` | 400 |
-| Version conflict (Optimistic lock) | `40022` | 409 |
-
----
-
-### 8.2 Violation Report Resolution Endpoints
-
-#### `GET /api/admin/reports` — List Violation Reports
-
-Retrieves a paginated list of submitted violation tickets.
-
-**Query Parameters**
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `status` | String | No | `OPEN` | `OPEN`, `IN_REVIEW`, `RESOLVED`, `REJECTED` |
-| `targetType` | String | No | null | `COMPANY`, `CANDIDATE`, `JOB` |
-| `page` | Integer | No | `0` | Page index |
-| `size` | Integer | No | `20` | Page size |
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Violation reports retrieved successfully",
-  "data": {
-    "content": [
-      {
-        "id": 501,
-        "reporterId": 42,
-        "targetType": "COMPANY",
-        "targetId": "105",
-        "reasonCategory": "FRAUD",
-        "description": "Recruiter asked for recruitment upfront deposit fee.",
-        "evidenceUrls": ["https://storage.guardianwork.com/evidence/chat-screenshot.png"],
-        "status": "OPEN",
-        "assignedAdminId": null,
-        "version": 0,
-        "createdAt": "2026-09-21T08:00:00Z"
-      }
-    ],
-    "pageNumber": 0,
-    "pageSize": 20,
-    "totalElements": 1,
-    "totalPages": 1,
-    "first": true,
-    "last": true
-  }
-}
-```
-
----
-
-#### `PUT /api/admin/reports/{id}/resolve` — Resolve Violation Report
-
-Finalizes enforcement action on a report with optimistic concurrency protection.
-
-**Path Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `id` | Long | Violation Report ticket ID |
-
-**Request Body**
-
-```json
-{
-  "action": "BAN_ACCOUNT",
-  "resolutionNotes": "Verified fraudulent upfront deposit request via uploaded bank details evidence.",
-  "expectedVersion": 0
-}
-```
-
-**Validation**
-
-| Field | Rule |
+| ID | Requirement |
 |---|---|
-| `action` | Mandatory; `WARNING`, `BAN_ACCOUNT`, `TAKEDOWN_JOB`, `NO_ACTION` |
-| `resolutionNotes` | Mandatory (min 10 chars, max 2000 chars) |
-| `expectedVersion` | Mandatory numeric version identifier |
+| ADM-ACC-01 | The Admin shall be able to search for and select a user account or Company, and inspect permitted identifying data, current state, and ban information. |
+| ADM-ACC-02 | The interface shall offer Ban or Unban when the corresponding conditions are met. |
+| ADM-ACC-03 | Missing/inaccessible targets shall not be displayed. Retrieval errors shall be reported and permit retry. |
+| ADM-ACC-04 | Credentials, password hashes, tokens, and unrelated private communications shall not be displayed. |
 
-**Response `200 OK`**
+Exact search fields, private-field visibility, and pagination require a scoped contract before implementation.
 
-```json
-{
-  "status": 200,
-  "message": "Violation report resolved successfully",
-  "data": {
-    "id": 501,
-    "status": "RESOLVED",
-    "resolutionAction": "BAN_ACCOUNT",
-    "resolutionNotes": "Verified fraudulent upfront deposit request via uploaded bank details evidence.",
-    "resolvedBy": 1,
-    "resolvedAt": "2026-09-21T10:15:00Z",
-    "version": 1
-  }
-}
-```
+### 3.7 UC-19–20 — Ban and Unban
 
-**Error Responses**
+Preconditions: banning requires an existing active target; unbanning requires a currently banned target. Postconditions: the enforcement state changes with required session invalidation and an audit record.
 
-| Condition | Error Code | HTTP |
-|---|---|---|
-| Report not found | `40021` | 404 |
-| Already resolved/closed | `40020` | 400 |
-| Concurrent update conflict | `40022` | 409 |
-
----
-
-### 8.3 Account Ban & Unban Endpoints
-
-#### `POST /api/admin/accounts/{userId}/ban` — Ban User Account
-
-Suspends user account privileges and atomically revokes distributed authentication tokens.
-
-> **Atomic Revocation Guarantee:** The PostgreSQL write (`users.status = 'BANNED'`, insertion into `account_bans` with `target_type = 'USER'`) and Redis invalidation (`SET auth:token_invalid_before:{userId} = banTimestamp`) execute synchronously within the transaction boundary. If Redis write fails, the database transaction rolls back and returns HTTP `500` (`50001 CACHE_REVOCATION_FAILED`).
->
-> **Full Duration Persistence:** For permanent bans (`expiresAt == null`), the Redis key has indefinite TTL. For temporary bans, TTL is set to `max(86400, expiresAt - now())` seconds.
-
-**Path Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `userId` | Long | User ID to ban |
-
-**Request Body**
-
-```json
-{
-  "reason": "Violating community standards regarding fraudulent job postings.",
-  "expiresAt": null
-}
-```
-
-**Validation**
-
-| Field | Rule |
+| ID | Requirement |
 |---|---|
-| `reason` | Mandatory (min 5 chars, max 1000 chars) |
-| `expiresAt` | Nullable; if provided, must be a future ISO-8601 timestamp |
+| ADM-BAN-01 | The Admin shall be able to ban an active user account or non-banned Company with a reason and a temporary or permanent duration. The system shall validate authority, target, state, and duration. Self-ban shall be refused. |
+| ADM-BAN-02 | The system shall retain banned state, reason, and duration, and revoke related sessions. A Company ban shall also suspend public postings, revoke related recruiters’ sessions, and hide the Company from public search. |
+| ADM-BAN-03 | A ban shall not be confirmed as successful unless required session revocation has succeeded. Implementation must define consistent failure/rollback behavior; this use-case revision does not select a distributed transaction mechanism. |
+| ADM-BAN-04 | Access restrictions shall remain effective for the applicable ban duration. The Admin use cases do not select a Redis key format, TTL, or fallback architecture. |
+| ADM-BAN-05 | The Admin shall be able to unban a currently banned target by entering a mandatory unban reason. Missing targets, no active ban, or missing reasons shall prevent success. |
+| ADM-BAN-06 | Unbanning shall end the active ban, restore the applicable active/non-banned state and permitted access, and keep sessions issued before or during the ban invalid. The user shall sign in again. Failed mandatory invalidation shall not be confirmed as a successful unban. |
+| ADM-BAN-07 | Ban and unban shall record attributable audit entries with the target’s before/after state. |
+| ADM-BAN-08 | Restored access shall remain subject to existing role, membership, and verification conditions. Unbanning shall not grant a new role, verify a Company, or automatically republish suspended postings. |
 
-**Response `200 OK`**
+### 3.8 Audit safeguards supporting the selected use cases
 
-```json
-{
-  "status": 200,
-  "message": "Account has been banned and active sessions revoked",
-  "data": {
-    "targetType": "USER",
-    "targetId": 42,
-    "status": "BANNED",
-    "bannedBy": 1,
-    "bannedAt": "2026-09-21T10:20:00Z",
-    "expiresAt": null,
-    "reason": "Violating community standards regarding fraudulent job postings."
-  }
-}
-```
-
-**Error Responses**
-
-| Condition | Error Code | HTTP |
-|---|---|---|
-| User not found | `40032` | 404 |
-| User already banned | `40030` | 400 |
-| Admin banning self | `40301` | 403 |
-| Cache revocation failure (Transaction rolled back) | `50001` | 500 |
-
----
-
-#### `POST /api/admin/accounts/{userId}/unban` — Unban User Account
-
-Restores platform access while permanently invalidating all tokens issued prior to or during the penalty period.
-
-> **Pre-Ban Token Defense:** Upon unban, `users.status` is restored to `ACTIVE` and `auth:token_invalid_before:{userId}` is updated to `unbanTimestamp` (with a 24-hour TTL). Any JWT issued before the unban (`iat < unbanTimestamp`) remains rejected by the authentication filter (`40101 ACCOUNT_BANNED`). The user must execute a fresh login to obtain a new token.
-
-**Path Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `userId` | Long | User ID to unban |
-
-**Request Body**
-
-```json
-{
-  "unbanReason": "Penalty duration expired; appeal accepted by administration."
-}
-```
-
-**Validation**
-
-| Field | Rule |
+| ID | Requirement |
 |---|---|
-| `unbanReason` | Mandatory (min 5 chars, max 1000 chars) |
+| ADM-AUD-01 | State-changing administrative actions in this scope shall create an attributable audit record. Read-only list/detail/history views do not imply mutations. |
+| ADM-AUD-02 | Company verification audit records shall join the decision transaction. Other mutations require a scoped consistency contract before implementation. |
+| ADM-AUD-03 | Existing append-only audit protections shall remain intact. This documentation change shall not weaken or change committed audit persistence guards. |
+| ADM-AUD-05 | Audit or review responses shall not bypass the common privacy restrictions. |
 
-**Response `200 OK`**
+Former `ADM-AUD-04` audit-log search is outside this selected inventory. Audit recording is retained; an Admin audit-search screen/API is not added by these twelve use cases.
 
-```json
-{
-  "status": 200,
-  "message": "Account has been unbanned successfully; pre-ban sessions remain revoked and user must re-authenticate",
-  "data": {
-    "targetType": "USER",
-    "targetId": 42,
-    "status": "ACTIVE",
-    "unbannedBy": 1,
-    "unbannedAt": "2026-09-21T10:30:00Z",
-    "unbanReason": "Penalty duration expired; appeal accepted by administration."
-  }
-}
-```
+## 4. Contracts and implementation status
 
-**Error Responses**
+### 4.1 Existing verification contracts
 
-| Condition | Error Code | HTTP |
-|---|---|---|
-| User not found | `40032` | 404 |
-| User not currently banned | `40031` | 400 |
+These are existing interfaces, not newly selected routes. Consult the approved verification specification and onboarding implementation documentation for complete payload and compatibility rules.
 
----
-
-#### `POST /api/admin/companies/{id}/ban` — Ban Company Account
-
-Suspends an employer organization, cascades all associated job listings to `SUSPENDED`, and invalidates recruiter tokens.
-
-> **Operational Scope & Persistence:**
-> 1. Sets `companies.is_banned = true` and records ban in `account_bans` (`target_type = 'COMPANY'`).
-> 2. Cascades all published jobs to `SUSPENDED` and publishes `JobEvictionEvent` to Kafka topic `jobs.eviction` to purge search indices.
-> 3. Revokes all active sessions for linked recruiters in Redis (`auth:token_invalid_before:{recruiterUserId} = now()`).
-> 4. Delists company profile from candidate search results.
-
-**Path Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `id` | Long | Company entity ID to ban |
-
-**Request Body**
-
-```json
-{
-  "reason": "Entity involved in corporate identity theft and fraudulent job posting scams.",
-  "expiresAt": null
-}
-```
-
-**Validation**
-
-| Field | Rule |
+| Operation | Existing interface / constraint |
 |---|---|
-| `reason` | Mandatory (min 5 chars, max 1000 chars) |
-| `expiresAt` | Nullable; if provided, must be a future ISO-8601 timestamp |
+| Verification queue | `GET /api/admin/companies/verifications`; default `status=PENDING`, `page=0`, `size=20`; supported statuses include `ALL`; page is non-negative and size is 1–100. |
+| Decision | `PUT /api/admin/companies/{id}/verify`; `status` is `VERIFIED` or `REJECTED`, current `expectedVersion` is required, rejection reason is 10–1000 trimmed characters. |
+| Rejection convenience route | `PUT /api/admin/companies/{id}/reject`; existing rejection reason and version constraints remain applicable. |
+| Retained dossier history | `GET /api/admin/companies/{id}/verification-history`; existing Platform Admin access applies. |
+| Private evidence | `GET /api/company-verification-documents/{id}`; authenticated authorized download, no-store/nosniff response. |
 
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Company banned successfully; associated jobs suspended and recruiter sessions revoked",
-  "data": {
-    "targetType": "COMPANY",
-    "targetId": 105,
-    "isBanned": true,
-    "bannedBy": 1,
-    "bannedAt": "2026-09-21T11:00:00Z",
-    "expiresAt": null,
-    "reason": "Entity involved in corporate identity theft and fraudulent job posting scams."
-  }
-}
-```
-
-**Error Responses**
-
-| Condition | Error Code | HTTP |
+| Existing verification failure | HTTP | Current service reason code |
 |---|---|---|
-| Company not found | `40011` | 404 |
-| Company already banned | `40030` | 400 |
-| Cache revocation failure (Transaction rolled back) | `50001` | 500 |
+| Missing Company | 404 | `40400 COMPANY_NOT_FOUND` |
+| Company no longer pending | 400 | `40010 COMPANY_NOT_PENDING` |
+| Invalid rejection reason | 400 | `40011 INVALID_REJECTION_REASON` |
+| Missing expected version / invalid request | 400 | `40000 BAD_REQUEST` |
+| Version mismatch / concurrent update | 409 | `40022 CONCURRENT_MODIFICATION` |
 
----
+The service checks non-pending state before version mismatch, so a previously completed dossier may return the invalid-state response rather than conflict. The interface reloads the queue on successful approval/rejection; it currently displays errors without an automatic conflict refresh. Keep authentication and response-envelope behavior under the existing contracts.
 
-#### `POST /api/admin/companies/{id}/unban` — Unban Company Account
+Enhanced retained-submission decisions create persisted email intents for the submitting user, processed by the existing delivery worker. Provider acceptance is not proof of mailbox arrival. Missing configuration or exhausted retries remain operational failures; legacy dossiers without an enhanced attempt do not currently create an intent. See [onboarding delivery documentation](../../backend/employer-onboarding.md).
 
-Restores company operational status while maintaining pre-ban token invalidation for all associated recruiters.
+### 4.2 Not yet implemented or specified
 
-**Path Parameters**
+The repository does not currently provide the Admin report-list/detail, job hiding/history, account lookup/ban/unban, monitoring dashboard, or background-task management interfaces described above. Background delivery workers and existing session/authentication helpers do not establish those complete workflows.
 
-| Parameter | Type | Description |
-|---|---|---|
-| `id` | Long | Company ID to unban |
+Older versions of this Admin draft contained proposed report-resolution, account, job, metrics, task, and audit-search endpoints, SQL schemas, Redis keys, Kafka topics, and search integrations. They are not treated as implemented or approved contracts in this revision. No deployed API removal, schema migration, dependency change, or architecture selection is authorized by their removal from the active draft. Concrete contracts for unimplemented capabilities must be proposed and approved separately.
 
-**Request Body**
+## 5. Scope exclusions and unresolved decisions
 
-```json
-{
-  "unbanReason": "Legal documentation re-validated; corporate identity dispute resolved."
-}
-```
-
-**Validation**
-
-| Field | Rule |
+| Topic | Boundary / follow-up |
 |---|---|
-| `unbanReason` | Mandatory (min 5 chars, max 1000 chars) |
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Company unbanned successfully; recruiters must re-authenticate to manage jobs",
-  "data": {
-    "targetType": "COMPANY",
-    "targetId": 105,
-    "isBanned": false,
-    "unbannedBy": 1,
-    "unbannedAt": "2026-09-21T11:45:00Z",
-    "unbanReason": "Legal documentation re-validated; corporate identity dispute resolved."
-  }
-}
-```
-
-**Error Responses**
-
-| Condition | Error Code | HTTP |
-|---|---|---|
-| Company not found | `40011` | 404 |
-| Company not currently banned | `40031` | 400 |
-
----
-
-### 8.4 Job Moderation Endpoints
-
-#### `PUT /api/admin/jobs/{id}/takedown` — Takedown Job Posting
-
-Suspends a published job and purges it from cache and search engines.
-
-**Path Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `id` | Long | Job posting ID |
-
-**Request Body**
-
-```json
-{
-  "takedownReason": "Fraudulent salary claims and deceptive company representation."
-}
-```
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Job posting has been taken down and removed from public search",
-  "data": {
-    "jobId": 801,
-    "status": "SUSPENDED",
-    "suspendedBy": 1,
-    "suspendedAt": "2026-09-21T10:35:00Z",
-    "takedownReason": "Fraudulent salary claims and deceptive company representation."
-  }
-}
-```
-
-**Error Responses**
-
-| Condition | Error Code | HTTP |
-|---|---|---|
-| Job not found | `40041` | 404 |
-| Job not in PUBLISHED status | `40040` | 400 |
-
----
-
-### 8.5 System Health & Metrics Endpoints
-
-#### `GET /api/admin/system/health` — Infrastructure Health Snapshot
-
-Provides instant infrastructure telemetry without impacting primary transactional tables.
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "System health snapshot retrieved",
-  "data": {
-    "systemTime": "2026-09-21T10:40:00Z",
-    "uptimeSeconds": 864200,
-    "jvm": {
-      "heapUsedBytes": 1073741824,
-      "heapMaxBytes": 4294967296,
-      "activeThreads": 84
-    },
-    "database": {
-      "primaryConnectionPool": {
-        "activeConnections": 12,
-        "idleConnections": 18,
-        "maxConnections": 30
-      },
-      "readReplicaConnectionPool": {
-        "activeConnections": 4,
-        "idleConnections": 26,
-        "maxConnections": 30
-      }
-    },
-    "redis": {
-      "status": "UP",
-      "usedMemoryRssBytes": 268435456
-    }
-  }
-}
-```
-
----
-
-#### `GET /api/admin/system/metrics` — Traffic & Performance Analytics
-
-Returns real-time traffic volume and system error rates.
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "System traffic metrics retrieved",
-  "data": {
-    "concurrentActiveUsers": 1420,
-    "requestsPerMinute": 3850,
-    "errorRatePercentage": 0.04,
-    "sampledAt": "2026-09-21T10:40:00Z"
-  }
-}
-```
-
----
-
-### 8.6 Background Cron Job Endpoints
-
-#### `GET /api/admin/cron-jobs` — List Cron Jobs
-
-Lists all registered background tasks and execution states.
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Cron jobs retrieved successfully",
-  "data": [
-    {
-      "jobKey": "EXPIRED_POST_SWEEPER",
-      "displayName": "Expired Job Postings Sweeper",
-      "cronExpression": "0 0 1 * * ?",
-      "status": "ACTIVE",
-      "lastRunAt": "2026-09-21T01:00:00Z",
-      "lastStatus": "SUCCESS"
-    },
-    {
-      "jobKey": "ANALYTICS_ETL_PIPELINE",
-      "displayName": "Data Warehouse Nightly Aggregation",
-      "cronExpression": "0 30 2 * * ?",
-      "status": "ACTIVE",
-      "lastRunAt": "2026-09-21T02:30:00Z",
-      "lastStatus": "SUCCESS"
-    }
-  ]
-}
-```
-
----
-
-#### `POST /api/admin/cron-jobs/{jobKey}/trigger` — Manually Trigger Cron Job
-
-Executes a background task immediately in an asynchronous thread.
-
-**Path Parameters**
-
-| Parameter | Type | Description |
-|---|---|---|
-| `jobKey` | String | Unique identifier of the cron job |
-
-**Response `202 Accepted`**
-
-```json
-{
-  "status": 202,
-  "message": "Background job triggered successfully in asynchronous mode",
-  "data": {
-    "jobKey": "EXPIRED_POST_SWEEPER",
-    "executionId": 9042,
-    "triggeredBy": "MANUAL:1",
-    "startTime": "2026-09-21T10:45:00Z",
-    "status": "RUNNING"
-  }
-}
-```
-
----
-
-#### `PATCH /api/admin/cron-jobs/{jobKey}/config` — Update Cron Configuration
-
-Modifies the schedule frequency or pauses/resumes the background worker.
-
-**Request Body**
-
-```json
-{
-  "cronExpression": "0 0 3 * * ?",
-  "status": "PAUSED"
-}
-```
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Cron job configuration updated successfully",
-  "data": {
-    "jobKey": "EXPIRED_POST_SWEEPER",
-    "cronExpression": "0 0 3 * * ?",
-    "status": "PAUSED",
-    "updatedAt": "2026-09-21T10:47:00Z"
-  }
-}
-```
-
----
-
-### 8.7 Audit Trail Endpoints
-
-#### `GET /api/admin/audit-logs` — Query Audit Trail
-
-Retrieves an immutable record of historical administrative actions.
-
-**Query Parameters**
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `adminId` | Long | No | Filter by specific admin ID |
-| `action` | String | No | E.g. `COMPANY_VERIFY`, `ACCOUNT_BAN`, `JOB_TAKEDOWN` |
-| `targetType` | String | No | `COMPANY`, `USER`, `JOB`, `REPORT` |
-| `startDate` | ISO-8601 | No | Beginning of time window |
-| `endDate` | ISO-8601 | No | End of time window |
-| `page` | Integer | No | Page number (default `0`) |
-| `size` | Integer | No | Page size (default `20`) |
-
-**Response `200 OK`**
-
-```json
-{
-  "status": 200,
-  "message": "Audit logs retrieved successfully",
-  "data": {
-    "content": [
-      {
-        "id": 12044,
-        "adminId": 1,
-        "action": "ACCOUNT_BAN",
-        "targetType": "USER",
-        "targetId": "42",
-        "oldPayload": { "status": "ACTIVE" },
-        "newPayload": { "status": "BANNED", "expiresAt": null },
-        "reason": "Violating community standards regarding fraudulent job postings.",
-        "ipAddress": "192.168.1.100",
-        "createdAt": "2026-09-21T10:20:00Z"
-      }
-    ],
-    "pageNumber": 0,
-    "pageSize": 20,
-    "totalElements": 1,
-    "totalPages": 1,
-    "first": true,
-    "last": true
-  }
-}
-```
-
----
-
-## 9. Infrastructure Architecture
-
-### 9.1 Redis — Blacklist & Ephemeral State Management
-
-```
-Implementation:     AdminRedisService
-Spring Client:      StringRedisTemplate
-Key Expire Policy:  Explicit volatile TTLs & Dynamic ban duration persistence
-```
-
-* **Distributed Session Revocation & Invalidation Epoch:** When an account is banned, the system atomically records the invalidation epoch `auth:token_invalid_before:{userId} = banTimestamp` in Redis.
-  - **Dynamic TTL:** For permanent bans (`expiresAt == null`), the key has no TTL (persists indefinitely until unbanned). For temporary bans, TTL is set to `max(86400, expiresAt - now())` seconds, ensuring revocation persists for the entire penalty duration.
-  - **Atomic Revocation Guarantee:** Invalidation must succeed within the ban transaction boundary; on Redis write failure, the database rolls back (`50001 CACHE_REVOCATION_FAILED`).
-  - **AuthFilter Verification:** For every incoming request, the JWT filter checks `jwt.iat < token_invalid_before`. If Redis is unavailable or on cache miss, the filter safely falls back to querying persistent entity status (`users.status == 'BANNED'` or `companies.is_banned == true`) to prevent fail-open authentication bypasses.
-  - **Safe Unbanning (Pre-ban JWT Protection):** Upon unban, `auth:token_invalid_before:{userId}` is updated to `unbanTimestamp` with a 24-hour TTL (matching max JWT lifetime). This guarantees that any JWT issued before the ban or during the penalty period remains strictly invalid; the unbanned user must log in again to acquire a new token.
-* **Transient Ticket Locks:** When an admin reviews a report ticket, a key `admin:review_lock:report:{reportId}` is written with a 15-minute TTL to signal active review to peer admins.
-
----
-
-### 9.2 Relational Schema & Planned Flyway Migration
-
-To be introduced via **planned Flyway migration V2** (`V2__admin_governance_and_audit.sql`) [Pending Implementation]:
-
-> **Note:** Only `V1__create_users.sql` is currently present in the backend repository (`backend/src/main/resources/db/migration/`). Migration `V2__admin_governance_and_audit.sql` is planned for Phase 0 and Phase 1 implementation.
-
-```
-users (1) ─────────── (many) audit_logs
-companies (1) ─────── (many) jobs
-users (1) ─────────── (many) violation_reports
-users (1) ─────────── (many) account_bans (target_type = 'USER')
-companies (1) ─────── (many) account_bans (target_type = 'COMPANY')
-```
-
-**Security DDL Hardening:**
-```sql
--- 1. Restrict all operational database roles from mutating audit records
-REVOKE ALL ON audit_logs FROM PUBLIC;
-REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM guardian_app_user, guardian_batch_user, guardian_read_user;
-
--- 2. Grant strictly append and read capabilities to operational application user
-GRANT INSERT, SELECT ON audit_logs TO guardian_app_user;
-GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO guardian_app_user;
-
--- 3. Assign schema ownership to dedicated non-runtime administrative role
-ALTER TABLE audit_logs OWNER TO guardian_schema_owner;
-
--- 4. Engine-level trigger to enforce append-only immutability against all roles
-CREATE OR REPLACE FUNCTION prevent_audit_logs_mutation()
-RETURNS TRIGGER AS $$
-BEGIN
-    RAISE EXCEPTION 'audit_logs table is append-only: UPDATE, DELETE, and TRUNCATE are prohibited.';
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_protect_audit_logs
-BEFORE UPDATE OR DELETE OR TRUNCATE ON audit_logs
-FOR EACH STATEMENT EXECUTE FUNCTION prevent_audit_logs_mutation();
-```
-
----
-
-### 9.3 Read/Write Replica Splitting & Metrics Offloading
-
-To protect customer-facing operations from being starved of database connections:
-1. **Routing DataSource:** Configure Spring Boot with an `AbstractRoutingDataSource`.
-   - Read-Write Transactions (`@Transactional(readOnly = false)`) route to the Primary PostgreSQL node.
-   - Read-Only Transactions (`@Transactional(readOnly = true)`) for administrative reports, audit queries, and system metrics route to the Read Replica.
-2. **Pre-aggregation Buffer:** Real-time CCU and request rates are sampled using Micrometer and stored in Redis. The Admin Health API reads from Redis rather than calculating aggregation queries over millions of transactional rows.
-
----
-
-### 9.4 Kafka Messaging Topics
-
-| Topic Name | Event Class | Key | Description |
-|---|---|---|---|
-| `notifications.email` | `EmailNotificationEvent` | `recipientEmail` | Dispatches verification approval/rejection and ban notification emails |
-| `jobs.eviction` | `JobEvictionEvent` | `jobId` | Notifies search service to purge taken-down job from Elasticsearch |
-| `audit.events` | `AuditEvent` | `adminId` | Optional downstream streaming to SIEM / cold-storage archive |
-
----
-
-### 9.5 Configuration Constants
-
-| Constant | Default Value | Config Key | Purpose |
-|---|---|---|---|
-| `REPORT_REVIEW_LOCK_TTL_SECONDS` | `900` | `app.admin.report-lock-ttl-seconds` | Expiration of peer admin review lock |
-| `TOKEN_INVALIDATION_UNBAN_TTL_SECONDS` | `86400` | `app.admin.token-invalidation-unban-ttl-seconds` | TTL applied to unban token invalidation epoch matching maximum JWT token lifetime |
-| `METRICS_CACHE_TTL_SECONDS` | `60` | `app.admin.metrics-cache-ttl-seconds` | Refresh rate of cached health snapshot |
-| `MAX_AUDIT_LOG_PAGE_SIZE` | `100` | `app.admin.max-audit-page-size` | Prevents high memory consumption during log exports |
-
----
-
-## 10. Non-Functional Requirements
-
-| ID | Category | Requirement |
-|---|---|---|
-| **NFR-ADM-01** | **Security (RBAC)** | Global security filters **must** enforce role-level authorization (`role: "ADMIN"`) on all `/api/admin/**` endpoints prior to controller invocation. |
-| **NFR-ADM-02** | **Security (Audit Immutability)** | All admin mutations **must** produce audit logs that cannot be altered, deleted, or truncated by any operational database account, enforced by both SQL privilege revocations and PostgreSQL engine triggers. |
-| **NFR-ADM-03** | **Security (Data Privacy)** | Administrative APIs **shall not** expose unencrypted passwords or internal private communications unless explicitly attached as evidence in an active violation ticket. |
-| **NFR-ADM-04** | **Consistency (Optimistic Locking)** | Both violation report resolutions and company verification decisions **must** enforce optimistic concurrency control (`@Version`, `expectedVersion`) to reject conflicting concurrent resolutions with HTTP `409 Conflict`. |
-| **NFR-ADM-05** | **Performance (OLTP Isolation)** | Telemetry and analytics endpoints **must not** perform table scans on primary transactional tables. Queries must route to Read Replicas or Redis caches. |
-| **NFR-ADM-06** | **Reliability (Session Revocation)** | Account ban token revocation **must** take effect atomically across all distributed application nodes within < 100 milliseconds; fallback to database status check **must** prevent fail-open authentication during Redis cache misses. |
-| **NFR-ADM-07** | **Observability** | All failed attempts to access admin endpoints without administrative privileges **must** be logged at `WARN` level with client IP, requested URI, and user ID for intrusion detection. |
-| **NFR-ADM-08** | **Extensibility** | Background cron job triggers **must** execute asynchronously on an isolated thread pool to prevent blocking admin HTTP request worker threads. |
+| Login | Remains an authentication prerequisite; excluded as a use case here. |
+| Standalone job view and closure | Not included in the supplied UC 9–20. Contextual job viewing remains necessary for hiding/history. This does not resolve the older documents’ disagreement over Platform Admin closure rights. |
+| Report adjudication | Review locks, warning/ban/takedown sanction selection, resolution/rejection, and resolution concurrency are outside UC-11–12. Do not implement them as side effects of opening details. Wider approved product obligations are not removed by this selected scope. |
+| Audit-log search | Outside the selected inventory; immutable audit recording remains required. |
+| Platform/Company authority | Older `rbac_matrix.md` describes role inheritance, while approved authentication separates Platform role from Company membership. Preserve the approved boundary; this edit does not amend the older matrix. |
+| Verification reference | `company_verification.md` includes broader registry/domain/forensics checks, authorization-letter rules, badges, and ranking claims. They are not acceptance requirements introduced by this revision; approved onboarding/verification contracts govern implementation. |
+| Monitoring | Thresholds, sampling/refresh, trend aggregation, history retention, and configured sources remain to be specified. Do not fabricate unavailable metrics. |
+| Background tasks | Schedule dialect, queue/orchestration integration, concurrent-run policy, and operational failure handling require a contract. A queue acknowledgement must not claim running/completion. |
+| Search/cache removal | Public hiding must hold across relevant read paths. Technology and cross-system failure behavior remain unselected. |
+| Account enforcement | Exact authorization, private-field scope, session invalidation, ban-expiry handling, consistency, and failure recovery require approved implementation contracts. UC-20 does not require automatic republication. |
+| Notification coverage | Enhanced attempts have delivery support; legacy decision notification remains a gap. No new global notification architecture is selected. |
+
+These boundaries are explicit gaps, not permission to bypass the stated outcomes or change an approved requirement. The specification remains Draft until formal approval is recorded.
+
+## 6. Acceptance and verification scenarios
+
+| Use case | Minimum verification |
+|---|---|
+| UC-09 | Metrics/charts and selected time ranges display correctly; threshold breach changes warning color; unavailable sources are identified; polling does not scan primary business tables. |
+| UC-10 | Manual requests are queued and attributable; queue acknowledgement differs from running/completed; valid schedules and pause changes persist and are audited; execution history distinguishes success/failure and error logs. |
+| UC-11 | Report list/filter displays correct target/status summaries; empty and failed loads are distinct; viewing changes no report state. |
+| UC-12 | Authorized details/evidence/outcome display; missing/inaccessible reports are refused; unavailable attachments preserve remaining information; no review or sanction starts. |
+| UC-13 | Only public postings with a reason are hidden; public display/search/cache access is removed; actor/time/reason and audit persist; content/history remain; hidden links are unavailable. |
+| UC-14 | Authorized history includes recorded actors/times/actions; empty and failed loads differ; viewing changes no history/content. |
+| UC-15 | Default pending FIFO pagination and all status filters work; enhanced evidence/history and legacy absence are represented accurately; documents enforce access. |
+| UC-16 | Pending/current-version approval persists verified status, reviewer/time/version and atomic audit; missing, non-pending, stale, and failed transactions cannot overwrite a decision. |
+| UC-17 | Trimmed reasons at 10 and 1000 characters are accepted; below/above limits are refused; pending/current-version rejection retains reason, reviewer/time/version and audit. |
+| UC-16–17 delivery | Enhanced decisions create a submitter-addressed delivery intent in the transaction; retries do not repeat the business decision or undo it; legacy delivery gaps remain visible. |
+| UC-18 | Authorized target information and eligible actions display; private credentials/messages are excluded; missing/inaccessible targets and retrieval failures are handled. |
+| UC-19 | Active user/non-banned Company can be banned with valid reason/duration; self-ban and already-banned targets are refused; Company restrictions cascade; required revocation failure cannot report success. |
+| UC-20 | Active ban and reason are required; applicable access returns, old sessions remain invalid, new sign-in is required; Company verification/roles/posting publication are not automatically changed. |
+
+This is a documentation-only revision. These scenarios guide implementation verification; they are not claims that tests for unimplemented Admin features already pass.
+
+## 7. Related documents
+
+- [User-aligned Admin use cases](usecase.md)
+- [Existing RBAC reference](rbac_matrix.md)
+- [Company verification reference](company_verification.md)
+- [Approved Company verification specification](../../software-requirements/rec/company-verification-spec.md)
+- [Approved Authentication specification](../../software-requirements/auth/authentication-authorization-spec.md)
+- [Confirmed onboarding implementation contract](../../software-requirements/rec/company-onboarding-implementation-contract.md)
+- [Onboarding implementation and delivery configuration](../../backend/employer-onboarding.md)
+- [Backend architecture and verification commands](../../../backend/README.md)
