@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,7 @@ import com.guardwork.backend.company.repository.CompanyRepository;
 @Service
 public class AdminCompanyVerificationService {
 
+    private static final Logger log = LoggerFactory.getLogger(AdminCompanyVerificationService.class);
     private final CompanyRepository companyRepository;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
@@ -99,6 +102,7 @@ public class AdminCompanyVerificationService {
                                                      Long adminId,
                                                      String ipAddress,
                                                      String userAgent) {
+        log.debug("event=company_verification outcome=started");
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
@@ -158,6 +162,7 @@ public class AdminCompanyVerificationService {
         );
 
         if (rowsUpdated == 0) {
+            log.debug("event=company_verification outcome=concurrent_modification");
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "40022 CONCURRENT_MODIFICATION: Concurrent modification detected during update"
@@ -181,6 +186,8 @@ public class AdminCompanyVerificationService {
                 userAgent
         );
 
+        // This records progress inside the transaction, not a commit guarantee.
+        log.debug("event=company_verification outcome=decision_and_audit_written");
         return CompanyVerificationResponse.from(updatedCompany);
     }
 

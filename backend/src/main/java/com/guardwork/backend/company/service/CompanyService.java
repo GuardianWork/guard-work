@@ -4,6 +4,8 @@ import java.util.Locale;
 import java.util.Optional;
 import jakarta.validation.Validator;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +27,8 @@ import com.guardwork.backend.membership.service.MembershipAuditService;
 @Service
 public class CompanyService {
 
+    private static final Logger log = LoggerFactory.getLogger(CompanyService.class);
+
     private final CompanyRepository companyRepository;
 
     private final CompanyMembershipRepository memberships;
@@ -43,6 +47,7 @@ public class CompanyService {
 
     @Transactional
     public Company registerCompany(Long actorId, CompanyRegistrationRequest request) {
+        log.debug("event=company_registration outcome=started");
         access.requireActiveUser(actorId);
         var activeMembership = memberships.findByUserIdAndStatus(actorId, MembershipStatus.ACTIVE);
         if (activeMembership.isPresent()) {
@@ -63,6 +68,7 @@ public class CompanyService {
         membership.setStatus(MembershipStatus.ACTIVE);
         memberships.saveAndFlush(membership);
         audit.record(actorId, actorId, company.getId(), "COMPANY_CREATED", membership.getId(), null, null, null);
+        log.debug("event=company_registration outcome=saved_pending_verification");
         return company;
     }
 
@@ -97,6 +103,7 @@ public class CompanyService {
         boolean existingByEmail = companyRepository.existsByEmail(email);
 
         if (existingByTaxCode.isPresent() || existingByEmail) {
+            log.debug("event=company_registration outcome=existing_record");
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 DUPLICATE_TAX_CODE: Company registration details already registered");
         }
 
@@ -122,6 +129,7 @@ public class CompanyService {
     }
 
     private Company correctRejectedCompany(Company company, CompanyResubmissionRequest request) {
+        log.debug("event=company_resubmission outcome=started");
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
@@ -169,7 +177,9 @@ public class CompanyService {
         company.setRejectionReason(null);
         company.setVersion(company.getVersion() + 1);
 
-        return companyRepository.saveAndFlush(company);
+        Company saved = companyRepository.saveAndFlush(company);
+        log.debug("event=company_resubmission outcome=saved_pending_verification");
+        return saved;
     }
 
     @Transactional

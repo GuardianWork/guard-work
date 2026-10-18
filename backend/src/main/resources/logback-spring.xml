@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <conversionRule conversionWord="safeMessage"
+                    class="com.guardwork.backend.logging.SafeMessageConverter"/>
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <charset>UTF-8</charset>
+            <!-- The converter and request boundary own sanitized stacks; no raw throwable output. -->
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX,Asia/Ho_Chi_Minh} %-5level [%thread] %logger{48} [requestId=%X{requestId:-none}] %safeMessage%n%nopex</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
