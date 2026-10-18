@@ -28,14 +28,21 @@ public class AdminCompanyVerificationService {
     private final CompanyRepository companyRepository;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    private final com.guardwork.backend.onboarding.service.LegalDossierService dossiers;
 
-    @org.springframework.beans.factory.annotation.Autowired
     public AdminCompanyVerificationService(CompanyRepository companyRepository,
                                            AuditService auditService,
                                            ObjectMapper objectMapper) {
+        this(companyRepository, auditService, objectMapper, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AdminCompanyVerificationService(CompanyRepository companyRepository, AuditService auditService,
+            ObjectMapper objectMapper, com.guardwork.backend.onboarding.service.LegalDossierService dossiers) {
         this.companyRepository = companyRepository;
         this.auditService = auditService;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+        this.dossiers = dossiers;
     }
 
     public PageResponse<CompanyVerificationResponse> getVerificationQueue(String statusFilter, int page, int size) {
@@ -170,6 +177,7 @@ public class AdminCompanyVerificationService {
         }
 
         Company updatedCompany = companyRepository.findById(companyId).orElseThrow();
+        if (dossiers != null) dossiers.reviewed(updatedCompany, adminId);
         String newPayload = serializeToJson(CompanyVerificationResponse.from(updatedCompany));
 
         // BR-REC-06: Immutable Audit Trail

@@ -2,7 +2,9 @@ package com.guardwork.backend.admin.dto;
 
 import java.time.Instant;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.guardwork.backend.company.model.Company;
+import com.guardwork.backend.company.model.VerificationProcessingStatus;
 import com.guardwork.backend.company.model.VerificationStatus;
 
 public record CompanyVerificationResponse(
@@ -18,6 +20,16 @@ public record CompanyVerificationResponse(
         Long version,
         Instant createdAt
 ) {
+    @JsonProperty("processingStatus")
+    public VerificationProcessingStatus processingStatus() {
+        return verificationStatus.processingStatus();
+    }
+
+    @JsonProperty("reviewOutcome")
+    public VerificationStatus reviewOutcome() {
+        return verificationStatus.reviewOutcome();
+    }
+
     public CompanyVerificationResponse(
             Long id,
             String name,

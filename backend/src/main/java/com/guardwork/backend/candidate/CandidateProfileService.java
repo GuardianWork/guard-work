@@ -46,7 +46,6 @@ public class CandidateProfileService {
                 + " "
                 + (user.getLastName() != null ? user.getLastName() : "");
         CandidateProfile profile = new CandidateProfile();
-        profile.setId(java.util.UUID.randomUUID());
         profile.setUserId(userId);
         profile.setFullName(defaultFullName.trim());
         profile.setSkills(List.of());

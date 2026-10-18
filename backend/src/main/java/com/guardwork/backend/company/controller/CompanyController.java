@@ -20,21 +20,24 @@ import com.guardwork.backend.company.dto.OwnerVerificationResponse;
 import com.guardwork.backend.company.dto.CompanyResubmissionRequest;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.service.CompanyService;
+import com.guardwork.backend.onboarding.service.LegalDossierService;
 
 @RestController
 @RequestMapping("/api/companies")
 public class CompanyController {
 
     private final CompanyService companyService;
+    private final LegalDossierService dossiers;
 
-    public CompanyController(CompanyService companyService) {
+    public CompanyController(CompanyService companyService, LegalDossierService dossiers) {
         this.companyService = companyService;
+        this.dossiers = dossiers;
     }
 
     @PostMapping("/verification-request")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CompanyVerificationResponse> requestVerification(@AuthenticationPrincipal UserPrincipal principal, @RequestBody CompanyRegistrationRequest request) {
-        Company company = companyService.registerCompany(principal.getId(), request);
+        Company company = dossiers.register(principal.getId(), request);
         return ApiResponse.ok("Company submitted for verification", CompanyVerificationResponse.from(company));
     }
 
@@ -44,7 +47,7 @@ public class CompanyController {
             @PathVariable("id") Long id,
             @RequestBody CompanyResubmissionRequest request
     ) {
-        Company company = companyService.resubmitCompany(principal.getId(), id, request);
+        Company company = dossiers.correct(principal.getId(), id, request);
         return ApiResponse.ok("Company resubmitted for verification successfully", OwnerVerificationResponse.from(company));
     }
 
@@ -52,7 +55,7 @@ public class CompanyController {
     public ApiResponse<OwnerVerificationResponse> resubmitCurrentVerification(
             @AuthenticationPrincipal UserPrincipal principal, @RequestBody CompanyResubmissionRequest request) {
         return ApiResponse.ok("Company resubmitted for verification successfully",
-                OwnerVerificationResponse.from(companyService.resubmitCurrentCompany(principal.getId(), request)));
+                OwnerVerificationResponse.from(dossiers.correct(principal.getId(), null, request)));
     }
 
     @GetMapping("/me")

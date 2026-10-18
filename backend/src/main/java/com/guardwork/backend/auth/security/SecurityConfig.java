@@ -39,6 +39,11 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler)
                 )
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(org.springframework.http.HttpMethod.POST,
+                                "/api/employer-registrations",
+                                "/api/employer-registrations/*/email/resend",
+                                "/api/employer-registrations/*/email/verify").permitAll()
+                        .requestMatchers("/", "/index.html", "/app.js", "/styles.css").permitAll()
                         .requestMatchers(
                                 "/api/auth/**",
                                 "/swagger-ui/**",
