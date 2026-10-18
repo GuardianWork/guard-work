@@ -1,5 +1,7 @@
 # [GW-SR-REC-02] Company onboarding, ownership, and Recruiter access
 
+> Employer onboarding coordination (2026-10-18): the user approved [GW-SR-REC-03](company-onboarding-verification-enhancement-spec.md) and confirmed its implementation contract. Its new-applicant path supersedes automatic email proof, unrestricted Candidate capability, separate Company-email input and mutable-only dossier handling for enrolled employer applicants. Ordinary Candidate registration and legacy Company compatibility remain scoped as documented; CHECKED is derived from existing Company eligibility states. SMS integration, production retention and legacy rollout remain unresolved. See [implementation details](../../backend/employer-onboarding.md).
+
 | Field | Value |
 |---|---|
 | **Specification ID** | GW-SR-REC-02 |

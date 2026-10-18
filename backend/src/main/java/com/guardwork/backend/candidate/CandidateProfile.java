@@ -46,6 +46,7 @@ public class CandidateProfile {
     private String phoneNumber;
 
     @Convert(converter = SkillsJsonConverter.class)
+    @org.hibernate.annotations.ColumnTransformer(write = "?::jsonb")
     @Column(name = "skills", columnDefinition = "jsonb", nullable = false)
     private List<String> skills = new ArrayList<>();
 

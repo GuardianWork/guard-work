@@ -38,8 +38,7 @@ public class AdminCompanyVerificationController {
             @RequestHeader(value = "X-Admin-Role", required = false) String adminRole
     ) {
         UserPrincipal principal = getAuthenticatedPrincipal();
-        String effectiveRole = (adminRole != null && !adminRole.isBlank()) ? adminRole
-                : (principal != null ? principal.getRole() : null);
+        String effectiveRole = principal != null ? principal.getRole() : adminRole;
         validateAdminRole(effectiveRole);
 
         PageResponse<CompanyVerificationResponse> queue = verificationService.getVerificationQueue(status, page, size);
@@ -55,10 +54,8 @@ public class AdminCompanyVerificationController {
             HttpServletRequest httpRequest
     ) {
         UserPrincipal principal = getAuthenticatedPrincipal();
-        Long effectiveAdminId = adminId != null ? adminId
-                : (principal != null ? principal.getId() : null);
-        String effectiveRole = (adminRole != null && !adminRole.isBlank()) ? adminRole
-                : (principal != null ? principal.getRole() : null);
+        Long effectiveAdminId = principal != null ? principal.getId() : adminId;
+        String effectiveRole = principal != null ? principal.getRole() : adminRole;
 
         if (effectiveAdminId == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40100 UNAUTHORIZED: Missing admin authentication or X-Admin-Id header");
@@ -81,10 +78,8 @@ public class AdminCompanyVerificationController {
             HttpServletRequest httpRequest
     ) {
         UserPrincipal principal = getAuthenticatedPrincipal();
-        Long effectiveAdminId = adminId != null ? adminId
-                : (principal != null ? principal.getId() : null);
-        String effectiveRole = (adminRole != null && !adminRole.isBlank()) ? adminRole
-                : (principal != null ? principal.getRole() : null);
+        Long effectiveAdminId = principal != null ? principal.getId() : adminId;
+        String effectiveRole = principal != null ? principal.getRole() : adminRole;
 
         if (effectiveAdminId == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40100 UNAUTHORIZED: Missing admin authentication or X-Admin-Id header");

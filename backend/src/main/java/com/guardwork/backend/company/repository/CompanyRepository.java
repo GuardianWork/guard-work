@@ -32,7 +32,7 @@ public interface CompanyRepository extends JpaRepository<Company, Long>, Company
     @Query("SELECT COUNT(c) FROM Company c")
     long countAll();
 
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query("UPDATE Company c SET c.verificationStatus = :status, c.rejectionReason = :rejectionReason, " +
            "c.verifiedBy = :verifiedBy, c.verifiedAt = :verifiedAt, c.version = c.version + 1, " +

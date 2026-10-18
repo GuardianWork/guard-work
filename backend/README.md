@@ -92,6 +92,16 @@ Swagger UI is exposed via [springdoc-openapi](https://springdoc.org/):
 Admin API `ResponseStatusException`s use the standard response envelope with the original HTTP
 status and reason.
 
+Company verification responses for Admin and Owner views expose `processingStatus` and
+`reviewOutcome` alongside the existing `verificationStatus`. `PENDING` maps to processing
+`PENDING` with a null outcome; `VERIFIED` and `REJECTED` map to processing `CHECKED` with the
+corresponding outcome. Eligibility continues to use `verificationStatus`; `CHECKED` alone does
+not mean approval. These are derived fields and require no schema migration.
+See [employer onboarding](../docs/backend/employer-onboarding.md) for the new registration/verification
+APIs, frontend, private legal dossiers, delivery configuration, migration, and remaining SMS and
+production-readiness prerequisites. The technical choices were confirmed by the user and recorded
+in [ADR 0005](../docs/architecture/decisions/0005-staged-employer-onboarding.md).
+
 Company, Admin and known application-error advice use order `0`, ahead of the global
 `InternalServerExceptionHandler` at `LOWEST_PRECEDENCE`. Spring selects the first applicable
 advice with a matching handler; this ordering preserves existing status codes and response

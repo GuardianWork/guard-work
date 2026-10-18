@@ -71,7 +71,12 @@ class CandidateProfileServiceTest {
             when(userRepository.findById(sampleUser.getId()))
                     .thenReturn(Optional.of(sampleUser));
             when(profileRepository.save(any(CandidateProfile.class)))
-                    .thenAnswer(invocation -> invocation.getArgument(0));
+                    .thenAnswer(invocation -> {
+                        CandidateProfile saved = invocation.getArgument(0);
+                        assertNull(saved.getId(), "The persistence provider generates a new profile ID");
+                        saved.setId(java.util.UUID.randomUUID());
+                        return saved;
+                    });
 
             CandidateProfile result = profileService.getOrCreateProfile(sampleUser.getId());
             assertNotNull(result.getId());

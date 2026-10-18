@@ -47,6 +47,15 @@ public class CompanyService {
 
     @Transactional
     public Company registerCompany(Long actorId, CompanyRegistrationRequest request) {
+        return registerCompany(actorId, request, false);
+    }
+
+    @Transactional
+    public Company registerCompanyFromVerifiedApplicant(Long actorId, CompanyRegistrationRequest request) {
+        return registerCompany(actorId, request, true);
+    }
+
+    private Company registerCompany(Long actorId, CompanyRegistrationRequest request, boolean accountEmailOnly) {
         log.debug("event=company_registration outcome=started");
         access.requireActiveUser(actorId);
         var activeMembership = memberships.findByUserIdAndStatus(actorId, MembershipStatus.ACTIVE);
@@ -58,7 +67,7 @@ public class CompanyService {
             }
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40910 ACTIVE_COMPANY_MEMBERSHIP_EXISTS: Active Company membership already exists");
         }
-        Company company = createCompanyRecord(request);
+        Company company = createCompanyRecord(request, accountEmailOnly);
         company.setOwnerUserId(actorId);
         companyRepository.saveAndFlush(company);
         CompanyMembership membership = new CompanyMembership();
@@ -72,7 +81,7 @@ public class CompanyService {
         return company;
     }
 
-    private Company createCompanyRecord(CompanyRegistrationRequest request) {
+    private Company createCompanyRecord(CompanyRegistrationRequest request, boolean accountEmailOnly) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
@@ -100,7 +109,7 @@ public class CompanyService {
         String email = request.email().trim().toLowerCase(Locale.ROOT);
 
         Optional<Company> existingByTaxCode = companyRepository.findByTaxCode(taxCode);
-        boolean existingByEmail = companyRepository.existsByEmail(email);
+        boolean existingByEmail = !accountEmailOnly && companyRepository.existsByEmail(email);
 
         if (existingByTaxCode.isPresent() || existingByEmail) {
             log.debug("event=company_registration outcome=existing_record");
