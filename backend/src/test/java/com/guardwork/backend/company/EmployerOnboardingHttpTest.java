@@ -109,6 +109,51 @@ class EmployerOnboardingHttpTest {
                 .andExpect(status().isNotFound());
         http.perform(get("/api/company-verification-documents/" + document).header("Authorization", token))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"));
+        http.perform(get("/api/companies/me/invitations").header("Authorization", token)).andExpect(status().isForbidden());
+        http.perform(put("/api/admin/companies/" + company + "/verify").header("Authorization", admin)
+                .contentType(MediaType.APPLICATION_JSON).content(body(Map.of("status", "VERIFIED", "expectedVersion", 2))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.processingStatus").value("CHECKED"))
+                .andExpect(jsonPath("$.data.reviewOutcome").value("VERIFIED"));
+        http.perform(get("/api/me/employer-onboarding").header("Authorization", token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.stage").value("VERIFIED"));
+        http.perform(get("/api/companies/me/invitations").header("Authorization", token)).andExpect(status().isOk());
+        var approvedHistory = data(http.perform(get("/api/companies/me/verification/history").header("Authorization", token))
+                .andExpect(status().isOk()).andReturn());
+        assertThat(approvedHistory.size()).isEqualTo(2);
+        assertThat(approvedHistory.get(0).path("outcome").asText()).isEqualTo("REJECTED");
+        assertThat(approvedHistory.get(1).path("outcome").asText()).isEqualTo("VERIFIED");
+    }
+
+    @Test void directApprovalUnlocksEmployerAccessAndQueuesApprovalEmail() throws Exception {
+        Signup signup = begin(phone()); String token = promote(signup);
+        http.perform(get("/api/me/employer-onboarding").header("Authorization", token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.emailVerified").value(true))
+                .andExpect(jsonPath("$.data.phoneVerified").value(false))
+                .andExpect(jsonPath("$.data.stage").value("PHONE_REQUIRED"));
+        verifyPhone(signup, token);
+        http.perform(get("/api/me/employer-onboarding").header("Authorization", token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.stage").value("LEGAL_REQUIRED"));
+        String document = upload(token);
+        var company = data(http.perform(post("/api/companies/verification-request").header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON).content(body(Map.of("name", "Công ty Thành Công", "taxCode", UUID.randomUUID().toString(),
+                        "legal", legal(document, "Hồ Chí Minh"))))).andExpect(status().isCreated()).andReturn());
+        long id = company.path("id").asLong();
+        http.perform(get("/api/companies/me/invitations").header("Authorization", token)).andExpect(status().isForbidden());
+        http.perform(put("/api/admin/companies/" + id + "/verify").header("Authorization", token)
+                .header("X-Admin-Role", "ADMIN").contentType(MediaType.APPLICATION_JSON)
+                .content(body(Map.of("status", "VERIFIED", "expectedVersion", 0)))).andExpect(status().isForbidden());
+        http.perform(put("/api/admin/companies/" + id + "/verify").header("Authorization", ordinaryAccount(true))
+                .contentType(MediaType.APPLICATION_JSON).content(body(Map.of("status", "VERIFIED", "expectedVersion", 0))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.reviewOutcome").value("VERIFIED"));
+        http.perform(get("/api/me/employer-onboarding").header("Authorization", token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.stage").value("VERIFIED"))
+                .andExpect(jsonPath("$.data.companyRole").value("OWNER"));
+        http.perform(get("/api/companies/me/invitations").header("Authorization", token)).andExpect(status().isOk());
+        var history = data(http.perform(get("/api/companies/me/verification/history").header("Authorization", token))
+                .andExpect(status().isOk()).andReturn());
+        UUID decision = UUID.fromString(history.get(0).path("attemptId").asText());
+        new com.guardwork.backend.onboarding.delivery.DecisionDeliveryWorker(decisionDeliveries, delivery, transactions).deliverDue();
+        verify(delivery).decisionEmail(eq(signup.email()), eq("Công ty Thành Công"), eq("VERIFIED"), isNull(), eq(decision));
     }
 
     @Test void unverifiedClaimsDoNotReserveEmailAndOnlyOneAttemptPromotes() throws Exception {
