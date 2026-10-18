@@ -4,22 +4,22 @@
 |---|---|
 | Document ID | GW-ADM-UC |
 | Work item | GW-62 — Admin site use cases |
-| Status | Draft — aligned with the user-supplied UC 9–20 |
+| Status | Draft — aligned with the user-supplied UC 9–21 |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
 | Last updated | 2026-10-18 |
 | Primary actor | System Administrator (Platform Admin) |
-| Source | User-revised Vietnamese use cases 9–20 |
+| Source | User-revised Vietnamese use cases 9–20 and requested UC 21 |
 
 ## 1. Scope and common conditions
 
-This document describes exactly the twelve use cases supplied by the user, preserving their numbering and business flows. Technical prose is English under the repository documentation convention; Vietnamese titles are retained for traceability. Login, standalone job-detail viewing, and job closure are not separate use cases in this revision. Opening a job remains contextual navigation for hiding it or reading its history.
+This document describes the thirteen use cases requested by the user, preserving their numbering and business flows. Technical prose is English under the repository documentation convention; Vietnamese titles are retained for traceability. Login, standalone job-detail viewing, and job closure are not separate use cases in this revision. Opening a job remains contextual navigation for hiding it, reading its history, or restoring public visibility.
 
 All use cases require an authenticated System Administrator with Platform role `ADMIN`. This common condition also applies where an individual precondition only mentions target existence or status. Company membership roles do not independently grant Platform administration rights. Every operation must enforce authorization on the server.
 
 Read operations do not change business state. Private evidence is available only within the authorized review context. Passwords, password hashes, tokens, and unrelated private communications must not be exposed.
 
-These are draft product descriptions, not claims of implementation or approval of new architecture, dependencies, schemas, or API changes. Existing approved requirements remain authoritative. See [the aligned specification](spec.md) for requirements and implementation boundaries.
+These are draft product descriptions, not claims of implementation or approval of new architecture, dependencies, schemas, or API changes. Existing approved requirements remain authoritative. See [the Admin specification](spec.md) for UC 9–20 requirements and implementation boundaries. UC-21 is a draft addition in this document; its detailed requirements and implementation contract remain to be aligned and approved.
 
 ## 2. Use-case inventory
 
@@ -37,8 +37,9 @@ These are draft product descriptions, not claims of implementation or approval o
 | 18 | UC-18 | Xem thông tin tài khoản | UC-ADM-03-V / ADM-ACC |
 | 19 | UC-19 | Khóa tài khoản | UC-ADM-03-B / ADM-BAN |
 | 20 | UC-20 | Mở khóa tài khoản | UC-ADM-03-U / ADM-BAN |
+| 21 | UC-21 | Công khai lại tin tuyển dụng đã ẩn | ADM-JOB / draft restoration workflow |
 
-Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigned to different capabilities. Report details extend report-list viewing; approval and rejection extend dossier viewing; ban and unban extend account viewing. Hide and posting history are available from an authorized job context without adding a standalone job-view use case here.
+Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigned to different capabilities. Report details extend report-list viewing; approval and rejection extend dossier viewing; ban and unban extend account viewing. Hide, posting history, and restoration of public visibility are available from an authorized job context without adding a standalone job-view use case here.
 
 ## 3. Use-case descriptions
 
@@ -257,9 +258,31 @@ Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigne
     - **3a.** The target does not exist or is no longer banned. The system refuses the action and reports the current state.
     - **5a.** Invalidation of old sessions cannot be ensured. The system does not confirm a successful unban.
 
+### UC-21 — Republish Hidden Job Posting
+
+- **Actor:** System Administrator.
+- **Description:** Allow the Admin to restore public visibility of a Job Posting previously hidden through administrative moderation after the hiding reason has been resolved.
+- **Pre-condition:** The posting is currently suspended (`SUSPENDED`).
+- **Post-condition:** The posting returns to `PUBLISHED` and becomes publicly visible again; the time and reason are recorded. Posting content, Applications, and prior hiding history are preserved.
+- **Event flow:**
+  - **Main flow:**
+    1. The Admin reviews the posting content, hiding reason, and moderation history, then selects Republish Hidden Job Posting.
+    2. The system requests a restoration reason.
+    3. The Admin enters the reason and submits the request.
+    4. The system checks authority, the posting’s current state, and publication eligibility.
+    5. The system changes the posting to `PUBLISHED` and records the actor, time, and reason while preserving the prior hiding history.
+    6. The system restores public visibility, updates relevant search results and caches, and records the audit entry.
+    7. The system reports the result and displays the posting’s updated status.
+  - **Alternative flows:**
+    - **3a.** No reason is supplied. The system requests one.
+    - **4a.** The posting does not exist, the actor lacks authority, or the posting’s state has changed. The system refuses the action without overwriting the current changes.
+    - **4b.** The hiding reason remains unresolved or the posting does not meet publication eligibility conditions. The system refuses the action and explains the unmet condition.
+    - **6a.** A mandatory visibility update or audit step cannot be completed. The system reports an error and does not confirm successful republication.
+
 ## 4. Interpretation and implementation boundaries
 
 - **Publication spelling:** The supplied UC 13 precondition says `PUBLISHING`, while its alternative 4a says `PUBLISHED`. This document consistently uses `PUBLISHED`, matching the existing Admin lifecycle; it does not introduce a new status or migration.
+- **Restoration boundary:** UC-21 reverses administrative hiding only. It does not resume a Company-paused posting, reopen a closed/expired posting, approve an unreviewed content revision, or lift another enforcement restriction. The Job Publishing Draft models Platform Removal as an independent enforcement condition, whereas this Admin draft uses `SUSPENDED`; reconcile that representation, publication eligibility, concurrency, and search/cache recovery with UC-21 in the Admin specification before implementation. No API, schema, or new state is selected here.
 - **Task acknowledgement:** UC 10’s “started” notification acknowledges an asynchronous initiation request. A queued task is not claimed to be running or complete before execution begins.
 - **Company enforcement state:** User status `ACTIVE/BANNED` and Company flag `is_banned` express the corresponding enforcement states; a Company does not acquire a new user-status column through this document.
 - **Restored permissions:** UC 20 restores access permitted by existing roles, membership, and verification state. It does not grant a new role, verify a Company, or automatically republish suspended postings.
@@ -267,7 +290,7 @@ Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigne
 - **Decision delivery:** Notifications are a required outcome, not a promise of immediate mailbox arrival. Enhanced retained submissions currently create an email delivery intent addressed to the submitter in the decision transaction; a worker sends after commit and retries. Delivery failure does not undo a committed decision. Legacy URL-only dossiers without a retained submission do not currently create that intent. The remaining legacy notification gap is not hidden by this specification.
 - **Dossier presentation:** Existing responses derive `processingStatus = CHECKED` for both `VERIFIED` and `REJECTED`; `CHECKED` does not itself mean approved. The interface reloads the list after a successful decision, but currently reports errors without automatically reloading on conflict.
 - **Read-only report scope:** UC 11–12 do not begin review, acquire a review lock, resolve/reject a report, or apply a sanction. Existing outcomes may be displayed. Former report-resolution requirements are outside this revision’s selected scope, not silently removed from the wider product.
-- **Coverage and delivery:** Login, standalone job viewing, job closure, report adjudication, and audit-log search are outside this twelve-case inventory. Audit recording remains required for the mutations described here. Monitoring and custom task-management delivery retain their former P2/P3 planning labels; inclusion here does not promise MVP delivery.
+- **Coverage and delivery:** Login, standalone job viewing, job closure, report adjudication, and audit-log search are outside this thirteen-case inventory. Audit recording remains required for the mutations described here. Monitoring and custom task-management delivery retain their former P2/P3 planning labels; inclusion here does not promise MVP delivery.
 - **Current implementation:** Company verification, retained dossier history/private documents, decision audit, and enhanced-submission email intents have implementation support. This document does not claim implemented Admin report, job moderation/history, account governance, monitoring-dashboard, or task-management APIs. Existing scheduled delivery workers are not an Admin task-management interface.
 - **Unselected infrastructure:** Dedicated monitoring buffers, search/cache removal, asynchronous execution, and session revocation describe required effects. They do not select Redis, Kafka, Elasticsearch, read replicas, or a scheduler as new approved architecture.
 
