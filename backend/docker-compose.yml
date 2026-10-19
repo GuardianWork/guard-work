@@ -1,5 +1,3 @@
-# version: "3.9"
-
 services:
   postgres:
     image: postgres:18-alpine
@@ -11,15 +9,33 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-backend_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-backend_password}
     ports:
-      - "${POSTGRES_LOCAL_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_LOCAL_PORT:-5432}:5432"
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-easm_user} -d ${POSTGRES_DB:-backend_db}",
+          "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"",
         ]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # Local fixtures only. Flyway in the backend remains the schema owner.
+  seed:
+    image: postgres:18-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB:-backend_db}
+      PGUSER: ${POSTGRES_USER:-backend_user}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-backend_password}
+      GUARDWORK_DEV_SEED_ENABLED: ${GUARDWORK_DEV_SEED_ENABLED:-true}
+    volumes:
+      - ./docker/dev-seed:/seed:ro,z
+      - ./src/main/resources/db/migration:/migrations:ro,z
+    entrypoint: ["/bin/sh", "/seed/seed.sh"]
+    restart: "no"
 volumes:
   pgdata:
