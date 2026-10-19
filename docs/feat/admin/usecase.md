@@ -4,29 +4,29 @@
 |---|---|
 | Document ID | GW-ADM-UC |
 | Work item | GW-62 — Admin site use cases |
-| Status | Draft — aligned with the user-supplied UC 9–21 |
+| Status | Draft — aligned with the user-supplied UC 9–22 |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-10-18 |
+| Last updated | 2026-10-19 |
 | Primary actor | System Administrator (Platform Admin) |
-| Source | User-revised Vietnamese use cases 9–20 and requested UC 21 |
+| Source | User-revised Vietnamese use cases 9–20, requested UC 21, and separate background-task monitoring/triggering flows |
 
 ## 1. Scope and common conditions
 
-This document describes the thirteen use cases requested by the user, preserving their numbering and business flows. Technical prose is English under the repository documentation convention; Vietnamese titles are retained for traceability. Login, standalone job-detail viewing, and job closure are not separate use cases in this revision. Opening a job remains contextual navigation for hiding it, reading its history, or restoring public visibility.
+This document describes the fourteen use cases requested by the user, preserving existing identifiers and business flows. UC-10 now covers background-task monitoring; UC-22 covers manual triggering so that UC-11–21 keep their identifiers. Technical prose is English under the repository documentation convention; Vietnamese titles are retained for traceability. Login, standalone job-detail viewing, and job closure are not separate use cases in this revision. Opening a job remains contextual navigation for hiding it, reading its history, or restoring public visibility.
 
 All use cases require an authenticated System Administrator with Platform role `ADMIN`. This common condition also applies where an individual precondition only mentions target existence or status. Company membership roles do not independently grant Platform administration rights. Every operation must enforce authorization on the server.
 
 Read operations do not change business state. Private evidence is available only within the authorized review context. Passwords, password hashes, tokens, and unrelated private communications must not be exposed.
 
-These are draft product descriptions, not claims of implementation or approval of new architecture, dependencies, schemas, or API changes. Existing approved requirements remain authoritative. See [the Admin specification](spec.md) for UC 9–20 requirements and implementation boundaries. UC-21 is a draft addition in this document; its detailed requirements and implementation contract remain to be aligned and approved.
+These are draft product descriptions, not claims of implementation or approval of new architecture, dependencies, schemas, or API changes. Existing approved requirements remain authoritative. See [the Admin specification](spec.md) for UC 9–20 and UC-22 requirements and implementation boundaries. UC-21 is a draft addition in this document; its detailed requirements and implementation contract remain to be aligned and approved.
 
 ## 2. Use-case inventory
 
 | User number | Stable ID | Vietnamese title | Existing requirement family |
 |---|---|---|---|
 | 9 | UC-09 | Giám sát hệ thống và lưu lượng truy cập | UC-ADM-05 / ADM-MON |
-| 10 | UC-10 | Quản lý tác vụ nền | UC-ADM-06 / ADM-CRON |
+| 10 | UC-10 | Theo dõi tác vụ chạy nền | UC-ADM-06 / ADM-CRON |
 | 11 | UC-11 | Xem danh sách báo cáo | UC-ADM-02-V / ADM-REP |
 | 12 | UC-12 | Xem chi tiết báo cáo | UC-ADM-02-D / ADM-REP |
 | 13 | UC-13 | Ẩn tin tuyển dụng | UC-ADM-04-H / ADM-JOB |
@@ -38,6 +38,7 @@ These are draft product descriptions, not claims of implementation or approval o
 | 19 | UC-19 | Khóa tài khoản | UC-ADM-03-B / ADM-BAN |
 | 20 | UC-20 | Mở khóa tài khoản | UC-ADM-03-U / ADM-BAN |
 | 21 | UC-21 | Công khai lại tin tuyển dụng đã ẩn | ADM-JOB / draft restoration workflow |
+| 22 | UC-22 | Kích hoạt tác vụ chạy nền | UC-ADM-06 / ADM-CRON |
 
 Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigned to different capabilities. Report details extend report-list viewing; approval and rejection extend dossier viewing; ban and unban extend account viewing. Hide, posting history, and restoration of public visibility are available from an authorized job context without adding a standalone job-view use case here.
 
@@ -57,20 +58,22 @@ Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigne
   - **Alternative flows:**
     - **2a.** A resource metric exceeds a configured safety threshold, such as database connection overload. The dashboard immediately changes its warning color to draw the Admin’s attention.
 
-### UC-10 — Manage Background Tasks
+### UC-10 — Monitor Background Tasks
 
 - **Actor:** System Administrator.
-- **Description:** Allow the Admin to inspect periodic background tasks, such as expired-post scanning or report aggregation, trigger an immediate run, inspect execution history, or adjust schedules.
-- **Pre-condition:** The Admin is viewing background-task management.
-- **Post-condition:** A manual execution request is accepted for asynchronous processing, or the task schedule/configuration is successfully updated.
+- **Description:** Allow the Admin to view background tasks, their operational states, schedules, and execution history.
+- **Pre-condition:** The Admin is authenticated and has system-management authority under the common conditions in Section 1.
+- **Post-condition:** Task status and execution-history information are displayed successfully without changing task configuration or requesting execution.
 - **Event flow:**
   - **Main flow:**
-    1. The Admin views the task list, operational states, and latest execution results.
-    2. The Admin selects a task and requests an immediate run.
-    3. The system queues the task for asynchronous processing, records the triggering Admin in the execution log, and acknowledges initiation. A queued request is not represented as an already running or completed execution.
+    1. The Admin opens background-task monitoring.
+    2. The system displays the task list with operational states, schedules, and latest execution results.
+    3. The Admin selects a task to view its details.
+    4. The system displays task information and execution history, including start time, end time, and execution result.
   - **Alternative flows:**
-    - **2a.** The Admin changes the schedule or pauses a task. The system validates schedule syntax where applicable, updates orchestration configuration, and records an audit entry.
-    - **2b.** The Admin requests task history. The system displays execution times, success/failure states, and error logs where available.
+    - **2a.** No tasks exist. The system displays an empty-list message.
+    - **4a.** The task has no execution history. The system displays a no-execution-data message.
+    - **4b.** An execution failed. The system displays the failure status and recorded error information.
 
 ### UC-11 — View Report List
 
@@ -279,18 +282,38 @@ Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigne
     - **4b.** The hiding reason remains unresolved or the posting does not meet publication eligibility conditions. The system refuses the action and explains the unmet condition.
     - **6a.** A mandatory visibility update or audit step cannot be completed. The system reports an error and does not confirm successful republication.
 
+### UC-22 — Trigger Background Task
+
+- **Actor:** System Administrator.
+- **Description:** Allow the Admin to manually request execution of a background task without waiting for its periodic schedule.
+- **Pre-condition:** The Admin is authenticated, has system-management authority under the common conditions in Section 1, and the target task exists.
+- **Post-condition:** The execution request is accepted, queued for asynchronous processing, and attributed to the triggering Admin.
+- **Event flow:**
+  - **Main flow:**
+    1. The Admin opens the background-task list.
+    2. The system displays tasks and their operational states.
+    3. The Admin selects a task and requests execution.
+    4. The system checks the task’s execution conditions.
+    5. The system accepts the request, queues the task for asynchronous processing, and records the triggering Admin.
+    6. The system confirms that the execution request has been accepted. Acceptance does not mean execution is already running or complete.
+  - **Alternative flows:**
+    - **4a.** The task is running and concurrent execution is not permitted. The system rejects the request and informs the Admin that the task is being processed.
+    - **4b.** The task does not meet execution conditions. The system explains the reason and does not accept the request.
+    - **5a.** The system cannot queue the task. The system reports triggering failure and records the error.
+
 ## 4. Interpretation and implementation boundaries
 
 - **Publication spelling:** The supplied UC 13 precondition says `PUBLISHING`, while its alternative 4a says `PUBLISHED`. This document consistently uses `PUBLISHED`, matching the existing Admin lifecycle; it does not introduce a new status or migration.
 - **Restoration boundary:** UC-21 reverses administrative hiding only. It does not resume a Company-paused posting, reopen a closed/expired posting, approve an unreviewed content revision, or lift another enforcement restriction. The Job Publishing Draft models Platform Removal as an independent enforcement condition, whereas this Admin draft uses `SUSPENDED`; reconcile that representation, publication eligibility, concurrency, and search/cache recovery with UC-21 in the Admin specification before implementation. No API, schema, or new state is selected here.
-- **Task acknowledgement:** UC 10’s “started” notification acknowledges an asynchronous initiation request. A queued task is not claimed to be running or complete before execution begins.
+- **Task acknowledgement:** UC-22 confirms acceptance only after the request is queued and the triggering Admin is recorded. A queued task is not claimed to be running or complete before execution begins.
+- **Task scope:** UC-10 is read-only monitoring; UC-22 is manual triggering. Editing schedules and pausing/resuming tasks are outside these supplied flows.
 - **Company enforcement state:** User status `ACTIVE/BANNED` and Company flag `is_banned` express the corresponding enforcement states; a Company does not acquire a new user-status column through this document.
 - **Restored permissions:** UC 20 restores access permitted by existing roles, membership, and verification state. It does not grant a new role, verify a Company, or automatically republish suspended postings.
 - **Verification compatibility:** The concise UC 16–17 flows do not remove the approved reviewer/time, `expectedVersion`, version-increment, or atomic audit requirements. Both decisions still require the current version. Non-pending state and a stale version remain distinct failures; the current backend checks non-pending state first.
 - **Decision delivery:** Notifications are a required outcome, not a promise of immediate mailbox arrival. Enhanced retained submissions currently create an email delivery intent addressed to the submitter in the decision transaction; a worker sends after commit and retries. Delivery failure does not undo a committed decision. Legacy URL-only dossiers without a retained submission do not currently create that intent. The remaining legacy notification gap is not hidden by this specification.
 - **Dossier presentation:** Existing responses derive `processingStatus = CHECKED` for both `VERIFIED` and `REJECTED`; `CHECKED` does not itself mean approved. The interface reloads the list after a successful decision, but currently reports errors without automatically reloading on conflict.
 - **Read-only report scope:** UC 11–12 do not begin review, acquire a review lock, resolve/reject a report, or apply a sanction. Existing outcomes may be displayed. Former report-resolution requirements are outside this revision’s selected scope, not silently removed from the wider product.
-- **Coverage and delivery:** Login, standalone job viewing, job closure, report adjudication, and audit-log search are outside this thirteen-case inventory. Audit recording remains required for the mutations described here. Monitoring and custom task-management delivery retain their former P2/P3 planning labels; inclusion here does not promise MVP delivery.
+- **Coverage and delivery:** Login, standalone job viewing, job closure, report adjudication, and audit-log search are outside this fourteen-case inventory. Audit recording remains required for the mutations described here. Monitoring and custom task-management delivery retain their former P2/P3 planning labels; inclusion here does not promise MVP delivery.
 - **Current implementation:** Company verification, retained dossier history/private documents, decision audit, and enhanced-submission email intents have implementation support. This document does not claim implemented Admin report, job moderation/history, account governance, monitoring-dashboard, or task-management APIs. Existing scheduled delivery workers are not an Admin task-management interface.
 - **Unselected infrastructure:** Dedicated monitoring buffers, search/cache removal, asynchronous execution, and session revocation describe required effects. They do not select Redis, Kafka, Elasticsearch, read replicas, or a scheduler as new approved architecture.
 

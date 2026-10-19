@@ -5,23 +5,24 @@
 | Specification ID | GW-SR-ADM |
 | Project | GuardWork |
 | File | `docs/feat/admin/spec.md` |
-| Version | 1.1.0 — UC 9–20 alignment |
+| Version | 1.2.0 — separate background-task monitoring and triggering |
 | Status | Draft |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-10-18 |
-| Product source | User-revised UC 9–20 in [usecase.md](usecase.md) |
+| Last updated | 2026-10-19 |
+| Product source | User-revised UC 9–20 and UC-22 in [usecase.md](usecase.md) |
 
 ## 1. Purpose and scope
 
-This revision translates the user’s twelve revised Admin use cases into testable functional requirements. It replaces the previous broad Admin draft as the description of this selected scope. It does not change runtime behavior, existing API compatibility, committed migrations, or approved requirements in other documents.
+This revision translates the user’s thirteen revised Admin use cases (UC 9–20 and UC-22) into testable functional requirements. It replaces the previous broad Admin draft as the description of this selected scope. It does not change runtime behavior, existing API compatibility, committed migrations, or approved requirements in other documents.
 
 The actor is the System Administrator with Platform role `ADMIN`. The role is distinct from Company Workspace Owner/Admin membership. Login is a prerequisite, not a use case in this revision. Viewing a job remains navigation context for hiding it and inspecting history; standalone job viewing and job closure are not included as separate features.
 
 | Use case | Capability | Requirement family | Existing planning priority |
 |---|---|---|---|
 | UC-09 | Monitor system health and traffic | ADM-MON | P2 / Post-MVP |
-| UC-10 | Manage background tasks | ADM-CRON | P3 / Post-MVP |
+| UC-10 | Monitor background tasks | ADM-CRON | P3 / Post-MVP |
+| UC-22 | Trigger background task | ADM-CRON | P3 / Post-MVP |
 | UC-11 | View report list | ADM-REP | P1 |
 | UC-12 | View report details | ADM-REP | P1 |
 | UC-13 | Hide Job Posting | ADM-JOB | P1 |
@@ -77,20 +78,23 @@ Precondition: the Admin is viewing the monitoring dashboard. Postcondition: visu
 | ADM-MON-06 | When a metric exceeds a configured safety threshold, the dashboard shall immediately change its warning color. Thresholds, refresh intervals, and history retention remain to be specified. |
 | ADM-MON-07 | Unavailable metrics shall be distinguished from zero activity or healthy operation. |
 
-### 3.2 UC-10 — Manage Background Tasks
+### 3.2 UC-10 and UC-22 — Monitor and Trigger Background Tasks
 
-Precondition: the Admin is viewing task management. Postcondition: a manual execution request is accepted or a configuration change succeeds.
+UC-10 precondition: the common authenticated Platform Admin conditions hold. Postcondition: task information and execution history are displayed without changing task configuration or requesting execution.
+
+UC-22 preconditions: the common conditions hold and the target task exists. Postcondition: the request is accepted, queued for asynchronous processing, and attributed to the triggering Admin.
 
 | ID | Requirement |
 |---|---|
-| ADM-CRON-01 | The system shall display registered background tasks, operational states, and latest execution results. |
-| ADM-CRON-02 | The Admin shall be able to request an immediate run of a selected task. |
-| ADM-CRON-03 | The system shall queue manual work for asynchronous execution, record the triggering Admin in execution history, and acknowledge initiation. Queued, running, and completed states shall not be conflated. |
-| ADM-CRON-04 | The Admin shall be able to change a schedule or pause a task. The system shall validate schedule syntax where applicable, save valid orchestration changes, and record an audit entry. |
-| ADM-CRON-05 | The system shall display a selected task’s execution times, success/failure states, and available error logs. |
-| ADM-CRON-06 | Invalid configuration or an unavailable execution mechanism shall be reported without claiming successful scheduling or execution. |
+| ADM-CRON-01 | The system shall display registered background tasks, operational states, schedules, and latest execution results. |
+| ADM-CRON-02 | The Admin shall be able to select an existing task and manually request execution without waiting for its periodic schedule. |
+| ADM-CRON-03 | The system shall queue accepted manual work for asynchronous execution, record the triggering Admin, and confirm acceptance. Queued, running, and completed states shall not be conflated. |
+| ADM-CRON-05 | The system shall display selected task information and execution history, including start time, end time, execution result, and recorded error information for failed executions. |
+| ADM-CRON-06 | If the system cannot queue a task, it shall report triggering failure and record the error without claiming successful acceptance or execution. |
+| ADM-CRON-07 | The system shall distinguish an empty task list from a selected task with no execution history and display the corresponding message. |
+| ADM-CRON-08 | Before accepting a manual request, the system shall check execution conditions. If the task is running and concurrent execution is prohibited, it shall reject the request and indicate that the task is being processed. Other unmet conditions shall result in rejection with the reason displayed. |
 
-The revised UC includes pausing; resuming is not added as a separate acceptance requirement. Existing background delivery workers do not by themselves implement this management interface.
+ADM-CRON-04 (schedule editing and task pausing) is retired from this selected draft scope and is not reassigned. Viewing schedules remains in scope; editing schedules and pausing/resuming tasks are outside the supplied flows. Existing background delivery workers do not by themselves implement these Admin interfaces. Execution eligibility, concurrency enforcement, and queue integration require an approved implementation contract.
 
 ### 3.3 UC-11–12 — View Reports
 
@@ -217,13 +221,13 @@ Older versions of this Admin draft contained proposed report-resolution, account
 | Topic | Boundary / follow-up |
 |---|---|
 | Login | Remains an authentication prerequisite; excluded as a use case here. |
-| Standalone job view and closure | Not included in the supplied UC 9–20. Contextual job viewing remains necessary for hiding/history. This does not resolve the older documents’ disagreement over Platform Admin closure rights. |
+| Standalone job view and closure | Not included in the supplied UC 9–20 and UC-22. Contextual job viewing remains necessary for hiding/history. This does not resolve the older documents’ disagreement over Platform Admin closure rights. |
 | Report adjudication | Review locks, warning/ban/takedown sanction selection, resolution/rejection, and resolution concurrency are outside UC-11–12. Do not implement them as side effects of opening details. Wider approved product obligations are not removed by this selected scope. |
 | Audit-log search | Outside the selected inventory; immutable audit recording remains required. |
 | Platform/Company authority | Older `rbac_matrix.md` describes role inheritance, while approved authentication separates Platform role from Company membership. Preserve the approved boundary; this edit does not amend the older matrix. |
 | Verification reference | `company_verification.md` includes broader registry/domain/forensics checks, authorization-letter rules, badges, and ranking claims. They are not acceptance requirements introduced by this revision; approved onboarding/verification contracts govern implementation. |
 | Monitoring | Thresholds, sampling/refresh, trend aggregation, history retention, and configured sources remain to be specified. Do not fabricate unavailable metrics. |
-| Background tasks | Schedule dialect, queue/orchestration integration, concurrent-run policy, and operational failure handling require a contract. A queue acknowledgement must not claim running/completion. |
+| Background tasks | Schedule representation, execution eligibility, queue/orchestration integration, concurrency enforcement, and operational failure handling require a contract. Schedule editing and task pausing/resuming are outside this scope. A queue acknowledgement must not claim running/completion. |
 | Search/cache removal | Public hiding must hold across relevant read paths. Technology and cross-system failure behavior remain unselected. |
 | Account enforcement | Exact authorization, private-field scope, session invalidation, ban-expiry handling, consistency, and failure recovery require approved implementation contracts. UC-20 does not require automatic republication. |
 | Notification coverage | Enhanced attempts have delivery support; legacy decision notification remains a gap. No new global notification architecture is selected. |
@@ -235,7 +239,8 @@ These boundaries are explicit gaps, not permission to bypass the stated outcomes
 | Use case | Minimum verification |
 |---|---|
 | UC-09 | Metrics/charts and selected time ranges display correctly; threshold breach changes warning color; unavailable sources are identified; polling does not scan primary business tables. |
-| UC-10 | Manual requests are queued and attributable; queue acknowledgement differs from running/completed; valid schedules and pause changes persist and are audited; execution history distinguishes success/failure and error logs. |
+| UC-10 | Task list shows operational states, schedules, and latest results; details show start/end times, results, and recorded errors; empty task list and no execution history have distinct messages; viewing changes no task configuration or execution state. |
+| UC-22 | Eligible manual requests are queued and attributed to the Admin before acceptance is confirmed; acceptance differs from running/completed; prohibited concurrent runs and other unmet conditions are rejected with reasons; queue failures report failure and record the error. |
 | UC-11 | Report list/filter displays correct target/status summaries; empty and failed loads are distinct; viewing changes no report state. |
 | UC-12 | Authorized details/evidence/outcome display; missing/inaccessible reports are refused; unavailable attachments preserve remaining information; no review or sanction starts. |
 | UC-13 | Only public postings with a reason are hidden; public display/search/cache access is removed; actor/time/reason and audit persist; content/history remain; hidden links are unavailable. |
