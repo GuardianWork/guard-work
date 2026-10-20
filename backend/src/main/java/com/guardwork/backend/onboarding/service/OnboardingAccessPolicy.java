@@ -23,6 +23,7 @@ public class OnboardingAccessPolicy {
 
     @Transactional(readOnly = true)
     public boolean permits(Long actor, String path, String method) {
+        if ("GET".equals(method) && path.matches("/api/jobs/[1-9][0-9]*")) return true;
         if (("GET".equals(method) && path.equals("/api/me/notifications"))
                 || ("PATCH".equals(method) && path.matches("/api/me/notifications/[1-9][0-9]*/read")))
             return users.findById(actor).filter(u -> "ACTIVE".equals(u.getStatus())).isPresent();

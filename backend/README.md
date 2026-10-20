@@ -283,3 +283,29 @@ docker compose -f docker-compose.test.yml up -d --wait  # start test database on
 ./mvnw test            # run tests
 ./mvnw package         # build
 ```
+
+### Job publication and expiry
+
+Platform Administrators decide pending submitted revisions with
+`PUT /api/admin/job-revisions/{revisionId}/decision`, providing the current job and
+revision versions, `outcome` (`APPROVED` or `REJECTED`), and a trimmed 10–1,000
+character rejection reason when rejecting. Company membership does not restrict
+platform review, including review of the administrator's own Company. Decisions
+preserve submitted content and record both job and platform audit facts. Approval
+rechecks Company verification, suspension, current responsibility and the proposed
+deadline before publishing. Review recipients use the existing durable outbox and
+inbox retry mechanism.
+
+`GET /api/jobs/{jobId}` is public, including for signed-in users still completing
+onboarding. It returns only approved content and Company ID/name. Drafts and
+suspended Companies return 404. Availability becomes false at the approved deadline,
+including when scheduled reconciliation has not yet run; expired approved details
+remain readable. This endpoint does not accept Applications.
+
+Expiry reconciles under Company then job locks and records one `JOB_EXPIRED` fact.
+The scheduled worker uses `jobs.expiry.poll-ms=60000` and
+`jobs.expiry.batch-size=100` defaults (valid batch range 1–1000), committing each
+job independently. Set `jobs.expiry.worker-enabled=false` to disable scheduling;
+`JobExpiryService.expireDue()` is the bounded operational recovery entry point.
+Tests disable scheduling and control the Clock explicitly. No schema migration or
+new dependency accompanies moderation, public details, or expiry.
