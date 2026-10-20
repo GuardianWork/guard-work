@@ -43,9 +43,22 @@ public class OnboardingAccessPolicy {
         if (path.startsWith("/api/company-invitations/")) return true;
         if (profile.isEmpty() || profile.get().getEmailVerifiedAt() == null || profile.get().getPhoneVerifiedAt() == null)
             return false;
-        if (path.equals("/api/companies/me/jobs") || path.matches("/api/companies/me/jobs/[1-9][0-9]*(/draft)?"))
+        if (companyJobRoute(path, method))
             return companyId.flatMap(companies::findById).filter(c -> !c.isBanned()).isPresent();
         return companyId.flatMap(companies::findById).filter(c -> !c.isBanned()
                 && c.getVerificationStatus() == VerificationStatus.VERIFIED).isPresent();
     }
+    /** Only known job operations bypass Company verification; business services retain their own gates. */
+    private boolean companyJobRoute(String path, String method) {
+        String root = "/api/companies/me/jobs";
+        String job = root + "/[1-9][0-9]*";
+        return switch (method) {
+            case "GET" -> path.equals(root) || path.matches(job + "(/draft/preview|/revisions)?");
+            case "POST" -> path.equals(root) || path.matches(job + "(/draft|/revisions/[1-9][0-9]*/(submit|withdraw)|/(pause|resume|close))");
+            case "PUT" -> path.matches(job + "(/draft|/owner-responsibility|/assignments/[1-9][0-9]*)");
+            case "DELETE" -> path.matches(job + "/assignments/[1-9][0-9]*");
+            default -> false;
+        };
+    }
+
 }

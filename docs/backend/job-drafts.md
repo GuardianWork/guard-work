@@ -1,7 +1,7 @@
 # Private Job Posting drafts
 
-Implements GW-SR-JOB-PUBLISHING-MVP tickets 01–03: private preparation, preview,
-submission, withdrawal and the Platform Administrator review queue.
+Documents GW-SR-JOB-PUBLISHING-MVP private preparation, assignments, preview,
+submission, withdrawal, derived corrections and revision history (tickets 01–03 and 05).
 
 Authenticated routes use the current User's Company, never a supplied Company ID.
 Owners see all their Company's jobs. Recruiters see only assignments matching their
@@ -157,3 +157,39 @@ Affected Recruiters receive minimal assignment notifications, and the Owner rece
 when responsibility becomes absent. Audit and outbox intent commit atomically. Delivery uses the
 existing after-commit inbox dispatcher and recovery, so historical notifications remain readable
 without granting access to their private job target. This adds no migration or frontend changes.
+
+
+## Derived drafts and Company revision history
+
+`POST /api/companies/me/jobs/{jobId}/draft` accepts `expectedJobVersion` and optional
+`sourceRevisionId`. It creates a distinct DRAFT with the exact same-job source content;
+when omitted, the source is the greatest existing revision number. Every new draft uses
+the next revision number, records its source/current creator and creation time, advances
+the job version and writes `JOB_DRAFT_DERIVED` audit facts atomically. Stable screening
+question keys and question order are preserved. Foreign source IDs return the same 404
+as missing ones. No historical revision is reset to draft or rewritten.
+
+Creation requires no other DRAFT/PENDING_REVIEW working revision and a nonterminal job.
+Company/job locks serialize concurrent derivation; stale versions return 409, and an
+existing working slot returns `40979 WORKING_REVISION_EXISTS`. Due approved deadlines
+are reconciled before allowing creation. There is no automatic draft after rejection or
+withdrawal. A Company Member explicitly derives a new draft to correct submitted content.
+
+`GET /api/companies/me/jobs/{jobId}/revisions` returns the complete currently authorized
+history ordered by `revisionNumber ASC`, with normal `page`/`size` bounds. Each entry
+includes source, content, creator/time, submitter/time, reviewer/decision/rejection reason
+and withdrawal attribution. Owner access and current Recruiter assignments are rechecked
+inside the transaction. Platform history continues to exclude editable drafts.
+
+Drafting, saving and submitting a replacement keep the existing Published Revision and
+approved deadline unchanged. Rejection/withdrawal also retain them. Approval alone
+replaces the pointer/deadline and preserves prior decisions; reconciling the old deadline
+first ensures that approval of a future extension never reopens an expired job. Existing
+moderation audit and recoverable notification effects apply to each distinct attempt.
+No schema migration or frontend work is added by this slice.
+
+Personally verified enrolled members of pending/rejected Companies may use the exact
+known Company-job route/method family, including preview/history, assignment administration,
+and draft derivation. Submission/resume retain service-level Company verification checks.
+Unsupported paths/methods and unrelated employer routes receive no new onboarding bypass.
+Focused verification: `./mvnw -Dtest=JobRevisionHttpTest test`.
