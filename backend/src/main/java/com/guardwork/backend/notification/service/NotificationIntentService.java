@@ -32,4 +32,19 @@ public class NotificationIntentService {
     outbox.saveAndFlush(intent);
     return intent.getEventId();
   }
+  @Transactional(propagation = Propagation.MANDATORY)
+  public UUID recordJobAssignment(Long recipient, Company company, Long jobId, Long revisionId, Instant eventTime) {
+    var intent = new NotificationOutbox();
+    intent.setEventId(UUID.randomUUID());
+    intent.setRecipientUserId(recipient);
+    intent.setEventType("JOB_ASSIGNED");
+    intent.setCompanyId(company.getId());
+    intent.setCompanyName(company.getName());
+    intent.setJobId(jobId);
+    intent.setRevisionId(revisionId);
+    intent.setCreatedAt(eventTime);
+    intent.setNextAttemptAt(eventTime);
+    outbox.saveAndFlush(intent);
+    return intent.getEventId();
+  }
 }

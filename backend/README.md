@@ -265,6 +265,9 @@ Company, Staff and known application-error advice use order `0`, ahead of the gl
 advice with a matching handler; this ordering preserves existing status codes and response
 envelopes before the catch-all maps unexpected exceptions to a generic HTTP 500.
 
+See [private Job Posting drafts](../docs/backend/job-drafts.md) for the Company job APIs,
+content bounds, eligibility, single migration, and notification compatibility.
+
 ## Database
 
 - Schema managed via Flyway: `src/main/resources/db/migration` (`V{version}__{description}.sql`).

@@ -1,0 +1,121 @@
+# Negative checks for private Job Posting drafts. Run selectively against local test data.
+# Prepare the Owner-created and Recruiter-created jobs using job-drafts.http first.
+# The Recruiter must NOT be assigned to ownerJobId. outsiderToken belongs to another Company.
+# staleJobVersion / staleRevisionVersion must be versions from BEFORE a successful save.
+# Re-read the Recruiter job after each rejected save to confirm its content did not change.
+# Keep pasted tokens local; do not commit them.
+
+@baseUrl = http://localhost:8080
+@ownerToken = REPLACE_WITH_OWNER_ACCESS_TOKEN
+@recruiterToken = REPLACE_WITH_RECRUITER_ACCESS_TOKEN
+@outsiderToken = REPLACE_WITH_OTHER_COMPANY_ACCESS_TOKEN
+@ownerJobId = REPLACE_WITH_OWNER_CREATED_JOB_ID
+@recruiterJobId = REPLACE_WITH_RECRUITER_CREATED_JOB_ID
+@staleJobVersion = 0
+@staleRevisionVersion = 0
+@notificationId = REPLACE_WITH_RECRUITER_NOTIFICATION_ID
+
+### Anonymous private list — 401
+GET {{baseUrl}}/api/companies/me/jobs
+
+### Unassigned Recruiter cannot inspect the Owner's job — 404 JOB_NOT_FOUND
+GET {{baseUrl}}/api/companies/me/jobs/{{ownerJobId}}
+Authorization: Bearer {{recruiterToken}}
+
+### Cross-Company identifier — same 404 response as the absent identifier below
+GET {{baseUrl}}/api/companies/me/jobs/{{ownerJobId}}
+Authorization: Bearer {{outsiderToken}}
+
+### Absent positive identifier — 404 JOB_NOT_FOUND
+GET {{baseUrl}}/api/companies/me/jobs/9223372036854775807
+Authorization: Bearer {{outsiderToken}}
+
+### Private scope is checked before missing versions — 404 rather than version details
+PUT {{baseUrl}}/api/companies/me/jobs/{{ownerJobId}}/draft
+Authorization: Bearer {{recruiterToken}}
+Content-Type: application/json
+
+{
+  "content": {}
+}
+
+### Authorized save without versions — 400
+PUT {{baseUrl}}/api/companies/me/jobs/{{recruiterJobId}}/draft
+Authorization: Bearer {{recruiterToken}}
+Content-Type: application/json
+
+{
+  "content": {}
+}
+
+### Stale save after a successful update — 409 CONCURRENT_MODIFICATION
+PUT {{baseUrl}}/api/companies/me/jobs/{{recruiterJobId}}/draft
+Authorization: Bearer {{recruiterToken}}
+Content-Type: application/json
+
+{
+  "expectedJobVersion": {{staleJobVersion}},
+  "expectedRevisionVersion": {{staleRevisionVersion}},
+  "content": {"title": "This stale edit must not overwrite the saved draft"}
+}
+
+### Unknown content field — 400
+POST {{baseUrl}}/api/companies/me/jobs
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "content": {"unexpectedField": "not supported"}
+}
+
+### Invalid enum — 400
+POST {{baseUrl}}/api/companies/me/jobs
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "content": {"employmentType": "CASUAL"}
+}
+
+### Headcount outside structural bounds — 400
+POST {{baseUrl}}/api/companies/me/jobs
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "content": {"headcount": 10001}
+}
+
+### Ambiguous deadline without offset — 400
+POST {{baseUrl}}/api/companies/me/jobs
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "content": {"deadline": "2030-12-31T17:00:00"}
+}
+
+### Compensation with excessive fractional precision — 400
+POST {{baseUrl}}/api/companies/me/jobs
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "content": {"compensation": {"minimum": 1.001}}
+}
+
+### Read the Recruiter job after failed saves — content and versions should be unchanged
+GET {{baseUrl}}/api/companies/me/jobs/{{recruiterJobId}}
+Authorization: Bearer {{recruiterToken}}
+
+### Unsafe pagination offset — 400
+GET {{baseUrl}}/api/companies/me/jobs?page=2147483647&size=100
+Authorization: Bearer {{ownerToken}}
+
+### Invalid status filter — 400
+GET {{baseUrl}}/api/companies/me/jobs?status=UNKNOWN
+Authorization: Bearer {{ownerToken}}
+
+### Another recipient cannot mark the Recruiter's notification read — 404
+PATCH {{baseUrl}}/api/me/notifications/{{notificationId}}/read
+Authorization: Bearer {{ownerToken}}

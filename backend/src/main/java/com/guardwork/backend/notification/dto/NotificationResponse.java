@@ -9,7 +9,9 @@ public record NotificationResponse(
     Long companyId,
     String companyName,
     Instant createdAt,
-    Instant readAt) {
+    Instant readAt,
+    Long jobId,
+    Long revisionId) {
   public static NotificationResponse from(UserNotification n) {
     return new NotificationResponse(
         n.getId(),
@@ -17,6 +19,8 @@ public record NotificationResponse(
         n.getCompanyId(),
         n.getCompanyName(),
         n.getCreatedAt(),
-        n.getReadAt());
+        n.getReadAt(),
+        n.getJobId(),
+        n.getRevisionId());
   }
 }

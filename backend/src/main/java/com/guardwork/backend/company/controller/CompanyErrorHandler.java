@@ -10,7 +10,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.guardwork.backend.common.ApiResponse;
 
 /** Scoped AUTH response convention for the protected Company API. */
-@RestControllerAdvice(basePackages = {"com.guardwork.backend.company", "com.guardwork.backend.membership", "com.guardwork.backend.invitation", "com.guardwork.backend.notification"})
+@RestControllerAdvice(basePackages = {"com.guardwork.backend.company", "com.guardwork.backend.membership", "com.guardwork.backend.invitation", "com.guardwork.backend.notification", "com.guardwork.backend.job"})
 @Order(0)
 public class CompanyErrorHandler {
     @ExceptionHandler(ResponseStatusException.class)

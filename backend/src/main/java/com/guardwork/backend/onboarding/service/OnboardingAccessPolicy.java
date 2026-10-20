@@ -23,6 +23,9 @@ public class OnboardingAccessPolicy {
 
     @Transactional(readOnly = true)
     public boolean permits(Long actor, String path, String method) {
+        if (("GET".equals(method) && path.equals("/api/me/notifications"))
+                || ("PATCH".equals(method) && path.matches("/api/me/notifications/[1-9][0-9]*/read")))
+            return users.findById(actor).filter(u -> "ACTIVE".equals(u.getStatus())).isPresent();
         var profile = profiles.findById(actor);
         var companyId = members.findActiveCompanyId(actor);
         boolean enhancedMembership = companyId.isPresent() && attempts.existsByCompanyId(companyId.get());
@@ -39,6 +42,8 @@ public class OnboardingAccessPolicy {
         if (path.startsWith("/api/company-invitations/")) return true;
         if (profile.isEmpty() || profile.get().getEmailVerifiedAt() == null || profile.get().getPhoneVerifiedAt() == null)
             return false;
+        if (path.equals("/api/companies/me/jobs") || path.matches("/api/companies/me/jobs/[1-9][0-9]*(/draft)?"))
+            return companyId.flatMap(companies::findById).filter(c -> !c.isBanned()).isPresent();
         return companyId.flatMap(companies::findById).filter(c -> !c.isBanned()
                 && c.getVerificationStatus() == VerificationStatus.VERIFIED).isPresent();
     }

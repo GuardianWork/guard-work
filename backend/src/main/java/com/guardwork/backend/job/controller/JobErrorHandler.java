@@ -1,0 +1,30 @@
+package com.guardwork.backend.job.controller;
+
+import com.guardwork.backend.common.ApiResponse;
+import com.guardwork.backend.logging.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.annotation.Order;
+import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.web.bind.annotation.*;
+
+/** Expected Company API errors are handled at order 0; retain the job envelope for other failures. */
+@Order(1)
+@RestControllerAdvice(assignableTypes = JobDraftController.class)
+public class JobErrorHandler {
+  private static final Logger LOG = LoggerFactory.getLogger(JobErrorHandler.class);
+
+  @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+  public ResponseEntity<ApiResponse<Void>> stale(ObjectOptimisticLockingFailureException error) {
+    return ResponseEntity.status(409).body(new ApiResponse<>(409,
+        "40022 CONCURRENT_MODIFICATION: Reload current versions", null));
+  }
+
+  @ExceptionHandler(RuntimeException.class)
+  public ResponseEntity<ApiResponse<Void>> unexpected(RuntimeException error) {
+    DiagnosticLog.error(LOG, DiagnosticEvent.UNEXPECTED_FAILURE, error);
+    return ResponseEntity.internalServerError().body(new ApiResponse<>(500,
+        "50000 INTERNAL_ERROR: Job operation failed", null));
+  }
+}
