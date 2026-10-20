@@ -1,7 +1,7 @@
 # Private Job Posting drafts
 
-Implements GW-SR-JOB-PUBLISHING-MVP ticket 01. This slice provides private preparation;
-assignment administration, preview, submission, moderation and publication are later slices.
+Implements GW-SR-JOB-PUBLISHING-MVP tickets 01–03: private preparation, preview,
+submission, withdrawal and the Platform Administrator review queue.
 
 Authenticated routes use the current User's Company, never a supplied Company ID.
 Owners see all their Company's jobs. Recruiters see only assignments matching their
@@ -100,6 +100,43 @@ Run the existing isolated database setup and `./mvnw test`, then `./mvnw package
 `backend/`. Focused verification: `./mvnw -Dtest=JobDraftHttpTest,JobPersistenceTest test`.
 When iterating on this uncommitted migration, use a fresh disposable test database rather
 than changing applied migration history or resetting a development database.
+
+## Preview, submission and review queue
+
+`GET /api/companies/me/jobs/{jobId}/draft/preview` returns `content`, `jobVersion`,
+`revisionVersion`, `submissionEligible` and structured `validationIssues` (`field`, `code`).
+It reads the exact normalized candidate-facing content without changing either version.
+
+`POST /api/companies/me/jobs/{jobId}/revisions/{revisionId}/submit` requires both
+`expectedJobVersion` and `expectedRevisionVersion` plus `confirmed: true`. Submission
+requires every narrative and content choice, strictly future deadline, verified Company
+and current responsibility. Compensation must explicitly choose disclosure; disclosed
+ranges require ordered positive bounds, currency and pay period, with whole VND amounts.
+Single-choice questions require 2–10 distinct options; other types prohibit options.
+Every question requires a UUID key, type, nonblank prompt and explicit required flag.
+Application instructions direct Candidates through GuardWork; human review checks their
+meaning rather than unreliable substring detection. Text remains plain text data.
+
+Submission preserves the exact content and transitions only the current draft to
+PENDING_REVIEW. Both versions advance. Company/job locking serializes competing submits;
+a stale confirmation returns 409 without creating an extra review attempt. Missing
+confirmation/versions or incomplete content returns 400. Company verification,
+responsibility and deadline conflicts return the scoped 409 feature errors.
+
+`POST .../revisions/{revisionId}/withdraw` requires both versions and a pending revision.
+It preserves submission/content attribution, adds withdrawal facts, and releases the
+working slot without creating another draft. Closed/expired jobs may still withdraw an
+existing pending revision. Every accepted submission/withdrawal records an immutable
+audit event in the same transaction. Submitted and terminal history is protected by the
+existing PostgreSQL triggers; no new migration is introduced by ticket 03.
+
+Platform Administrators use `GET /api/admin/job-revisions`, with `status` defaulting to
+PENDING_REVIEW or APPROVED/REJECTED/WITHDRAWN/ALL, `page=0`, and `size=20` (1–100).
+Ordering is `submittedAt ASC, id ASC`. `GET /api/admin/job-revisions/{revisionId}` exposes
+exact submitted content, versions, attribution and current approval eligibility.
+`GET /api/admin/jobs/{jobId}/revisions` returns submitted history ordered by revision
+number. Editable drafts are excluded from every moderation response. All services recheck
+current User authority; Company Admin does not grant platform moderation authority.
 
 ## Assignment administration
 

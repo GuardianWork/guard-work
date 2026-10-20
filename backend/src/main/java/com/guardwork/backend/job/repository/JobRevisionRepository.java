@@ -7,6 +7,6 @@ import org.springframework.data.domain.*;
 import jakarta.persistence.LockModeType;
 import java.util.*;
 
-public interface JobRevisionRepository extends JpaRepository<JobRevision, Long> {
+public interface JobRevisionRepository extends JpaRepository<JobRevision, Long>, JpaSpecificationExecutor<JobRevision> {
   Optional<JobRevision> findByJobIdAndStateIn(Long jobId, Collection<String> states);
 }

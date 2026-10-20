@@ -143,7 +143,7 @@ public class JobDraftService {
     return sub.select(a.get("id")).where(predicates.toArray(Predicate[]::new));
   }
 
-  private CompanyAccessService.Access scope(Long actor, boolean concealed) {
+  CompanyAccessService.Access scope(Long actor, boolean concealed) {
     CompanyAccessService.Access scope;
     try { scope = access.findCurrentCompanyAccess(actor); }
     catch (ResponseStatusException e) {
@@ -161,7 +161,7 @@ public class JobDraftService {
     return scope;
   }
 
-  private JobPosting visible(CompanyAccessService.Access scope, Long id) {
+  JobPosting visible(CompanyAccessService.Access scope, Long id) {
     if (id == null || id <= 0) throw DraftContent.invalid("jobId");
     var job = jobs.lock(id, scope.company().getId()).orElseThrow(JobDraftService::notFound);
     if (scope.membership().getRole() == CompanyRole.RECRUITER
@@ -170,20 +170,21 @@ public class JobDraftService {
     return job;
   }
 
-  private JobRevision working(JobPosting job) {
+  JobRevision working(JobPosting job) {
     return revisions.findByJobIdAndStateIn(job.getId(), List.of("DRAFT", "PENDING_REVIEW")).orElse(null);
   }
 
-  private JobDetail detail(JobPosting job, JobRevision revision) {
+  JobDetail detail(JobPosting job, JobRevision revision) {
     var current = assignments.current(job.getId());
     boolean editable = revision != null && "DRAFT".equals(revision.getState()) && !Set.of("CLOSED", "EXPIRED").contains(job.getStatus());
     return new JobDetail(job.getId(), job.getCompanyId(), job.getCreatorUserId(), job.getStatus(), job.getVersion(),
         job.isOwnerResponsible(), !job.isOwnerResponsible() && current.isEmpty(), JobDetail.Revision.from(revision, revision == null ? null : content.decode(revision.getContent())),
         job.getPublishedRevisionId(), job.getApprovedDeadline(), current.stream().map(JobDetail.Assignment::from).toList(),
-        editable ? List.of("SAVE_DRAFT") : List.of(), job.getCreatedAt(), job.getUpdatedAt());
+        editable ? List.of("SAVE_DRAFT", "PREVIEW", "SUBMIT")
+            : revision != null && "PENDING_REVIEW".equals(revision.getState()) ? List.of("WITHDRAW") : List.of(), job.getCreatedAt(), job.getUpdatedAt());
   }
 
-  private void record(JobPosting job, JobRevision revision, Long actor, String event, Long member, Map<String, Object> facts) {
+  void record(JobPosting job, JobRevision revision, Long actor, String event, Long member, Map<String, Object> facts) {
     var entry = new JobAuditEvent();
     entry.setCompanyId(job.getCompanyId()); entry.setJobId(job.getId()); entry.setRevisionId(revision.getId());
     entry.setActorUserId(actor); entry.setEventType(event); entry.setMembershipId(member);

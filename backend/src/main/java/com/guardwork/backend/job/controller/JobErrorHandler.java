@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 /** Expected Company API errors are handled at order 0; retain the job envelope for other failures. */
 @Order(1)
-@RestControllerAdvice(assignableTypes = {JobDraftController.class, JobAssignmentController.class})
+@RestControllerAdvice(basePackages = "com.guardwork.backend.job.controller")
 public class JobErrorHandler {
   private static final Logger LOG = LoggerFactory.getLogger(JobErrorHandler.class);
 
@@ -19,6 +19,11 @@ public class JobErrorHandler {
   public ResponseEntity<ApiResponse<Void>> stale(ObjectOptimisticLockingFailureException error) {
     return ResponseEntity.status(409).body(new ApiResponse<>(409,
         "40022 CONCURRENT_MODIFICATION: Reload current versions", null));
+  }
+
+  @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+  public ResponseEntity<ApiResponse<Void>> expected(org.springframework.web.server.ResponseStatusException error) {
+    return ResponseEntity.status(error.getStatusCode()).body(new ApiResponse<>(error.getStatusCode().value(), error.getReason(), null));
   }
 
   @ExceptionHandler(RuntimeException.class)

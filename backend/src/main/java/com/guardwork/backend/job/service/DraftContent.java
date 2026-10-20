@@ -54,6 +54,47 @@ public class DraftContent {
     catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Invalid persisted job content", e); }
   }
 
+  public record ValidationIssue(String field, String code) {}
+
+  /** Submission validation over the normalized draft; structural limits are enforced on every save. */
+  public List<ValidationIssue> submissionIssues(String value, java.time.Instant now) {
+    JsonNode c = json.valueToTree(decode(value));
+    List<ValidationIssue> issues = new ArrayList<>();
+    for (String f : List.of("title", "description", "responsibilities", "requiredQualifications",
+        "preferredQualifications", "experienceExpectations", "benefits", "location", "applicationInstructions",
+        "employmentType", "workArrangement", "deadline", "headcount", "compensation"))
+      if (!present(c, f) || c.get(f).isTextual() && c.get(f).textValue().isBlank())
+        issues.add(new ValidationIssue("content." + f, "REQUIRED"));
+    if (present(c, "deadline") && !java.time.Instant.parse(c.get("deadline").textValue()).isAfter(now))
+      issues.add(new ValidationIssue("content.deadline", "DEADLINE_PASSED"));
+    if (present(c, "compensation")) {
+      JsonNode pay = c.get("compensation");
+      if (!present(pay, "disclosed")) issues.add(new ValidationIssue("content.compensation.disclosed", "REQUIRED"));
+      else if (pay.get("disclosed").booleanValue()) {
+        for (String f : List.of("minimum", "maximum", "currency", "payPeriod"))
+          if (!present(pay, f)) issues.add(new ValidationIssue("content.compensation." + f, "REQUIRED"));
+        if (present(pay, "minimum") && present(pay, "maximum")
+            && pay.get("minimum").decimalValue().compareTo(pay.get("maximum").decimalValue()) > 0)
+          issues.add(new ValidationIssue("content.compensation.maximum", "RANGE_INVALID"));
+        if ("VND".equals(pay.path("currency").asText())) for (String f : List.of("minimum", "maximum"))
+          if (present(pay, f) && pay.get(f).decimalValue().stripTrailingZeros().scale() > 0)
+            issues.add(new ValidationIssue("content.compensation." + f, "WHOLE_NUMBER_REQUIRED"));
+      } else for (String f : List.of("minimum", "maximum", "currency", "payPeriod"))
+        if (present(pay, f)) issues.add(new ValidationIssue("content.compensation." + f, "NOT_ALLOWED"));
+    }
+    if (present(c, "screeningQuestions")) for (int index = 0; index < c.get("screeningQuestions").size(); index++) {
+      JsonNode q = c.get("screeningQuestions").get(index); String prefix = "content.screeningQuestions[" + index + "].";
+      for (String f : List.of("key", "type", "prompt", "required"))
+        if (!present(q, f) || q.get(f).isTextual() && q.get(f).textValue().isBlank())
+          issues.add(new ValidationIssue(prefix + f, "REQUIRED"));
+      if ("SINGLE_CHOICE".equals(q.path("type").asText())) {
+        if (!present(q, "options") || q.get("options").size() < 2)
+          issues.add(new ValidationIssue(prefix + "options", "AT_LEAST_TWO_OPTIONS"));
+      } else if (present(q, "options")) issues.add(new ValidationIssue(prefix + "options", "NOT_ALLOWED"));
+    }
+    return issues;
+  }
+
   private void compensation(JsonNode value) {
     if (!value.isObject()) throw invalid("content.compensation");
     ObjectNode c = (ObjectNode) value;
