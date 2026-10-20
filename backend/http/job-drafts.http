@@ -9,10 +9,10 @@
 # copy data.version and data.workingRevision.version before another save.
 
 @baseUrl = http://localhost:8080
-@ownerToken = REPLACE_WITH_OWNER_ACCESS_TOKEN
-@recruiterToken = REPLACE_WITH_RECRUITER_ACCESS_TOKEN
+@ownerToken = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJnd19vd25lcl90ZXN0XzAxIiwiZW1haWwiOiJndy1vd25lci10ZXN0QGV4YW1wbGUudGVzdCIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzkyNTE2NDI0LCJleHAiOjE3OTI2MDY0MjR9.CZHZFwBMCQVSDhIvtr-Cq8AgA8PJ6h2r15bD59I5veI
+@recruiterToken = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI3IiwidXNlcm5hbWUiOiJmaW5uenhqZSIsImVtYWlsIjoiZmlubnp4amVAZ21haWwuY29tIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3OTI1MTY0NjgsImV4cCI6MTc5MjYwNjQ2OH0.bQzjcJ_AOGszPnTES2nsVLzeg57k1Ubb0IjNHB7A3Wo
 @ownerJobId = REPLACE_WITH_OWNER_CREATED_JOB_ID
-@recruiterJobId = REPLACE_WITH_RECRUITER_CREATED_JOB_ID
+@recruiterJobId = 2
 @jobVersion = 0
 @revisionVersion = 0
 @notificationId = REPLACE_WITH_RECRUITER_NOTIFICATION_ID

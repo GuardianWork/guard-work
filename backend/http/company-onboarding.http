@@ -6,13 +6,13 @@
 # Copy accessToken and IDs/versions from the response into the variables below when prompted.
 
 @baseUrl = http://localhost:8080
-@ownerToken=REPLACE_WITH_OWNER_ACCESS_TOKEN
-@adminToken=REPLACE_WITH_EXISTING_PLATFORM_ADMIN_ACCESS_TOKEN
+@ownerToken=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJnd19vd25lcl90ZXN0XzAxIiwiZW1haWwiOiJndy1vd25lci10ZXN0QGV4YW1wbGUudGVzdCIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzkyNTE1Mzk2LCJleHAiOjE3OTI1MTYyOTZ9.983dKv5LswIUD20Ax5HIAKdwFGUmm2GYid7qX6vCZeQ
+@adminToken=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzIiwidXNlcm5hbWUiOiJkZW1vX2FkbWluIiwiZW1haWwiOiJhZG1pbkBkZW1vLmd1YXJkd29yay50ZXN0Iiwicm9sZSI6IkFETUlOIiwiaWF0IjoxNzkyNTE1NTczLCJleHAiOjE3OTI1MTY0NzN9.rfDH689eTdK9KLwKbkBMCRj_BkTQsvvyTYpLu38A4_E
 @ownerUsername = gw_owner_test_01
 @ownerEmail = gw-owner-test@example.test
 @ownerPassword = LocalTestPass123
 @companyId = 1
-@companyVersion = 0
+@companyVersion = 2
 @uniqueTaxCode = REPLACE_WITH_UNIQUE_TAX_CODE
 
 ### Register a disposable Owner account

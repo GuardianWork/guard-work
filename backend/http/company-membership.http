@@ -11,13 +11,13 @@
 # Keep pasted tokens/secrets local; do not commit them in this file.
 
 @baseUrl = http://localhost:8080
-@ownerToken=REPLACE_WITH_OWNER_ACCESS_TOKEN
-@recipientToken = REPLACE_WITH_RECIPIENT_ACCESS_TOKEN
-@recipientEmail = replace-with-an-inbox-you-control@example.com
-@recipientUsername = gw_recruiter_test_01
+@ownerToken=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJnd19vd25lcl90ZXN0XzAxIiwiZW1haWwiOiJndy1vd25lci10ZXN0QGV4YW1wbGUudGVzdCIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzkyNTE1MzQ3LCJleHAiOjE3OTI1MTYyNDd9.K65ORpdKi1FlHvf8azxi4O_gyWAmfP_w62x57WmTPJw
+@recipientToken = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI3IiwidXNlcm5hbWUiOiJmaW5uenhqZSIsImVtYWlsIjoiZmlubnp4amVAZ21haWwuY29tIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3OTI1MTYyMjcsImV4cCI6MTc5MjYwNjIyN30.ceegC3CtUtIO_iIpzy1wwtKFHr-1eI4lFGbrvZsI9fc
+@recipientEmail = finnzxje@gmail.com
+@recipientUsername = finnzxje
 @recipientPassword = LocalTestPass123
-@invitationId = REPLACE_WITH_INVITATION_ID
-@invitationSecret = REPLACE_WITH_SECRET_FROM_EMAIL
+@invitationId = 1
+@invitationSecret = jixYI3UVM-UYJrj-p8Y6PjuG7biHlbkmZMXQGbKJMQw
 @membershipId = REPLACE_WITH_RECRUITER_MEMBERSHIP_ID
 @notificationId = REPLACE_WITH_NOTIFICATION_ID
 
