@@ -100,3 +100,23 @@ Run the existing isolated database setup and `./mvnw test`, then `./mvnw package
 `backend/`. Focused verification: `./mvnw -Dtest=JobDraftHttpTest,JobPersistenceTest test`.
 When iterating on this uncommitted migration, use a fresh disposable test database rather
 than changing applied migration history or resetting a development database.
+
+## Assignment administration
+
+Only the current Owner can `PUT /api/companies/me/jobs/{id}/assignments/{membershipId}`
+with `{expectedJobVersion}`, `DELETE` that resource with the required `expectedJobVersion`
+query parameter, or `PUT /api/companies/me/jobs/{id}/owner-responsibility` with
+`{expectedJobVersion, responsible}`. Targets must be active Recruiters in the same Company.
+Owner Responsibility may coexist with multiple assignments. Management authority is independent
+of explicit responsibility. Current-version unchanged requests succeed without new audit or inbox events;
+stale versions return 409. Assignment and responsibility changes advance the Job Posting version.
+
+Unassignment immediately revokes private access, including creator access. Leaving or removal
+ends all assignments in the same transaction, retaining assignment and membership history.
+Reactivating a membership never restores an ended assignment. These operations serialize on the
+Company lock; membership ending processes jobs in ascending ID order without taking target User locks.
+Losing the final responsible person flags the job for reassignment without changing publication state.
+Affected Recruiters receive minimal assignment notifications, and the Owner receives a notification
+when responsibility becomes absent. Audit and outbox intent commit atomically. Delivery uses the
+existing after-commit inbox dispatcher and recovery, so historical notifications remain readable
+without granting access to their private job target. This adds no migration or frontend changes.

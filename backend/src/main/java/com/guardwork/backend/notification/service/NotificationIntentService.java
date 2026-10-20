@@ -34,10 +34,16 @@ public class NotificationIntentService {
   }
   @Transactional(propagation = Propagation.MANDATORY)
   public UUID recordJobAssignment(Long recipient, Company company, Long jobId, Long revisionId, Instant eventTime) {
+    return recordJob(recipient, "JOB_ASSIGNED", company, jobId, revisionId, eventTime);
+  }
+  @Transactional(propagation = Propagation.MANDATORY)
+  public UUID recordJob(Long recipient, String eventType, Company company, Long jobId, Long revisionId, Instant eventTime) {
+    if (!java.util.Set.of("JOB_ASSIGNED", "JOB_UNASSIGNED", "JOB_NEEDS_REASSIGNMENT", "JOB_REVISION_APPROVED", "JOB_REVISION_REJECTED").contains(eventType))
+      throw new IllegalArgumentException("Unsupported job notification");
     var intent = new NotificationOutbox();
     intent.setEventId(UUID.randomUUID());
     intent.setRecipientUserId(recipient);
-    intent.setEventType("JOB_ASSIGNED");
+    intent.setEventType(eventType);
     intent.setCompanyId(company.getId());
     intent.setCompanyName(company.getName());
     intent.setJobId(jobId);

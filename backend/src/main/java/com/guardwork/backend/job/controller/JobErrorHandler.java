@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 /** Expected Company API errors are handled at order 0; retain the job envelope for other failures. */
 @Order(1)
-@RestControllerAdvice(assignableTypes = JobDraftController.class)
+@RestControllerAdvice(assignableTypes = {JobDraftController.class, JobAssignmentController.class})
 public class JobErrorHandler {
   private static final Logger LOG = LoggerFactory.getLogger(JobErrorHandler.class);
 

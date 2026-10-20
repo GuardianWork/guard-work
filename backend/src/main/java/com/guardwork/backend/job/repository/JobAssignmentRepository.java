@@ -8,6 +8,9 @@ import jakarta.persistence.LockModeType;
 import java.util.*;
 
 public interface JobAssignmentRepository extends JpaRepository<JobAssignment, Long> {
+  List<JobAssignment> findByMembershipIdAndEndedAtIsNullOrderByJobId(Long membershipId);
+  List<JobAssignment> findByJobIdAndMembershipIdAndEndedAtIsNull(Long jobId, Long membershipId);
+
   @Query("""
       select a from JobAssignment a, CompanyMembership m, User u
       where a.jobId=:job and a.endedAt is null and a.membershipId=m.id

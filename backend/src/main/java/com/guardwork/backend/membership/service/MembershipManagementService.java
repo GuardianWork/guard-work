@@ -20,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class MembershipManagementService {
+  private final com.guardwork.backend.job.service.JobAssignmentService jobAssignments;
   private final CompanyAccessService access;
   private final CompanyMembershipRepository memberships;
   private final UserRepository users;
@@ -30,6 +31,7 @@ public class MembershipManagementService {
   private final TransactionTemplate transaction;
 
   public MembershipManagementService(
+      com.guardwork.backend.job.service.JobAssignmentService jobAssignments,
       CompanyAccessService access,
       CompanyMembershipRepository memberships,
       UserRepository users,
@@ -38,6 +40,7 @@ public class MembershipManagementService {
       NotificationDispatcher dispatcher,
       Clock clock,
       PlatformTransactionManager manager) {
+    this.jobAssignments = jobAssignments;
     this.access = access;
     this.memberships = memberships;
     this.users = users;
@@ -92,6 +95,7 @@ public class MembershipManagementService {
               if (target.getStatus() != MembershipStatus.ACTIVE)
                 throw CompanyAccessService.notFound();
               requireRecruiter(target);
+              jobAssignments.endMembership(company, target, actor, "MEMBERSHIP_REMOVED");
               end(target, actor, MembershipStatus.REMOVED);
               audit.record(
                   actor,
@@ -122,6 +126,7 @@ public class MembershipManagementService {
                 "40302 NOT_COMPANY_MEMBER: Active Company membership required");
           var target = current.membership();
           requireRecruiter(target);
+          jobAssignments.endMembership(current.company(), target, actor, "MEMBERSHIP_LEFT");
           end(target, actor, MembershipStatus.LEFT);
           audit.record(
               actor,
