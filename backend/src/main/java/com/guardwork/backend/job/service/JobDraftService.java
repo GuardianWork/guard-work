@@ -34,14 +34,15 @@ public class JobDraftService {
   private final NotificationDispatcher dispatcher;
   private final Clock clock;
   private final JobExpiryService expiry;
+  private final JobEligibility eligibility;
 
   public JobDraftService(CompanyAccessService access, OnboardingAccessPolicy onboarding,
       JobPostingRepository jobs, JobRevisionRepository revisions, JobAssignmentRepository assignments,
       JobAuditEventRepository audit, DraftContent content, NotificationIntentService notifications,
-      NotificationDispatcher dispatcher, Clock clock, JobExpiryService expiry) {
+      NotificationDispatcher dispatcher, Clock clock, JobExpiryService expiry, JobEligibility eligibility) {
     this.access = access; this.onboarding = onboarding; this.jobs = jobs; this.revisions = revisions;
     this.assignments = assignments; this.audit = audit; this.content = content;
-    this.expiry=expiry; this.notifications = notifications; this.dispatcher = dispatcher; this.clock = clock;
+    this.eligibility=eligibility; this.expiry=expiry; this.notifications = notifications; this.dispatcher = dispatcher; this.clock = clock;
   }
 
   public JobDetail create(Long actor, JobRequests.Create request) {
@@ -189,14 +190,15 @@ public class JobDraftService {
     String status=expiry.effectiveStatus(job);
     boolean terminal=Set.of("CLOSED","EXPIRED").contains(status);
     var actions=new ArrayList<String>();
-    boolean responsible=job.isOwnerResponsible() || !current.isEmpty();
-    boolean verified=scope.company().getVerificationStatus()==com.guardwork.backend.company.model.VerificationStatus.VERIFIED;
+    var evaluation=eligibility.evaluate(scope.company(),job,revision,current);
+    boolean responsible=!evaluation.needsReassignment();
+    boolean verified=evaluation.companyVerified();
     if(revision==null && !terminal) actions.add("CREATE_DRAFT");
     if(revision!=null && "DRAFT".equals(revision.getState())) {
       actions.add("PREVIEW");
       if(!terminal) {
         actions.add("SAVE_DRAFT");
-        if(verified && responsible && content.submissionIssues(revision.getContent(),clock.instant()).isEmpty())actions.add("SUBMIT");
+        if(evaluation.eligible())actions.add("SUBMIT");
       }
     }
     if(revision!=null && "PENDING_REVIEW".equals(revision.getState()))actions.add("WITHDRAW");

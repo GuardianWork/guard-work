@@ -31,13 +31,14 @@ public class JobPublicationService {
   private final NotificationDispatcher dispatcher;
   private final Clock clock;
   private final JobExpiryService expiry;
+  private final JobEligibility eligibility;
   public JobPublicationService(JobReviewQueueService reviews, JobPostingRepository jobs, JobRevisionRepository revisions,
       CompanyRepository companies, JobAssignmentRepository assignments, CompanyMembershipRepository memberships,
       DraftContent content, JobDraftService drafts, AuditService audit, NotificationIntentService notifications,
-      NotificationDispatcher dispatcher, Clock clock, JobExpiryService expiry) {
+      NotificationDispatcher dispatcher, Clock clock, JobExpiryService expiry, JobEligibility eligibility) {
     this.reviews=reviews;this.jobs=jobs;this.revisions=revisions;this.companies=companies;this.assignments=assignments;
     this.memberships=memberships;this.content=content;this.drafts=drafts;this.audit=audit;
-    this.notifications=notifications;this.dispatcher=dispatcher;this.clock=clock;this.expiry=expiry;
+    this.notifications=notifications;this.dispatcher=dispatcher;this.clock=clock;this.expiry=expiry;this.eligibility=eligibility;
   }
   public record Decision(Long expectedJobVersion, Long expectedRevisionVersion, String outcome, String reason) {}
   public record Receipt(Long jobId,Long revisionId,String outcome,String publicationStatus,Long jobVersion,Long revisionVersion) {}
@@ -63,9 +64,10 @@ public class JobPublicationService {
     String reason=request.reason()==null?null:request.reason().strip();
     if("REJECTED".equals(request.outcome()) && (reason==null || reason.codePointCount(0,reason.length())<10 || reason.codePointCount(0,reason.length())>1000)) throw DraftContent.invalid("reason");
     if("APPROVED".equals(request.outcome())) {
-      if(company.getVerificationStatus()!=VerificationStatus.VERIFIED) throw JobSubmissionService.conflict("40982 COMPANY_VERIFICATION_REQUIRED");
-      if(!job.isOwnerResponsible() && assignments.current(job.getId()).isEmpty()) throw JobSubmissionService.conflict("40980 JOB_RESPONSIBILITY_REQUIRED");
-      var issues=content.submissionIssues(revision.getContent(),clock.instant());
+      var evaluation=eligibility.evaluate(company,job,revision);
+      if(!evaluation.companyVerified()) throw JobSubmissionService.conflict("40982 COMPANY_VERIFICATION_REQUIRED");
+      if(evaluation.needsReassignment()) throw JobSubmissionService.conflict("40980 JOB_RESPONSIBILITY_REQUIRED");
+      var issues=evaluation.contentIssues();
       if(!issues.isEmpty()) throw JobSubmissionService.conflict("40981 JOB_CONTENT_INVALID: "+issues.getFirst().code());
     }
     expiry.reconcile(job);

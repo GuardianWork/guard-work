@@ -4,7 +4,6 @@ import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.job.model.*;
 import com.guardwork.backend.job.repository.*;
 import com.guardwork.backend.company.repository.CompanyRepository;
-import com.guardwork.backend.company.model.VerificationStatus;
 import com.guardwork.backend.user.repository.UserRepository;
 import java.time.*;
 import java.util.*;
@@ -22,13 +21,12 @@ public class JobReviewQueueService {
   private final CompanyRepository companies;
   private final JobPostingRepository jobs;
   private final JobRevisionRepository revisions;
-  private final JobAssignmentRepository assignments;
+  private final JobEligibility eligibility;
   private final DraftContent content;
-  private final Clock clock;
   public JobReviewQueueService(UserRepository users, CompanyRepository companies, JobPostingRepository jobs,
-      JobRevisionRepository revisions, JobAssignmentRepository assignments, DraftContent content, Clock clock) {
+      JobRevisionRepository revisions, JobEligibility eligibility, DraftContent content) {
     this.users=users; this.companies=companies; this.jobs=jobs; this.revisions=revisions;
-    this.assignments=assignments; this.content=content; this.clock=clock;
+    this.eligibility=eligibility; this.content=content;
   }
   public record Review(Long id, Long jobId, Long companyId, int revisionNumber, String state,
       Long jobVersion, Long revisionVersion, Map<String,Object> content, Long submitterUserId, Instant submittedAt,
@@ -61,15 +59,11 @@ public class JobReviewQueueService {
   private Review review(JobRevision r) {
     var job=jobs.findById(r.getJobId()).orElseThrow(JobDraftService::notFound);
     var company=companies.findById(job.getCompanyId()).orElseThrow(JobDraftService::notFound);
-    boolean verified=company.getVerificationStatus()==VerificationStatus.VERIFIED;
-    boolean missing=!job.isOwnerResponsible() && assignments.current(job.getId()).isEmpty();
-    var issues=new ArrayList<>(content.submissionIssues(r.getContent(),clock.instant()));
-    if(!verified) issues.add(new DraftContent.ValidationIssue("company","COMPANY_NOT_VERIFIED"));
-    if(company.isBanned()) issues.add(new DraftContent.ValidationIssue("company","COMPANY_SUSPENDED"));
-    if(missing) issues.add(new DraftContent.ValidationIssue("responsibility","RESPONSIBILITY_REQUIRED"));
+    var evaluation=eligibility.evaluate(company,job,r);
     return new Review(r.getId(),job.getId(),job.getCompanyId(),r.getRevisionNumber(),r.getState(),job.getVersion(),r.getVersion(),
       content.decode(r.getContent()),r.getSubmitterUserId(),r.getSubmittedAt(),r.getReviewerUserId(),r.getDecidedAt(),r.getRejectionReason(),
-      r.getWithdrawerUserId(),r.getWithdrawnAt(),verified,company.isBanned(),missing,"PENDING_REVIEW".equals(r.getState())&&issues.isEmpty(),issues);
+      r.getWithdrawerUserId(),r.getWithdrawnAt(),evaluation.companyVerified(),evaluation.companySuspended(),evaluation.needsReassignment(),
+      "PENDING_REVIEW".equals(r.getState())&&evaluation.eligible(),evaluation.issues());
   }
   private void paging(int page,int size) {
     if(page<0 || size<1 || size>100 || (long)page*size>Integer.MAX_VALUE) throw DraftContent.invalid("pagination");
