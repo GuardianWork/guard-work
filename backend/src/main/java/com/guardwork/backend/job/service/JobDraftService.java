@@ -33,14 +33,15 @@ public class JobDraftService {
   private final NotificationIntentService notifications;
   private final NotificationDispatcher dispatcher;
   private final Clock clock;
+  private final JobExpiryService expiry;
 
   public JobDraftService(CompanyAccessService access, OnboardingAccessPolicy onboarding,
       JobPostingRepository jobs, JobRevisionRepository revisions, JobAssignmentRepository assignments,
       JobAuditEventRepository audit, DraftContent content, NotificationIntentService notifications,
-      NotificationDispatcher dispatcher, Clock clock) {
+      NotificationDispatcher dispatcher, Clock clock, JobExpiryService expiry) {
     this.access = access; this.onboarding = onboarding; this.jobs = jobs; this.revisions = revisions;
     this.assignments = assignments; this.audit = audit; this.content = content;
-    this.notifications = notifications; this.dispatcher = dispatcher; this.clock = clock;
+    this.expiry=expiry; this.notifications = notifications; this.dispatcher = dispatcher; this.clock = clock;
   }
 
   public JobDetail create(Long actor, JobRequests.Create request) {
@@ -71,13 +72,14 @@ public class JobDraftService {
         @Override public void afterCommit() { dispatcher.dispatch(event); }
       });
     }
-    return detail(job, revision);
+    return detail(job, revision, scope);
   }
 
   public JobDetail inspect(Long actor, Long id) {
     var scope = scope(actor, true);
     var job = visible(scope, id);
-    return detail(job, working(job));
+    expiry.reconcile(job);
+    return detail(job, working(job), scope);
   }
 
   public JobDetail save(Long actor, Long id, JobRequests.Save request) {
@@ -90,6 +92,7 @@ public class JobDraftService {
     if (!job.getVersion().equals(request.expectedJobVersion()) || revision == null
         || !revision.getVersion().equals(request.expectedRevisionVersion()))
       throw new ResponseStatusException(HttpStatus.CONFLICT, "40022 CONCURRENT_MODIFICATION: Reload current versions");
+    expiry.reconcile(job);
     if (!"DRAFT".equals(revision.getState()) || Set.of("CLOSED", "EXPIRED").contains(job.getStatus()))
       throw new ResponseStatusException(HttpStatus.CONFLICT, "40978 JOB_STATE_CONFLICT: Draft cannot be edited");
     revision.setContent(content.normalize(request.content()));
@@ -99,7 +102,7 @@ public class JobDraftService {
     job.setUpdatedAt(clock.instant());
     revisions.flush(); jobs.flush();
     record(job, revision, actor, "JOB_DRAFT_SAVED", null, Map.of("jobVersion", job.getVersion(), "revisionVersion", revision.getVersion()));
-    return detail(job, revision);
+    return detail(job, revision, scope);
   }
 
   public PageResponse<JobDetail> list(Long actor, int page, int size, String status, Boolean needsReassignment) {
@@ -108,10 +111,17 @@ public class JobDraftService {
       throw DraftContent.invalid("pagination");
     if (status != null && !Set.of("DRAFT", "PUBLISHED", "PAUSED", "CLOSED", "EXPIRED").contains(status))
       throw DraftContent.invalid("status");
+    var listedAt=clock.instant();
     Specification<JobPosting> filter = (root, query, cb) -> {
       List<Predicate> predicates = new ArrayList<>();
       predicates.add(cb.equal(root.get("companyId"), scope.company().getId()));
-      if (status != null) predicates.add(cb.equal(root.get("status"), status));
+      if (status != null) {
+        Predicate deadlinePassed=cb.and(root.get("status").in("PUBLISHED","PAUSED"),
+            cb.lessThanOrEqualTo(root.<java.time.Instant>get("approvedDeadline"),listedAt));
+        predicates.add("EXPIRED".equals(status)
+            ? cb.or(cb.equal(root.get("status"),"EXPIRED"),deadlinePassed)
+            : cb.and(cb.equal(root.get("status"),status),cb.not(deadlinePassed)));
+      }
       if (scope.membership().getRole() == CompanyRole.RECRUITER)
         predicates.add(cb.exists(currentAssignment(query, cb, root, scope.membership().getId())));
       if (needsReassignment != null) {
@@ -121,7 +131,7 @@ public class JobDraftService {
       return cb.and(predicates.toArray(Predicate[]::new));
     };
     var result = jobs.findAll(filter, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id")));
-    return PageResponse.of(result.stream().map(j -> detail(j, working(j))).toList(), page, size, result.getTotalElements());
+    return PageResponse.of(result.stream().map(j -> detail(j, working(j), scope)).toList(), page, size, result.getTotalElements());
   }
 
   private Subquery<Long> currentAssignment(jakarta.persistence.criteria.CriteriaQuery<?> query,
@@ -174,19 +184,33 @@ public class JobDraftService {
     return revisions.findByJobIdAndStateIn(job.getId(), List.of("DRAFT", "PENDING_REVIEW")).orElse(null);
   }
 
-  JobDetail detail(JobPosting job, JobRevision revision) {
+  JobDetail detail(JobPosting job, JobRevision revision, CompanyAccessService.Access scope) {
     var current = assignments.current(job.getId());
-    boolean editable = revision != null && "DRAFT".equals(revision.getState()) && !Set.of("CLOSED", "EXPIRED").contains(job.getStatus());
-    return new JobDetail(job.getId(), job.getCompanyId(), job.getCreatorUserId(), job.getStatus(), job.getVersion(),
-        job.isOwnerResponsible(), !job.isOwnerResponsible() && current.isEmpty(), JobDetail.Revision.from(revision, revision == null ? null : content.decode(revision.getContent())),
+    String status=expiry.effectiveStatus(job);
+    boolean terminal=Set.of("CLOSED","EXPIRED").contains(status);
+    var actions=new ArrayList<String>();
+    boolean responsible=job.isOwnerResponsible() || !current.isEmpty();
+    boolean verified=scope.company().getVerificationStatus()==com.guardwork.backend.company.model.VerificationStatus.VERIFIED;
+    if(revision==null && !terminal) actions.add("CREATE_DRAFT");
+    if(revision!=null && "DRAFT".equals(revision.getState())) {
+      actions.add("PREVIEW");
+      if(!terminal) {
+        actions.add("SAVE_DRAFT");
+        if(verified && responsible && content.submissionIssues(revision.getContent(),clock.instant()).isEmpty())actions.add("SUBMIT");
+      }
+    }
+    if(revision!=null && "PENDING_REVIEW".equals(revision.getState()))actions.add("WITHDRAW");
+    if("PUBLISHED".equals(status)) {actions.add("PAUSE");actions.add("CLOSE");}
+    if("PAUSED".equals(status)) {if(verified)actions.add("RESUME");actions.add("CLOSE");}
+    return new JobDetail(job.getId(), job.getCompanyId(), job.getCreatorUserId(), status, job.getVersion(),
+        job.isOwnerResponsible(), !responsible, JobDetail.Revision.from(revision, revision == null ? null : content.decode(revision.getContent())),
         job.getPublishedRevisionId(), job.getApprovedDeadline(), current.stream().map(JobDetail.Assignment::from).toList(),
-        editable ? List.of("SAVE_DRAFT", "PREVIEW", "SUBMIT")
-            : revision != null && "PENDING_REVIEW".equals(revision.getState()) ? List.of("WITHDRAW") : List.of(), job.getCreatedAt(), job.getUpdatedAt());
+        actions, job.getCreatedAt(), job.getUpdatedAt());
   }
 
   void record(JobPosting job, JobRevision revision, Long actor, String event, Long member, Map<String, Object> facts) {
     var entry = new JobAuditEvent();
-    entry.setCompanyId(job.getCompanyId()); entry.setJobId(job.getId()); entry.setRevisionId(revision.getId());
+    entry.setCompanyId(job.getCompanyId()); entry.setJobId(job.getId()); entry.setRevisionId(revision==null ? null : revision.getId());
     entry.setActorUserId(actor); entry.setEventType(event); entry.setMembershipId(member);
     entry.setCreatedAt(clock.instant()); entry.setFacts(facts); audit.saveAndFlush(entry);
   }

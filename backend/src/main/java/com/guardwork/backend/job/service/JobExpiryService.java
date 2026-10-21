@@ -29,9 +29,13 @@ public class JobExpiryService {
     this.jobs=jobs;this.companies=companies;this.audit=audit;this.clock=clock;this.batch=batch;
     transaction=new TransactionTemplate(manager);transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
   }
+  public String effectiveStatus(JobPosting job) {
+    return Set.of("PUBLISHED","PAUSED").contains(job.getStatus()) && job.getApprovedDeadline()!=null
+        && !clock.instant().isBefore(job.getApprovedDeadline()) ? "EXPIRED" : job.getStatus();
+  }
   @Transactional(propagation=Propagation.MANDATORY)
   public boolean reconcile(JobPosting job) {
-    if(!Set.of("PUBLISHED","PAUSED").contains(job.getStatus()) || job.getApprovedDeadline()==null || clock.instant().isBefore(job.getApprovedDeadline()))return false;
+    if(!"EXPIRED".equals(effectiveStatus(job)) || "EXPIRED".equals(job.getStatus()))return false;
     String previous=job.getStatus();job.setStatus("EXPIRED");job.setExpiredAt(job.getApprovedDeadline());job.setUpdatedAt(clock.instant());jobs.flush();
     var fact=new JobAuditEvent();fact.setCompanyId(job.getCompanyId());fact.setJobId(job.getId());fact.setRevisionId(job.getPublishedRevisionId());
     fact.setEventType("JOB_EXPIRED");fact.setCreatedAt(clock.instant());fact.setFacts(Map.of("previousStatus",previous,"approvedDeadline",job.getApprovedDeadline().toString()));audit.saveAndFlush(fact);

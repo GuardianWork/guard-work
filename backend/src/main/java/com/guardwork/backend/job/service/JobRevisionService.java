@@ -46,7 +46,7 @@ public class JobRevisionService {
     revision.setCreatorUserId(actor);revision.setCreatedAt(clock.instant());revisions.saveAndFlush(revision);
     job.setVersion(job.getVersion()+1);job.setUpdatedAt(clock.instant());jobs.flush();
     drafts.record(job,revision,actor,"JOB_DRAFT_DERIVED",null,Map.of("sourceRevisionId",source.getId(),"jobVersion",job.getVersion()));
-    return drafts.detail(job,revision);
+    return drafts.detail(job,revision,scope);
   }
   public PageResponse<History> history(Long actor,Long jobId,int page,int size) {
     var scope=drafts.scope(actor,true);var job=drafts.visible(scope,jobId);

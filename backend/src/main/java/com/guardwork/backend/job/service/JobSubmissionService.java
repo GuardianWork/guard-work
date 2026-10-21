@@ -21,10 +21,11 @@ public class JobSubmissionService {
   private final JobAssignmentRepository assignments;
   private final DraftContent content;
   private final Clock clock;
+  private final JobExpiryService expiry;
   public JobSubmissionService(JobDraftService drafts, JobRevisionRepository revisions,
-      JobPostingRepository jobs, JobAssignmentRepository assignments, DraftContent content, Clock clock) {
+      JobPostingRepository jobs, JobAssignmentRepository assignments, DraftContent content, Clock clock, JobExpiryService expiry) {
     this.drafts = drafts; this.revisions = revisions; this.jobs = jobs;
-    this.assignments = assignments; this.content = content; this.clock = clock;
+    this.expiry=expiry; this.assignments = assignments; this.content = content; this.clock = clock;
   }
   public record Preview(Map<String,Object> content, Long jobVersion, Long revisionVersion,
       boolean submissionEligible, List<DraftContent.ValidationIssue> validationIssues) {}
@@ -40,6 +41,7 @@ public class JobSubmissionService {
     var scope = drafts.scope(actor, true); var job = drafts.visible(scope, id); var revision = revision(job, revisionId);
     versions(job, revision, request);
     if (!Boolean.TRUE.equals(request.confirmed())) throw DraftContent.invalid("confirmed");
+    expiry.reconcile(job);
     if (!"DRAFT".equals(revision.getState()) || Set.of("CLOSED", "EXPIRED").contains(job.getStatus()))
       throw conflict("40978 JOB_STATE_CONFLICT: Revision cannot be submitted");
     var issues = eligibility(scope, job, revision);
@@ -52,16 +54,17 @@ public class JobSubmissionService {
     revision.setState("PENDING_REVIEW"); revision.setSubmitterUserId(actor); revision.setSubmittedAt(clock.instant());
     advance(job); revisions.flush();
     drafts.record(job, revision, actor, "JOB_REVISION_SUBMITTED", null, Map.of("jobVersion", job.getVersion(), "revisionVersion", revision.getVersion()));
-    return drafts.detail(job, revision);
+    return drafts.detail(job, revision, scope);
   }
   public JobDetail withdraw(Long actor, Long id, Long revisionId, Confirmation request) {
     var scope = drafts.scope(actor, true); var job = drafts.visible(scope, id); var revision = revision(job, revisionId);
     versions(job, revision, request);
+    expiry.reconcile(job);
     if (!"PENDING_REVIEW".equals(revision.getState())) throw conflict("40978 JOB_STATE_CONFLICT: Revision is not pending review");
     revision.setState("WITHDRAWN"); revision.setWithdrawerUserId(actor); revision.setWithdrawnAt(clock.instant());
     advance(job); revisions.flush();
     drafts.record(job, revision, actor, "JOB_REVISION_WITHDRAWN", null, Map.of("jobVersion", job.getVersion(), "revisionVersion", revision.getVersion()));
-    return drafts.detail(job, null);
+    return drafts.detail(job, null, scope);
   }
   private List<DraftContent.ValidationIssue> eligibility(CompanyAccessService.Access scope, JobPosting job, JobRevision revision) {
     var issues = new ArrayList<>(content.submissionIssues(revision.getContent(), clock.instant()));
@@ -69,7 +72,7 @@ public class JobSubmissionService {
       issues.add(new DraftContent.ValidationIssue("company", "COMPANY_NOT_VERIFIED"));
     if (!job.isOwnerResponsible() && assignments.current(job.getId()).isEmpty())
       issues.add(new DraftContent.ValidationIssue("responsibility", "RESPONSIBILITY_REQUIRED"));
-    if (Set.of("CLOSED", "EXPIRED").contains(job.getStatus()))
+    if (Set.of("CLOSED", "EXPIRED").contains(expiry.effectiveStatus(job)))
       issues.add(new DraftContent.ValidationIssue("job", "TERMINAL_STATE"));
     return issues;
   }

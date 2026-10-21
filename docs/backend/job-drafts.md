@@ -193,3 +193,27 @@ known Company-job route/method family, including preview/history, assignment adm
 and draft derivation. Submission/resume retain service-level Company verification checks.
 Unsupported paths/methods and unrelated employer routes receive no new onboarding bypass.
 Focused verification: `./mvnw -Dtest=JobRevisionHttpTest test`.
+
+## Job lifecycle and terminal revisions
+
+Current Owners and assigned Recruiters can `POST /api/companies/me/jobs/{id}/pause`,
+`/resume`, or `/close` with `{expectedJobVersion}`. Pause accepts PUBLISHED; close accepts
+PUBLISHED or PAUSED. Resume accepts PAUSED only for a verified Company before its existing
+approved deadline. Missing versions return 400, stale versions and illegal transitions return
+409, and current resource authorization is checked first. Company Admin cannot perform these
+operations. Each accepted transition advances the job version and atomically records its audit
+fact. Lifecycle actions retain all revision evidence and do not generate a new review decision.
+
+Paused, closed and expired public detail retains approved content with applications unavailable
+and the corresponding reason. Paused jobs expire at the exact approved deadline; closed jobs stay
+closed. Requests and the existing expiry worker share the same clock and reconciliation logic.
+An invalid action rolls back its transaction, including request-side expiry; effective availability
+and private list status filters still recognize the deadline, and the worker persists expiry independently.
+
+Closing or expiring a job prevents new drafts, saves, submission and reopening. Existing drafts
+remain readable and previewable with terminal eligibility issues. Existing pending revisions remain
+withdrawable and reviewable; approval must still pass Company, responsibility and proposed-deadline
+checks. Approval replaces approved content while preserving PAUSED, CLOSED or EXPIRED. The previous
+approved deadline is reconciled before replacement, so an extension cannot reopen an expired job.
+Private `availableActions` reflects current effective state, working revision, Company verification,
+responsibility and draft validity. No Application subsystem, frontend or migration is added.
