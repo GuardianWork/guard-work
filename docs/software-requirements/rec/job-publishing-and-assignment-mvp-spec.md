@@ -10,7 +10,7 @@
 | Date / Last Updated | 2026-10-21 |
 | Owner | Thinh |
 | Named human approver | Thinh (retained from baseline) |
-| Status | Approved — explicit user approval recorded on 2026-10-20; implementation in progress |
+| Status | Approved — explicit user approval recorded on 2026-10-20 |
 | Ticket / branch | GW-78 / `GW-78-implement-job-publishing-and-assignment` |
 
 ## 1. Purpose and scope
@@ -100,3 +100,9 @@ Use existing feature-first controllers/services/Spring Data JPA, Flyway, Postgre
 Product decisions Q1–Q27 were confirmed in the GW-78 interview, including corrections at Q6, Q19 and Q21. Q25 permits terminal-state approval without reopening; Q26 confirms scoped onboarding compatibility changes. The user accepted the concrete Q27 contract, requested explanation of concurrency, and then agreed to the explained stale-save, competing-decision and access-revocation outcomes. See the workspace [decision log](../../../../../../.scratch/job-publishing-and-assignment/decisions.md) and root glossary/ADR.
 
 On 2026-10-20, after publication of the consolidated tracker issue, the user explicitly instructed: "I approve the issue, write it down". Approved lifecycle status records that human decision; it is not an autonomous agent approval. The accompanying implementation contract is covered by the issue's approval. The user subsequently accepted the six-ticket breakdown and blocking edges on 2026-10-20, retaining the single-migration contract. On 2026-10-21 the user invoked implement-spec for the remaining backend work, treating ticket 01 as complete and naming the existing GW-78 worktree as the integration destination. No implementation, migration, commit or push has been performed as part of this interview.
+
+## Implementation completion — 2026-10-21
+
+The backend scope is implemented on `GW-78-implement-job-publishing-and-assignment`. Ticket 01 was already complete; tickets 02–06 and the final review fix are merged into that branch. The frontend and the committed single job migration were unchanged by the remaining-ticket implementation.
+
+Verification passed: 250 backend tests, 46 final focused HTTP/security/PostgreSQL tests after the eligibility refactor, and Maven packaging. Specification review found no actionable gaps; standards review found no documented-rule violations, and its shared-eligibility duplication finding was addressed. See [backend workflow documentation](../../backend/job-drafts.md) and the backend README for routes and expiry configuration.

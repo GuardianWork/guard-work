@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Specification | [GW-SR-JOB-PUBLISHING-MVP](job-publishing-and-assignment-mvp-spec.md) |
-| Status | Approved — explicit user approval recorded on 2026-10-20; implementation in progress |
+| Status | Approved — explicit user approval recorded on 2026-10-20 |
 | Owner / named human approver | Thinh (retained from baseline) |
 | Date / Last Updated | 2026-10-21 |
 | Base revision | `50316c8` |
@@ -135,3 +135,9 @@ Required HTTP/security/PostgreSQL coverage:
 - New migration against existing schema/data; database immutable-history and unique-working-revision constraints; legacy notification compatibility.
 
 Reuse existing isolated PostgreSQL test setup and controlled Clock/delivery boundaries. Run `./mvnw test` and `./mvnw package` from backend after implementation. No new testing dependency or destructive database operation is proposed. This documentation change itself requires link/consistency checks, not a backend test run.
+
+## Implementation completion — 2026-10-21
+
+The backend scope is implemented on `GW-78-implement-job-publishing-and-assignment`. Ticket 01 was already complete; tickets 02–06 and the final review fix are merged into that branch. The frontend and the committed single job migration were unchanged by the remaining-ticket implementation.
+
+Verification passed: 250 backend tests, 46 final focused HTTP/security/PostgreSQL tests after the eligibility refactor, and Maven packaging. Specification review found no actionable gaps; standards review found no documented-rule violations, and its shared-eligibility duplication finding was addressed. See [backend workflow documentation](../../backend/job-drafts.md) and the backend README for routes and expiry configuration.
