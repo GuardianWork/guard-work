@@ -46,11 +46,20 @@ Use environment variables; never put real credentials in tracked files.
 |---|---|
 | ONBOARDING_EMAIL_FROM | Resend verified sender. |
 | ONBOARDING_EMAIL_CREDENTIAL | Resend API credential. |
-| ONBOARDING_CONFIRMATION_URL | HTTPS UI URL with no query/fragment. |
-| ONBOARDING_ALLOWED_ORIGINS | Comma-separated exact HTTPS origins permitted for that link. |
+| ONBOARDING_CONFIRMATION_URL | HTTPS UI URL, or HTTP on literal `localhost` for local testing; no user information, query or fragment. |
+| ONBOARDING_ALLOWED_ORIGINS | Comma-separated exact origins (scheme, host, effective port) permitted for that link. HTTP is allowed only on literal `localhost`. |
 | ONBOARDING_OTP_SECRET | Secret used for account/phone-bound HMAC of low-entropy OTP; use at least 32 random bytes. Missing secret fails closed. |
 | employer.onboarding.delivery-worker-enabled | Defaults true; disable in tests or when intentionally stopping decision delivery. |
 | employer.onboarding.delivery-poll-ms | Defaults 30000 milliseconds. |
+
+For a local frontend on port 5137, set the following in the backend `.env` and restart the backend. The confirmation URL must point to the frontend page that consumes the email-verification fragment, not the API route that sends email:
+
+```dotenv
+ONBOARDING_CONFIRMATION_URL=http://localhost:5137/
+ONBOARDING_ALLOWED_ORIGINS=http://localhost:5137
+```
+
+Use the actual frontend port and confirmation-page path. HTTP on IP addresses, subdomains of localhost, trailing-dot names and remote hosts is rejected. An explicit port must be 1–65535; omitted HTTP/HTTPS ports mean 80/443. A different scheme or port requires its own allowlist entry. This URL policy applies to both new-registration and existing-member email links. Sender and credential remain `ONBOARDING_EMAIL_FROM` and `ONBOARDING_EMAIL_CREDENTIAL`; Resend's provider endpoint remains HTTPS.
 
 Email proof expires after 24 hours. A new proof replaces the old one. New registrations are capped at five attempts per email per hour; individual sends use a 60-second cooldown. Broader SMS budget/rate-limit policy remains a production-readiness item.
 

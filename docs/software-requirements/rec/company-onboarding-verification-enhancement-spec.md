@@ -6,7 +6,7 @@
 | **Project** | GuardWork |
 | **Module** | Employer onboarding, personal verification, and Company verification |
 | **File** | `company-onboarding-verification-enhancement-spec.md` |
-| **Version** | 0.1.0 |
+| **Version** | 0.1.1 |
 | **Date** | 2026-10-18 |
 | **Last Updated** | 2026-10-24 |
 | **Owner** | VyTrg (proposed, following the existing Company Verification ownership) |
@@ -14,6 +14,8 @@
 | **Status** | Draft |
 
 The user confirmed the consolidated product direction after a design interview on 2026-10-18, subsequently stated that they had read and approved this document, requested implementation, and confirmed the [concrete technical contract](company-onboarding-implementation-contract.md) with “chốt”. Those later confirmations authorize the documented implementation choices; SMS vendor selection and the explicitly unresolved production-readiness policies remain outstanding. The Draft metadata is retained as the original review register; it does not override the recorded human authorization. Agents do not independently declare human approval.
+
+On 2026-10-21, the user explicitly requested the same narrow localhost HTTP exception for onboarding confirmation URLs as for Company Invitations. Both new-registration and existing-member confirmation links may use HTTP only on literal `localhost`, with an optional port from 1–65535 and an explicitly allowlisted matching scheme, host and effective port (HTTP defaults to 80; HTTPS defaults to 443). Other hosts require HTTPS. IP addresses, subdomains and trailing-dot names do not qualify for the HTTP exception. URL user information, queries and pre-existing fragments remain prohibited; secrets are added only in fragments. Allowlist entries are origins, with at most an optional `/` path. Resend API transport remains HTTPS. The user requested no new test files for this change. See [configuration examples](../../backend/employer-onboarding.md#configuration-and-delivery).
 
 ## 1. Introduction
 

@@ -70,10 +70,31 @@ public class ResendOnboardingDelivery implements OnboardingDelivery {
     private String confirmationUrl() {
         try {
             URI uri = URI.create(baseUrl);
-            String origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() == -1 ? "" : ":" + uri.getPort());
-            if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null
-                    || uri.getFragment() != null || uri.getQuery() != null || !allowedOrigins.contains(origin)) return null;
+            if (!permittedFrontendUrl(uri)) return null;
+            boolean allowed = allowedOrigins.stream().anyMatch(candidate -> {
+                try {
+                    URI configured = URI.create(candidate.trim());
+                    return permittedFrontendUrl(configured)
+                            && (configured.getPath().isEmpty() || "/".equals(configured.getPath()))
+                            && origin(uri).equals(origin(configured));
+                } catch (IllegalArgumentException invalid) { return false; }
+            });
+            if (!allowed) return null;
             return uri.toASCIIString();
         } catch (IllegalArgumentException invalid) { return null; }
+    }
+
+    private static boolean permittedFrontendUrl(URI uri) {
+        if (uri.getHost() == null || uri.getRawUserInfo() != null
+                || uri.getRawFragment() != null || uri.getRawQuery() != null) return false;
+        // HTTP is a localhost-only development exception; exact origin allowlisting still applies.
+        return "https".equals(uri.getScheme())
+                || "http".equals(uri.getScheme()) && "localhost".equalsIgnoreCase(uri.getHost())
+                && (uri.getPort() == -1 || uri.getPort() >= 1 && uri.getPort() <= 65535);
+    }
+
+    private static String origin(URI uri) {
+        int port = uri.getPort() == -1 ? ("http".equals(uri.getScheme()) ? 80 : 443) : uri.getPort();
+        return uri.getScheme() + "://" + uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
     }
 }

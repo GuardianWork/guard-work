@@ -59,6 +59,90 @@ class ResendCompanyInvitationMailerTest {
   }
 
   @Test
+  void explicitlyAllowlistedLocalhostHttpUrlsPreservePrivateFragmentAndMatchExactPort()
+      throws Exception {
+    AtomicReference<String> body = new AtomicReference<>();
+    HttpServer server =
+        HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext(
+        "/emails",
+        exchange -> {
+          body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+          byte[] result = "{\"id\":\"stub-message-id\"}".getBytes(StandardCharsets.UTF_8);
+          exchange.sendResponseHeaders(200, result.length);
+          exchange.getResponseBody().write(result);
+          exchange.close();
+        });
+    server.start();
+    try {
+      for (String[] configuration :
+          new String[][] {
+            {"http://localhost:5173/invitation", "https://app.guardwork.vn, http://localhost:5173"},
+            {"http://localhost:3000/invitation", "http://localhost:3000/"},
+            {"http://localhost/invitation", "http://localhost:80"},
+            {"http://localhost:80/invitation", "http://localhost"}
+          }) {
+        assertThat(
+                adapter(server, configuration[0], configuration[1], Duration.ofSeconds(2))
+                    .send("recipient@example.vn", "Ánh", Instant.now(), "controlled-private-secret"))
+            .as("allowlisted URL %s", configuration[0])
+            .isEqualTo(DeliveryStatus.PROVIDER_ACCEPTED);
+        assertThat(new ObjectMapper().readTree(body.get()).path("text").asText())
+            .contains(configuration[0] + "#secret=controlled-private-secret");
+      }
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
+  void localhostExceptionRejectsRemoteHttpLookalikesAndNonmatchingOriginsBeforeSending()
+      throws Exception {
+    java.util.concurrent.atomic.AtomicInteger calls =
+        new java.util.concurrent.atomic.AtomicInteger();
+    HttpServer server =
+        HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+    server.createContext(
+        "/emails",
+        exchange -> {
+          calls.incrementAndGet();
+          exchange.sendResponseHeaders(400, -1);
+          exchange.close();
+        });
+    server.start();
+    try {
+      for (String[] configuration :
+          new String[][] {
+            {"http://app.guardwork.vn/invitation", "http://app.guardwork.vn"},
+            {"http://localhost.evil.example/invitation", "http://localhost.evil.example"},
+            {"http://sub.localhost/invitation", "http://sub.localhost"},
+            {"http://localhost./invitation", "http://localhost."},
+            {"http://127.0.0.1:5173/invitation", "http://127.0.0.1:5173"},
+            {"http://[::1]:5173/invitation", "http://[::1]:5173"},
+            {"http://localhost:5173/invitation", "http://localhost:3000"},
+            {"http://localhost:5173/invitation", "https://localhost:5173"},
+            {"http://localhost:443/invitation", "http://localhost"},
+            {"http://localhost:5173/invitation", "http://localhost:5173/invitation"},
+            {"http://localhost:5173/invitation", ""},
+            {"http://user@localhost:5173/invitation", "http://localhost:5173"},
+            {"http://localhost:5173/invitation?secret=exposed", "http://localhost:5173"},
+            {"http://localhost:5173/invitation#secret=exposed", "http://localhost:5173"},
+            {"http://localhost:0/invitation", "http://localhost:0"},
+            {"http://localhost:65536/invitation", "http://localhost:65536"}
+          }) {
+        assertThat(
+                adapter(server, configuration[0], configuration[1], Duration.ofSeconds(1))
+                    .send("recipient@example.vn", "Ánh", Instant.now(), "private"))
+            .as("reject URL %s with allowed origin %s", configuration[0], configuration[1])
+            .isEqualTo(DeliveryStatus.FAILED);
+      }
+      assertThat(calls.get()).isZero();
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
   void unallowlistedInsecureOrSecretBearingFrontendUrlsNeverContactProvider() throws Exception {
     java.util.concurrent.atomic.AtomicInteger calls =
         new java.util.concurrent.atomic.AtomicInteger();
