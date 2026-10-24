@@ -35,8 +35,8 @@ public class VerificationDocumentController {
         return ApiResponse.ok("Verification history", dossiers.history(actor.getId(), null));
     }
 
-    @GetMapping("/api/admin/companies/{id}/verification-history")
-    public ApiResponse<List<LegalDossierService.AttemptInfo>> adminHistory(@AuthenticationPrincipal UserPrincipal actor,
+    @GetMapping("/api/staff/companies/{id}/verification-history")
+    public ApiResponse<List<LegalDossierService.AttemptInfo>> staffHistory(@AuthenticationPrincipal UserPrincipal actor,
             @PathVariable Long id) {
         return ApiResponse.ok("Verification history", dossiers.history(actor.getId(), id));
     }

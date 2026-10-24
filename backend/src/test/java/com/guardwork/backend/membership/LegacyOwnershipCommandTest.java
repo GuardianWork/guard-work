@@ -99,8 +99,8 @@ class LegacyOwnershipCommandTest {
         assertThatThrownBy(() -> command.assign(applicant.token(), reference)).isInstanceOf(IllegalArgumentException.class);
         database.update("UPDATE users SET role='USER' WHERE id=?", operator.id());
         assertThatThrownBy(() -> command.assign(operator.token(), reference)).isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Administrator");
-        database.update("UPDATE users SET role='ADMIN', status='SUSPENDED' WHERE id=?", operator.id());
+                .hasMessageContaining("Staff");
+        database.update("UPDATE users SET role='STAFF', status='SUSPENDED' WHERE id=?", operator.id());
         assertThatThrownBy(() -> command.assign(operator.token(), reference)).isInstanceOf(IllegalArgumentException.class);
         database.update("UPDATE users SET status='ACTIVE' WHERE id=?", operator.id());
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", reviewer.id());
@@ -369,7 +369,7 @@ class LegacyOwnershipCommandTest {
         http.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(
                 "firstName", "Ánh", "lastName", "Nguyễn", "username", name, "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
-        if (admin) database.update("UPDATE users SET role='ADMIN' WHERE username=?", name);
+        if (admin) database.update("UPDATE users SET role='STAFF' WHERE username=?", name);
         String body = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", name, "password", "Password123"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

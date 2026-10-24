@@ -1,4 +1,4 @@
-package com.guardwork.backend.admin.service;
+package com.guardwork.backend.staff.service;
 
 import java.time.Instant;
 import java.util.List;
@@ -13,8 +13,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.guardwork.backend.admin.dto.CompanyVerificationResponse;
-import com.guardwork.backend.admin.dto.VerificationDecisionRequest;
+import com.guardwork.backend.staff.dto.CompanyVerificationResponse;
+import com.guardwork.backend.staff.dto.VerificationDecisionRequest;
 import com.guardwork.backend.audit.service.AuditService;
 import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.company.model.Company;
@@ -30,7 +30,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class AdminCompanyVerificationServiceTest {
+class StaffCompanyVerificationServiceTest {
 
     @Mock
     private CompanyRepository companyRepository;
@@ -40,11 +40,11 @@ class AdminCompanyVerificationServiceTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    private AdminCompanyVerificationService service;
+    private StaffCompanyVerificationService service;
 
     @BeforeEach
     void setUp() {
-        service = new AdminCompanyVerificationService(companyRepository, auditService, objectMapper);
+        service = new StaffCompanyVerificationService(companyRepository, auditService, objectMapper);
     }
 
     private Company createSampleCompany(Long id, VerificationStatus status, Long version) {
@@ -108,7 +108,7 @@ class AdminCompanyVerificationServiceTest {
                 eq("10"),
                 anyString(),
                 anyString(),
-                eq("Approved by admin 99"),
+                eq("Approved by staff 99"),
                 eq("127.0.0.1"),
                 eq("JUnit")
         );

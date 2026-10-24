@@ -39,7 +39,7 @@ class MigrationV3Test {
         user.setUsername(uniqueUsername);
         user.setEmail(uniqueEmail);
         user.setPassword("secretHash123");
-        user.setRole("ADMIN");
+        user.setRole("STAFF");
         user.setStatus("ACTIVE");
         user.setEmailVerified(true);
 
@@ -47,7 +47,7 @@ class MigrationV3Test {
         assertThat(saved.getId()).isNotNull();
 
         User reloaded = userRepository.findById(saved.getId()).orElseThrow();
-        assertThat(reloaded.getRole()).isEqualTo("ADMIN");
+        assertThat(reloaded.getRole()).isEqualTo("STAFF");
         assertThat(reloaded.getStatus()).isEqualTo("ACTIVE");
         assertThat(reloaded.isEmailVerified()).isTrue();
     }

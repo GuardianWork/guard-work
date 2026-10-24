@@ -131,7 +131,7 @@ class CompanyCorrectionHttpTest {
         database.update("INSERT INTO company_memberships(company_id,user_id,role,status,joined_at) VALUES (?,?,'RECRUITER','ACTIVE',now())", id, recruiterId);
         assertCorrectionDenied(recruiter, id, 403, 404);
         assertCorrectionDenied(unrelated, id, 403, 404);
-        assertCorrectionDenied(account("ADMIN"), id, 403, 404);
+        assertCorrectionDenied(account("STAFF"), id, 403, 404);
         database.update("UPDATE company_memberships SET status='REMOVED', ended_at=now(), ended_by_user_id=? WHERE user_id=? AND status='ACTIVE'", userId(owner), recruiterId);
         assertCorrectionDenied(recruiter, id, 403, 404);
         http.perform(get("/api/companies/me/verification")).andExpect(status().isUnauthorized());
@@ -196,9 +196,9 @@ class CompanyCorrectionHttpTest {
     void administratorFeedbackAndModerationIdentitySurviveOwnerCorrection() throws Exception {
         String owner = account();
         long id = createdCompany(owner);
-        String administrator = account("ADMIN");
+        String administrator = account("STAFF");
         long adminId = userId(administrator);
-        http.perform(put("/api/admin/companies/" + id + "/reject").header("Authorization", administrator)
+        http.perform(put("/api/staff/companies/" + id + "/reject").header("Authorization", administrator)
                         .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(
                                 "expectedVersion", 0, "rejectionReason", "Giấy phép kinh doanh cần bổ sung chữ ký hợp lệ"))))
                 .andExpect(status().isOk());

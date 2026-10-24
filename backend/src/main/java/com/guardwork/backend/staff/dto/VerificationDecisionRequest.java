@@ -1,4 +1,4 @@
-package com.guardwork.backend.admin.dto;
+package com.guardwork.backend.staff.dto;
 
 import com.guardwork.backend.company.model.VerificationStatus;
 

@@ -1,4 +1,4 @@
-package com.guardwork.backend.admin.service;
+package com.guardwork.backend.staff.service;
 
 import java.time.Instant;
 import java.util.List;
@@ -13,8 +13,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.guardwork.backend.admin.dto.CompanyVerificationResponse;
-import com.guardwork.backend.admin.dto.VerificationDecisionRequest;
+import com.guardwork.backend.staff.dto.CompanyVerificationResponse;
+import com.guardwork.backend.staff.dto.VerificationDecisionRequest;
 import com.guardwork.backend.audit.service.AuditService;
 import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.company.model.Company;
@@ -22,22 +22,22 @@ import com.guardwork.backend.company.model.VerificationStatus;
 import com.guardwork.backend.company.repository.CompanyRepository;
 
 @Service
-public class AdminCompanyVerificationService {
+public class StaffCompanyVerificationService {
 
-    private static final Logger log = LoggerFactory.getLogger(AdminCompanyVerificationService.class);
+    private static final Logger log = LoggerFactory.getLogger(StaffCompanyVerificationService.class);
     private final CompanyRepository companyRepository;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
     private final com.guardwork.backend.onboarding.service.LegalDossierService dossiers;
 
-    public AdminCompanyVerificationService(CompanyRepository companyRepository,
+    public StaffCompanyVerificationService(CompanyRepository companyRepository,
                                            AuditService auditService,
                                            ObjectMapper objectMapper) {
         this(companyRepository, auditService, objectMapper, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    public AdminCompanyVerificationService(CompanyRepository companyRepository, AuditService auditService,
+    public StaffCompanyVerificationService(CompanyRepository companyRepository, AuditService auditService,
             ObjectMapper objectMapper, com.guardwork.backend.onboarding.service.LegalDossierService dossiers) {
         this.companyRepository = companyRepository;
         this.auditService = auditService;
@@ -92,7 +92,7 @@ public class AdminCompanyVerificationService {
     @Transactional
     public CompanyVerificationResponse rejectCompany(Long companyId,
                                                      VerificationDecisionRequest request,
-                                                     Long adminId,
+                                                     Long staffId,
                                                      String ipAddress,
                                                      String userAgent) {
         VerificationDecisionRequest decisionRequest = new VerificationDecisionRequest(
@@ -100,13 +100,13 @@ public class AdminCompanyVerificationService {
                 request != null ? request.rejectionReason() : null,
                 request != null ? request.expectedVersion() : null
         );
-        return verifyCompany(companyId, decisionRequest, adminId, ipAddress, userAgent);
+        return verifyCompany(companyId, decisionRequest, staffId, ipAddress, userAgent);
     }
 
     @Transactional
     public CompanyVerificationResponse verifyCompany(Long companyId,
                                                      VerificationDecisionRequest request,
-                                                     Long adminId,
+                                                     Long staffId,
                                                      String ipAddress,
                                                      String userAgent) {
         log.debug("event=company_verification outcome=started");
@@ -163,7 +163,7 @@ public class AdminCompanyVerificationService {
                 companyId,
                 request.status(),
                 trimmedReason,
-                adminId,
+                staffId,
                 now,
                 request.expectedVersion()
         );
@@ -177,13 +177,13 @@ public class AdminCompanyVerificationService {
         }
 
         Company updatedCompany = companyRepository.findById(companyId).orElseThrow();
-        if (dossiers != null) dossiers.reviewed(updatedCompany, adminId);
+        if (dossiers != null) dossiers.reviewed(updatedCompany, staffId);
         String newPayload = serializeToJson(CompanyVerificationResponse.from(updatedCompany));
 
         // BR-REC-06: Immutable Audit Trail
-        String auditReason = trimmedReason != null ? trimmedReason : "Approved by admin " + adminId;
+        String auditReason = trimmedReason != null ? trimmedReason : "Approved by staff " + staffId;
         auditService.recordLog(
-                adminId,
+                staffId,
                 "COMPANY_VERIFICATION",
                 "COMPANY",
                 String.valueOf(companyId),

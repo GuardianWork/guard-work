@@ -1,9 +1,13 @@
-package com.guardwork.backend.admin.controller;
+package com.guardwork.backend.staff.controller;
 
 import java.time.Instant;
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import com.guardwork.backend.auth.security.UserPrincipal;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -13,9 +17,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.guardwork.backend.admin.dto.CompanyVerificationResponse;
-import com.guardwork.backend.admin.dto.VerificationDecisionRequest;
-import com.guardwork.backend.admin.service.AdminCompanyVerificationService;
+import com.guardwork.backend.staff.dto.CompanyVerificationResponse;
+import com.guardwork.backend.staff.dto.VerificationDecisionRequest;
+import com.guardwork.backend.staff.service.StaffCompanyVerificationService;
 import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.company.model.VerificationStatus;
 
@@ -29,35 +33,38 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
-class AdminCompanyVerificationControllerTest {
+class StaffCompanyVerificationControllerTest {
 
     @Mock
-    private AdminCompanyVerificationService verificationService;
+    private StaffCompanyVerificationService verificationService;
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        AdminCompanyVerificationController controller = new AdminCompanyVerificationController(verificationService);
+        SecurityContextHolder.clearContext();
+        StaffCompanyVerificationController controller = new StaffCompanyVerificationController(verificationService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     @Test
-    void getVerificationQueue_MissingAdminRoleHeader_Returns401() throws Exception {
-        mockMvc.perform(get("/api/admin/companies/verifications"))
+    void getVerificationQueue_MissingAuthentication_Returns401() throws Exception {
+        mockMvc.perform(get("/api/staff/companies/verifications"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void getVerificationQueue_NonAdminRole_Returns403() throws Exception {
-        mockMvc.perform(get("/api/admin/companies/verifications")
+    void getVerificationQueue_NonStaffRole_Returns403() throws Exception {
+        authenticate("USER");
+        mockMvc.perform(get("/api/staff/companies/verifications")
                         .header("X-Admin-Role", "RECRUITER"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void getVerificationQueue_ValidAdminRole_Returns200WithQueue() throws Exception {
+    void getVerificationQueue_ValidStaffRole_Returns200WithQueue() throws Exception {
+        authenticate("STAFF");
         CompanyVerificationResponse item = new CompanyVerificationResponse(
                 1L, "Alpha Corp", "0101234567", "https://cert.pdf",
                 VerificationStatus.PENDING, null, null, null, 0L, Instant.now()
@@ -66,8 +73,8 @@ class AdminCompanyVerificationControllerTest {
 
         when(verificationService.getVerificationQueue("PENDING", 0, 20)).thenReturn(page);
 
-        mockMvc.perform(get("/api/admin/companies/verifications")
-                        .header("X-Admin-Role", "ADMIN")
+        mockMvc.perform(get("/api/staff/companies/verifications")
+                        .header("X-Staff-Role", "STAFF")
                         .param("status", "PENDING")
                         .param("page", "0")
                         .param("size", "20"))
@@ -79,21 +86,22 @@ class AdminCompanyVerificationControllerTest {
     }
 
     @Test
-    void verifyCompany_MissingAdminId_Returns401() throws Exception {
+    void verifyCompany_MissingAuthentication_Returns401() throws Exception {
         VerificationDecisionRequest request = new VerificationDecisionRequest(VerificationStatus.VERIFIED, null, 0L);
 
-        mockMvc.perform(put("/api/admin/companies/1/verify")
-                        .header("X-Admin-Role", "ADMIN")
+        mockMvc.perform(put("/api/staff/companies/1/verify")
+                        .header("X-Staff-Role", "STAFF")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void verifyCompany_NonAdminRole_Returns403() throws Exception {
+    void verifyCompany_NonStaffRole_Returns403() throws Exception {
+        authenticate("USER");
         VerificationDecisionRequest request = new VerificationDecisionRequest(VerificationStatus.VERIFIED, null, 0L);
 
-        mockMvc.perform(put("/api/admin/companies/1/verify")
+        mockMvc.perform(put("/api/staff/companies/1/verify")
                         .header("X-Admin-Id", "100")
                         .header("X-Admin-Role", "CANDIDATE")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -102,7 +110,8 @@ class AdminCompanyVerificationControllerTest {
     }
 
     @Test
-    void verifyCompany_ValidAdmin_Returns200WithUpdatedCompany() throws Exception {
+    void verifyCompany_ValidStaff_Returns200WithUpdatedCompany() throws Exception {
+        authenticate("STAFF");
         VerificationDecisionRequest request = new VerificationDecisionRequest(VerificationStatus.VERIFIED, null, 0L);
         CompanyVerificationResponse response = new CompanyVerificationResponse(
                 1L, "Alpha Corp", "0101234567", "https://cert.pdf",
@@ -112,9 +121,9 @@ class AdminCompanyVerificationControllerTest {
         when(verificationService.verifyCompany(eq(1L), any(VerificationDecisionRequest.class), eq(100L), anyString(), any()))
                 .thenReturn(response);
 
-        mockMvc.perform(put("/api/admin/companies/1/verify")
+        mockMvc.perform(put("/api/staff/companies/1/verify")
                         .header("X-Admin-Id", "100")
-                        .header("X-Admin-Role", "ADMIN")
+                        .header("X-Staff-Role", "STAFF")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -125,21 +134,22 @@ class AdminCompanyVerificationControllerTest {
     }
 
     @Test
-    void rejectCompany_MissingAdminId_Returns401() throws Exception {
+    void rejectCompany_MissingAuthentication_Returns401() throws Exception {
         VerificationDecisionRequest request = new VerificationDecisionRequest("Invalid registration documents provided.", 0L);
 
-        mockMvc.perform(put("/api/admin/companies/1/reject")
-                        .header("X-Admin-Role", "ADMIN")
+        mockMvc.perform(put("/api/staff/companies/1/reject")
+                        .header("X-Staff-Role", "STAFF")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void rejectCompany_NonAdminRole_Returns403() throws Exception {
+    void rejectCompany_NonStaffRole_Returns403() throws Exception {
+        authenticate("USER");
         VerificationDecisionRequest request = new VerificationDecisionRequest("Invalid registration documents provided.", 0L);
 
-        mockMvc.perform(put("/api/admin/companies/1/reject")
+        mockMvc.perform(put("/api/staff/companies/1/reject")
                         .header("X-Admin-Id", "100")
                         .header("X-Admin-Role", "RECRUITER")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -148,7 +158,8 @@ class AdminCompanyVerificationControllerTest {
     }
 
     @Test
-    void rejectCompany_ValidAdmin_Returns200WithRejectedCompany() throws Exception {
+    void rejectCompany_ValidStaff_Returns200WithRejectedCompany() throws Exception {
+        authenticate("STAFF");
         String reason = "Giấy phép kinh doanh đã hết hạn hoặc không hợp lệ.";
         VerificationDecisionRequest request = new VerificationDecisionRequest(reason, 0L);
         CompanyVerificationResponse response = new CompanyVerificationResponse(
@@ -159,9 +170,9 @@ class AdminCompanyVerificationControllerTest {
         when(verificationService.rejectCompany(eq(1L), any(VerificationDecisionRequest.class), eq(100L), anyString(), any()))
                 .thenReturn(response);
 
-        mockMvc.perform(put("/api/admin/companies/1/reject")
+        mockMvc.perform(put("/api/staff/companies/1/reject")
                         .header("X-Admin-Id", "100")
-                        .header("X-Admin-Role", "ADMIN")
+                        .header("X-Staff-Role", "STAFF")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -177,11 +188,30 @@ class AdminCompanyVerificationControllerTest {
         String reason = "Giấy phép kinh doanh đã hết hạn hoặc không hợp lệ.";
         VerificationDecisionRequest request = new VerificationDecisionRequest(reason, 0L);
 
-        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/admin/companies/1/reject")
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/staff/companies/1/reject")
                         .header("X-Admin-Id", "100")
-                        .header("X-Admin-Role", "ADMIN")
+                        .header("X-Staff-Role", "STAFF")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isMethodNotAllowed());
     }
+
+    @AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void getVerificationQueue_LegacyAdminRole_Returns403() throws Exception {
+        authenticate("ADMIN");
+        mockMvc.perform(get("/api/staff/companies/verifications"))
+                .andExpect(status().isForbidden());
+    }
+
+    private void authenticate(String role) {
+        UserPrincipal principal = new UserPrincipal(100L, "staff", "staff@example.vn", role);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                principal, null, principal.getAuthorities()));
+    }
+
 }

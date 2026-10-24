@@ -3,14 +3,16 @@
 | Field | Value |
 |---|---|
 | **Project** | GuardianWork |
-| **Domain** | Trust & Safety / Admin Governance |
+| **Domain** | Trust & Safety / Staff Company Verification |
 | **Feature** | Company Profile Verification (`UC-ADM-01`) |
-| **File** | `docs/company_verification.md` |
+| **File** | `docs/feat/staff/company_verification.md` |
 | **Version** | 1.0.0 |
 | **Date** | 2026-09-21 |
 | **Status** | Approved Specification Reference |
 
 ---
+
+> Staff scope: this retained reference supports UC-15–17. Its historical architecture, automated checks, badges, ranking, and schema examples do not establish new implementation requirements. Use the [Staff specification](spec.md#33-uc-1517--company-verification) and [approved Company verification specification](../../software-requirements/rec/company-verification-spec.md), including its onboarding coordination notes, for current contracts. GW-81 adopts Platform role `STAFF` and the Staff API namespace; Company `ADMIN` membership is unchanged. See [runtime adoption and compatibility](spec.md#43-gw-81-runtime-adoption-and-compatibility) for the user-approved amendment to older contract examples. The wider architecture examples below remain historical reference material.
 
 ## Table of Contents
 
@@ -85,7 +87,7 @@ Leading platforms utilize a tiered trust framework to balance fraud prevention w
 | Actor | Type | Responsibilities |
 |---|---|---|
 | **Recruiter / Employer** | External User | Submits company profile details, tax ID, and uploads clear, unedited legal business documents. |
-| **Trust & Safety Admin** | Internal Staff (`ADMIN`) | Reviews submitted applications against public registries, inspects document integrity, and records approval or detailed rejection feedback. |
+| **Trust & Safety Staff** | Internal Staff (`STAFF`) | Reviews submitted applications against public registries, inspects document integrity, and records approval or detailed rejection feedback. |
 | **Notification Worker** | Background Consumer | Listens to verification events from Apache Kafka and sends automated email notifications with decision details. |
 | **System Security Filter** | Middleware Guard | Enforces Role-Based Access Control (RBAC), prevents IDOR bypasses, and records immutable audit logs. |
 
@@ -98,9 +100,9 @@ Leading platforms utilize a tiered trust framework to balance fraud prevention w
      │
      └── Recruiter uploads certificate & tax code ──► [PENDING]
                                                          │
-                                                         ├── Admin approves ──► [VERIFIED] (Badge granted, full features unlocked)
+                                                         ├── Staff approves ──► [VERIFIED] (Badge granted, full features unlocked)
                                                          │
-                                                         └── Admin rejects  ──► [REJECTED] (Requires correction & re-submission)
+                                                         └── Staff rejects  ──► [REJECTED] (Requires correction & re-submission)
                                                                                    │
                                                                                    └── Recruiter re-submits docs ──► [PENDING]
 ```
@@ -108,8 +110,8 @@ Leading platforms utilize a tiered trust framework to balance fraud prevention w
 ### State Definitions
 
 - **`REGISTERED`:** Initial state upon recruiter account creation. The company profile is incomplete; job posting and candidate search capabilities are restricted.
-- **`PENDING`:** The company has submitted its tax code and registration certificate. It enters the administrator's review queue.
-- **`VERIFIED`:** An administrator confirmed legal legitimacy. The company receives a "Verified Employer" badge, elevated search rankings, and full communication access.
+- **`PENDING`:** The company has submitted its tax code and registration certificate. It enters the staff member's review queue.
+- **`VERIFIED`:** An staff member confirmed legal legitimacy. The company receives a "Verified Employer" badge, elevated search rankings, and full communication access.
 - **`REJECTED`:** The application was declined due to illegible documents, tax code mismatch, or unverified representative authority. Requires correction and resubmission.
 
 ---
@@ -117,7 +119,7 @@ Leading platforms utilize a tiered trust framework to balance fraud prevention w
 ## 5. End-to-End Verification Pipeline
 
 ```
-Admin Client                Admin API / Service             PostgreSQL                   Redis / Kafka
+Staff Client                Staff API / Service             PostgreSQL                   Redis / Kafka
      │                               │                          │                              │
 (1)  │── GET /companies/verifications ─────────────────────────►│                              │
      │◄── Paginated PENDING list ────│                          │                              │
@@ -140,20 +142,20 @@ Admin Client                Admin API / Service             PostgreSQL          
 ### Step-by-Step Workflow
 
 1. **Queue Retrieval:**
-   - Admin accesses the verification queue via `GET /api/admin/companies/verifications?status=PENDING&page=0&size=20`.
+   - Staff accesses the verification queue via `GET /api/staff/companies/verifications?status=PENDING&page=0&size=20`.
    - Records are sorted `createdAt ASC` (FIFO queue) to uphold Service Level Agreements (SLAs).
 
 2. **Document & Profile Review:**
-   - The admin cross-references the submitted profile with the uploaded certificate and public tax registry.
+   - The staff member cross-references the submitted profile with the uploaded certificate and public tax registry.
 
 3. **Decision Execution:**
-   - The admin submits a decision via `PUT /api/admin/companies/{id}/verify`:
+   - The staff member submits a decision via `PUT /api/staff/companies/{id}/verify`:
      - **Approval:** `{"status": "VERIFIED", "rejectionReason": null}`
      - **Rejection:** `{"status": "REJECTED", "rejectionReason": "The tax code on the certificate does not match the profile..."}`
 
 4. **Atomic Database Mutation:**
    - Validates that the entity is in `PENDING` status.
-   - Evaluates optimistic locking (`version` column) to ensure no other admin modified the record.
+   - Evaluates optimistic locking (`version` column) to ensure no other staff member modified the record.
    - Updates company verification fields and inserts an immutable record into `audit_logs` within a single `@Transactional` boundary.
 
 5. **Asynchronous Notification Delivery:**
@@ -168,7 +170,7 @@ In production environments, the administrative review interface provides a side-
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ ADMIN TRUST & SAFETY CONSOLE — TICKET #VER-8492                                       │
+│ STAFF TRUST & SAFETY CONSOLE — TICKET #VER-8492                                       │
 ├──────────────────────────────────────┬─────────────────────────────────────────────────┤
 │ SUBMITTED APPLICATION                │ OFFICIAL GOVERNMENT REGISTRY DATA (LOOKUP)      │
 ├──────────────────────────────────────┼─────────────────────────────────────────────────┤
@@ -197,7 +199,7 @@ In production environments, the administrative review interface provides a side-
 
 ## 7. The 5-Point Document Inspection Checklist
 
-Before an administrator marks any company profile as `VERIFIED`, all 5 criteria must pass:
+Before an staff member marks any company profile as `VERIFIED`, all 5 criteria must pass:
 
 | Checkpoint | What to Verify | Failure Action |
 |---|---|---|
@@ -217,29 +219,29 @@ Before an administrator marks any company profile as `VERIFIED`, all 5 criteria 
   - Enforce work email domain verification (e.g., applicant must confirm a link sent to an `@fpt.com` or `@shopee.com` address).
   - If a free email is used, mandate an official signed and stamped Authorization Letter (*Giấy ủy quyền*).
 
-### 2. Concurrent Admin Modification (Race Condition)
-- **Problem:** Two admins simultaneously review the same ticket. Admin A approves while Admin B rejects, causing inconsistent state and conflicting notification emails.
+### 2. Concurrent Staff Modification (Race Condition)
+- **Problem:** Two staff members simultaneously review the same ticket. Staff A approves while Staff B rejects, causing inconsistent state and conflicting notification emails.
 - **Mitigation:**
   - Database **Optimistic Locking** (`version` column).
   - The first transaction increments `version` (`0 -> 1`). The subsequent transaction encounters a version mismatch and fails with HTTP `409 CONFLICT`.
 
-### 3. Rogue Admin / Collusion ("Who Watches the Watchers?")
-- **Problem:** A rogue internal administrator approves a fraudulent entity in exchange for kickbacks.
+### 3. Rogue Staff / Collusion ("Who Watches the Watchers?")
+- **Problem:** A rogue internal staff member approves a fraudulent entity in exchange for kickbacks.
 - **Mitigation:**
-  - Mandatory, append-only [`audit_logs`](software-requirements/admin_software_requirements.md#31-auditlog-postgresql--audit_logs-table) table.
+  - Mandatory, append-only [`audit_logs`](spec.md#36-audit-safeguards-supporting-the-selected-use-cases) table.
   - PostgreSQL role permissions explicitly revoke `UPDATE` and `DELETE` on `audit_logs`.
   - Captures `admin_id`, `ip_address`, `timestamp`, and complete `old_payload`/`new_payload` diffs.
 
 ### 4. Vague Rejection Feedback
 - **Problem:** Rejection without actionable feedback leads to repeated erroneous resubmissions and customer support overload.
 - **Mitigation:**
-  - Business Rule [`BR-ADM-05`](software-requirements/admin_software_requirements.md#6-business-rules): Mandates `rejectionReason` with a minimum of 10 characters for any rejection payload.
+  - Requirement [`ADM-VER-04`](spec.md#33-uc-1517--company-verification): Mandates `rejectionReason` with a minimum of 10 characters for any rejection payload.
 
 ---
 
 ## 9. GuardianWork Technical Implementation Mapping
 
-This section connects the business requirements to the implementation specifications in [`docs/software-requirements/admin_software_requirements.md`](software-requirements/admin_software_requirements.md).
+This section connects the business requirements to the implementation specifications in [Staff verification requirements](spec.md#33-uc-1517--company-verification).
 
 ### Database Schema Reference (`companies` table)
 
@@ -264,8 +266,8 @@ CREATE INDEX idx_companies_verification_status ON companies(verification_status)
 
 ### API Endpoint Contracts
 
-- **List Verification Queue:** `GET /api/admin/companies/verifications?status=PENDING&page=0&size=20`
-- **Execute Verification Decision:** `PUT /api/admin/companies/{id}/verify`
+- **List Verification Queue:** `GET /api/staff/companies/verifications?status=PENDING&page=0&size=20`
+- **Execute Verification Decision:** `PUT /api/staff/companies/{id}/verify`
   ```json
   {
     "status": "VERIFIED | REJECTED",
@@ -280,5 +282,5 @@ CREATE INDEX idx_companies_verification_status ON companies(verification_status)
 | `40010` | 400 | `COMPANY_NOT_PENDING` | Company status is already `VERIFIED` or `REJECTED` |
 | `40011` | 404 | `COMPANY_NOT_FOUND` | Company ID does not exist |
 | `40000` | 400 | `INVALID_INPUT` | Rejection reason missing or shorter than 10 characters |
-| `40900` | 409 | `CONCURRENT_MODIFICATION` | Version conflict between concurrent administrators |
-| `40300` | 403 | `FORBIDDEN` | Request executed without valid `ADMIN` role claim |
+| `40900` | 409 | `CONCURRENT_MODIFICATION` | Version conflict between concurrent staff members |
+| `40300` | 403 | `FORBIDDEN` | Request executed without valid `STAFF` role claim |
