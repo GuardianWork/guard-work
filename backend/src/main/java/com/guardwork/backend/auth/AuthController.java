@@ -37,7 +37,10 @@ public class AuthController {
     public ApiResponse<TokenPairResponse> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         String ipAddress = extractClientIp(httpRequest);
         String userAgent = httpRequest.getHeader("User-Agent");
-        TokenPairResponse response = authService.login(request, ipAddress, userAgent);
+        Portal portal = Portal.fromRequest(httpRequest);
+        TokenPairResponse response = portal == null
+                ? authService.login(request, ipAddress, userAgent)
+                : authService.login(request, ipAddress, userAgent, portal);
         return ApiResponse.ok("Login successful", response);
     }
 
@@ -45,14 +48,20 @@ public class AuthController {
     public ApiResponse<TokenPairResponse> refresh(@RequestBody RefreshTokenRequest request, HttpServletRequest httpRequest) {
         String ipAddress = extractClientIp(httpRequest);
         String userAgent = httpRequest.getHeader("User-Agent");
-        TokenPairResponse response = authService.refreshToken(request, ipAddress, userAgent);
+        Portal portal = Portal.fromRequest(httpRequest);
+        TokenPairResponse response = portal == null
+                ? authService.refreshToken(request, ipAddress, userAgent)
+                : authService.refreshToken(request, ipAddress, userAgent, portal);
         return ApiResponse.ok("Token refreshed successfully", response);
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(@RequestBody(required = false) RefreshTokenRequest request) {
+    public ApiResponse<Void> logout(@RequestBody(required = false) RefreshTokenRequest request,
+                                    HttpServletRequest httpRequest) {
+        Portal portal = Portal.fromRequest(httpRequest);
         if (request != null && request.refreshToken() != null) {
-            authService.logout(request.refreshToken());
+            if (portal == null) authService.logout(request.refreshToken());
+            else authService.logout(request.refreshToken(), portal);
         }
         return ApiResponse.ok("Logged out successfully", null);
     }

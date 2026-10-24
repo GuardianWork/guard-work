@@ -1,5 +1,13 @@
 # Authentication, Identity & Access Control — Software Requirements Specification
 
+> Portal routing coordination (2026-10-24): the user supplied and authorized the
+> public/Staff proxy implementation contract in this session. See
+> [GW-SR-AUTH-02](portal-routing-contract.md) for header context, role enforcement,
+> bound refresh sessions, error envelopes, optional CORS, and compatibility details.
+> Platform `ADMIN` naming below is superseded by the scoped Staff rename recorded
+> in [Staff specification section 4.3](../../feat/staff/spec.md#43-gw-81-runtime-adoption-and-compatibility);
+> Company `ADMIN` membership remains unchanged.
+
 > Employer onboarding coordination (2026-10-18): the user approved [GW-SR-REC-03](../rec/company-onboarding-verification-enhancement-spec.md) and confirmed its implementation contract. Its new-applicant path supersedes automatic email proof, unrestricted Candidate capability, separate Company-email input and mutable-only dossier handling for enrolled employer applicants. Ordinary Candidate registration and legacy Company compatibility remain scoped as documented; CHECKED is derived from existing Company eligibility states. SMS integration, production retention and legacy rollout remain unresolved. See [implementation details](../../backend/employer-onboarding.md).
 
 | Field | Value |
@@ -10,7 +18,7 @@
 | **File** | `authentication-authorization-spec.md` |
 | **Version** | 1.0.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-08 |
+| **Last Updated** | 2026-10-24 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |

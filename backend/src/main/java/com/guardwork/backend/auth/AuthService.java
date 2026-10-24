@@ -81,6 +81,11 @@ public class AuthService {
 
     @Transactional
     public TokenPairResponse login(LoginRequest request, String ipAddress, String userAgent) {
+        return login(request, ipAddress, userAgent, null);
+    }
+
+    @Transactional
+    public TokenPairResponse login(LoginRequest request, String ipAddress, String userAgent, Portal portal) {
         log.debug("event=auth_login outcome=started");
         if (request == null || blank(request.usernameOrEmail()) || blank(request.password())) {
             throw badRequest("40001 INVALID_INPUT: usernameOrEmail and password are required");
@@ -101,13 +106,16 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
 
-        String accessToken = jwtService.generateAccessToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
+        portal = portal == null ? Portal.fromRole(user.getRole()) : portal;
+        portal.requireRole(user.getRole());
+        String accessToken = jwtService.generateAccessToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole(), portal);
         String rawRefreshToken = jwtService.generateRefreshTokenValue();
         String tokenHash = jwtService.hashToken(rawRefreshToken);
         String familyId = jwtService.generateFamilyId();
 
         RefreshToken refreshToken = new RefreshToken();
         refreshToken.setUserId(user.getId());
+        refreshToken.setPortal(portal.value());
         refreshToken.setTokenHash(tokenHash);
         refreshToken.setFamilyId(familyId);
         refreshToken.setRevoked(false);
@@ -122,6 +130,11 @@ public class AuthService {
 
     @Transactional
     public TokenPairResponse refreshToken(RefreshTokenRequest request, String ipAddress, String userAgent) {
+        return refreshToken(request, ipAddress, userAgent, null);
+    }
+
+    @Transactional
+    public TokenPairResponse refreshToken(RefreshTokenRequest request, String ipAddress, String userAgent, Portal portal) {
         log.debug("event=auth_refresh outcome=started");
         if (request == null || blank(request.refreshToken())) {
             throw badRequest("40001 INVALID_INPUT: refreshToken is required");
@@ -136,6 +149,8 @@ public class AuthService {
         }
 
         RefreshToken token = tokenOpt.get();
+        portal = portal == null ? Portal.parse(token.getPortal()) : portal;
+        requireRefreshPortal(token, portal);
 
         // Reuse attack detection: if token is already revoked, revoke its entire family!
         if (token.isRevoked()) {
@@ -148,9 +163,6 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40104 REVOKED_REFRESH_TOKEN: Refresh token has expired");
         }
 
-        // Revoke the consumed token (RTR)
-        refreshTokenRepository.revokeToken(token.getId(), Instant.now());
-
         User user = userRepository.findById(token.getUserId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40401 USER_NOT_FOUND: User not found"));
 
@@ -158,13 +170,17 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
 
-        // Issue new access token and rotated refresh token with the SAME familyId
-        String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
+        portal.requireRole(user.getRole());
+        // Validate portal and current authority before consuming the refresh token.
+        refreshTokenRepository.revokeToken(token.getId(), Instant.now());
+        // Issue new access token and rotated refresh token with the SAME familyId and portal.
+        String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole(), portal);
         String newRawRefreshToken = jwtService.generateRefreshTokenValue();
         String newTokenHash = jwtService.hashToken(newRawRefreshToken);
 
         RefreshToken newToken = new RefreshToken();
         newToken.setUserId(user.getId());
+        newToken.setPortal(portal.value());
         newToken.setTokenHash(newTokenHash);
         newToken.setFamilyId(token.getFamilyId());
         newToken.setRevoked(false);
@@ -178,11 +194,18 @@ public class AuthService {
     }
 
     public void logout(String rawRefreshToken) {
+        logout(rawRefreshToken, null);
+    }
+
+    public void logout(String rawRefreshToken, Portal portal) {
         log.debug("event=auth_logout outcome=started");
         if (!blank(rawRefreshToken)) {
             String tokenHash = jwtService.hashToken(rawRefreshToken.trim());
             refreshTokenRepository.findByTokenHash(tokenHash)
-                    .ifPresent(token -> refreshTokenRepository.revokeToken(token.getId(), Instant.now()));
+                    .ifPresent(token -> {
+                        if (portal != null) requireRefreshPortal(token, portal);
+                        refreshTokenRepository.revokeToken(token.getId(), Instant.now());
+                    });
         }
     }
 
@@ -292,6 +315,12 @@ public class AuthService {
         }
         if (blank(request.password()) || !PASSWORD_PATTERN.matcher(request.password()).matches()) {
             throw badRequest("40002 WEAK_PASSWORD: password must be 8-128 characters with at least one uppercase letter, one lowercase letter, and one digit");
+        }
+    }
+
+    private static void requireRefreshPortal(RefreshToken token, Portal portal) {
+        if (!portal.value().equals(token.getPortal())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40100 UNAUTHORIZED: Refresh token portal mismatch");
         }
     }
 

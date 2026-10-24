@@ -51,3 +51,19 @@ docker compose -p guardwork-tests-local -f docker-compose.test.yml down
 ## Feature coverage
 
 See [Company Membership tests](company-membership-testing.md) for its HTTP, security, migration and mail test boundaries.
+
+Portal authentication uses the same isolated PostgreSQL boundary, with no new test
+infrastructure. `PortalAuthHttpTest` covers login/refresh/logout for both portals,
+wrong-portal credentials with and without Bearer, non-consuming refresh rejection,
+Staff role enforcement, malformed portal headers, and opt-in direct-origin CORS.
+`ViteProxyAuthHttpTest` covers preserved browser Origin with a rewritten Host while
+direct CORS is disabled. `PortalSessionMigrationTest` proves existing-session backfill
+and database constraints using transaction-local temporary tables.
+
+```bash
+./mvnw -Dtest=PortalAuthHttpTest,ViteProxyAuthHttpTest,PortalSessionMigrationTest test
+```
+
+These are backend HTTP/security-chain tests, not a browser running either external
+Vite project. Gateway header rewriting and the actual frontend bundle require
+deployment/frontend verification outside this repository.
