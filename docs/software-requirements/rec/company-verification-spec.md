@@ -1,16 +1,24 @@
 # Company Verification & Business License Inspection — Software Requirements Specification
 
+> Staff terminology synchronization (2026-10-24): at the user's request, Platform
+> actor names, role examples and verification routes now reflect the approved
+> [GW-81 Staff adoption](../../feat/staff/spec.md#43-gw-81-runtime-adoption-and-compatibility).
+> Decisions use a verified Bearer principal, not client-supplied actor/role headers.
+> Company `ADMIN`, stable requirement IDs, persisted `audit_logs.admin_id` and
+> committed migration names remain unchanged. Portal behavior follows
+> [GW-SR-AUTH-02](../auth/portal-routing-contract.md).
+
 > Employer onboarding coordination (2026-10-18): the user approved [GW-SR-REC-03](company-onboarding-verification-enhancement-spec.md) and confirmed its implementation contract. Its new-applicant path supersedes automatic email proof, unrestricted Candidate capability, separate Company-email input and mutable-only dossier handling for enrolled employer applicants. Ordinary Candidate registration and legacy Company compatibility remain scoped as documented; CHECKED is derived from existing Company eligibility states. SMS integration, production retention and legacy rollout remain unresolved. See [implementation details](../../backend/employer-onboarding.md).
 
 | Field | Value |
 |---|---|
 | **Specification ID** | GW-SR-REC-01 |
 | **Project** | GuardWork |
-| **Module** | Recruiter & Company Verification / Admin KYB Gatekeeper |
+| **Module** | Recruiter & Company Verification / Staff KYB Gatekeeper |
 | **File** | `company-verification-spec.md` |
 | **Version** | 0.2.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-08 |
+| **Last Updated** | 2026-10-24 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |
@@ -45,8 +53,8 @@ This document defines the formal software requirements for the **Company Verific
 | Sub-feature | Responsibility |
 |---|---|
 | **Company Verification Request** | Recruiter submission of company registration details (tax code, legal name, official contact email, certificate storage URL), initializing verification status to `PENDING`. |
-| **Admin Verification Queue** | Paginated, status-filtered, FIFO-sorted review queue for platform administrators (`GET /api/admin/companies/verifications`). |
-| **Deterministic Verification Decision** | Administrative approval (`VERIFIED`) or rejection (`REJECTED` with mandatory 10–1000 character feedback) via `PUT /api/admin/companies/{id}/verify` with optimistic concurrency control (`expectedVersion`). |
+| **Staff Verification Queue** | Paginated, status-filtered, FIFO-sorted review queue for Platform Staff members (`GET /api/staff/companies/verifications`). |
+| **Deterministic Verification Decision** | Administrative approval (`VERIFIED`) or rejection (`REJECTED` with mandatory 10–1000 character feedback) via `PUT /api/staff/companies/{id}/verify` with optimistic concurrency control (`expectedVersion`). |
 | **Immutable Audit Logging** | Atomic append-only logging in `audit_logs` protected by database-level triggers against `UPDATE`, `DELETE`, and `TRUNCATE`. |
 | **Notification Event Publishing** | Publishing asynchronous decision events to notify recruiters upon verification status transition (Deferred to subsequent phase per human approval). |
 
@@ -69,9 +77,9 @@ This document defines the formal software requirements for the **Company Verific
 ```text
 Recruiter (Submit Info) ──> [POST /api/companies/verification-request] ──> [companies table (PENDING)]
                                                                                   │
-Admin (Review Queue)   <── [GET /api/admin/companies/verifications] <────────────┘
+Staff (Review Queue)   <── [GET /api/staff/companies/verifications] <────────────┘
         │
-Admin (Decision)        ──> [PUT /api/admin/companies/{id}/verify]
+Staff (Decision)        ──> [PUT /api/staff/companies/{id}/verify]
                                  ├── Optimistic Concurrency Check (version == expectedVersion)
                                  ├── Update companies (status: VERIFIED / REJECTED, version + 1)
                                  ├── Insert audit_logs (append-only, immutable)
@@ -86,10 +94,10 @@ Admin (Decision)        ──> [PUT /api/admin/companies/{id}/verify]
          ▼ submitVerification() [POST /api/companies/verification-request]
      [PENDING]
       │     │
-      │     └── adminReject(reason >= 10 chars) ──> [REJECTED]
+      │     └── staffReject(reason >= 10 chars) ──> [REJECTED]
       │                                                   │
       │                                                   └── resubmit(id, expectedVersion) [PUT /api/companies/{id}/resubmit] ──> [PENDING]
-      └── adminApprove() ──────────────────────────> [VERIFIED]
+      └── staffApprove() ──────────────────────────> [VERIFIED]
 ```
 
 #### Strict Resubmission Forcing Policy
@@ -130,7 +138,7 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 
 ### 2.4 Public vs Protected Endpoints
 
-- All `/api/admin/companies/**` endpoints are protected and require administrative authorization (`role: "ADMIN"`).
+- All `/api/staff/companies/**` endpoints are protected and require administrative authorization (`role: "STAFF"`).
 - Candidate masking rules apply to unverified companies: unverified accounts cannot view unmasked candidate contact details.
 
 ---
@@ -148,7 +156,7 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 | `registration_certificate_url` | TEXT | NOT NULL | Storage URL of business license certificate |
 | `verification_status` | VARCHAR(30) | NOT NULL, DEFAULT `'PENDING'` | Status: `'PENDING'`, `'VERIFIED'`, `'REJECTED'` |
 | `rejection_reason` | TEXT | NULL | Actionable feedback if status is `'REJECTED'` |
-| `verified_by` | BIGINT | FK -> `users(id)`, NULL | ID of Admin reviewer who made the decision |
+| `verified_by` | BIGINT | FK -> `users(id)`, NULL | ID of Staff reviewer who made the decision |
 | `verified_at` | TIMESTAMPTZ | NULL | Timestamp of decision |
 | `is_banned` | BOOLEAN | NOT NULL, DEFAULT `false` | Account suspension flag |
 | `version` | BIGINT | NOT NULL, DEFAULT `0` | Optimistic locking counter |
@@ -160,7 +168,7 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | `id` | BIGSERIAL | PK, auto | Unique audit log ID |
-| `admin_id` | BIGINT | NOT NULL, FK -> `users(id)` | Administrator performing action |
+| `admin_id` | BIGINT | NOT NULL, FK -> `users(id)` | Staff member performing action |
 | `action` | VARCHAR(100) | NOT NULL | Action constant (e.g. `'COMPANY_VERIFICATION'`) |
 | `target_type` | VARCHAR(50) | NOT NULL | Entity type (e.g. `'COMPANY'`) |
 | `target_id` | VARCHAR(100) | NOT NULL | Identifier of target entity |
@@ -177,7 +185,7 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 - `companies_verification_status_check`: `CHECK (verification_status IN ('PENDING', 'VERIFIED', 'REJECTED'))`
 - `idx_companies_verification_queue`: `(verification_status, created_at)` for FIFO queue lookups.
 - `idx_companies_email`: `(email)` for company lookup by email.
-- `idx_audit_logs_admin_created`: `(admin_id, created_at DESC)` for admin activity auditing.
+- `idx_audit_logs_admin_created`: `(admin_id, created_at DESC)` for staff activity auditing.
 - `idx_audit_logs_target`: `(target_type, target_id)` for entity audit lookups.
 - PostgreSQL Immutability Trigger `trg_protect_audit_logs`: `BEFORE DELETE OR UPDATE OR TRUNCATE ON audit_logs` calling `prevent_audit_logs_mutation()` which aborts with an exception to guarantee append-only immutability.
 
@@ -188,12 +196,12 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 | ID | Requirement | Priority |
 |---|---|---|
 | **REQ-REC-01** | The system shall allow recruiters to submit company verification details (name, tax code, email, certificate URL), creating the record with status `PENDING` and version `0`. The email field is required and validated against standard email format. If the company (by tax code or email) was previously rejected, new form submission is strictly blocked with HTTP 409 (`40902 RESUBMISSION_REQUIRED`), forcing resubmission via REQ-REC-09. | High |
-| **REQ-REC-02** | The system shall provide an administrative queue endpoint (`GET /api/admin/companies/verifications`) with pagination, FIFO sorting (`created_at ASC`), and filtering by status (`PENDING`, `VERIFIED`, `REJECTED`, or `ALL`). | High |
-| **REQ-REC-03** | The system shall provide details of a company's verification dossier to authorized admins. | High |
-| **REQ-REC-04** | The system shall allow admins to approve a company in `PENDING` status, updating `verification_status = 'VERIFIED'`, recording `verified_by` and `verified_at`, and incrementing `version`. | High |
-| **REQ-REC-05** | The system shall allow admins to reject a company in `PENDING` status by supplying a mandatory `rejectionReason` (10–1000 characters), setting `verification_status = 'REJECTED'` and incrementing `version`. | High |
+| **REQ-REC-02** | The system shall provide an administrative queue endpoint (`GET /api/staff/companies/verifications`) with pagination, FIFO sorting (`created_at ASC`), and filtering by status (`PENDING`, `VERIFIED`, `REJECTED`, or `ALL`). | High |
+| **REQ-REC-03** | The system shall provide details of a company's verification dossier to authorized Staff members. | High |
+| **REQ-REC-04** | The system shall allow Staff members to approve a company in `PENDING` status, updating `verification_status = 'VERIFIED'`, recording `verified_by` and `verified_at`, and incrementing `version`. | High |
+| **REQ-REC-05** | The system shall allow Staff members to reject a company in `PENDING` status by supplying a mandatory `rejectionReason` (10–1000 characters), setting `verification_status = 'REJECTED'` and incrementing `version`. | High |
 | **REQ-REC-06** | The system shall enforce optimistic concurrency control via `expectedVersion`. If `expectedVersion` does not match the current database `version`, the decision transaction shall abort with HTTP 409 Conflict (`40022 CONCURRENT_MODIFICATION`). | High |
-| **REQ-REC-07** | The system shall atomically record an immutable entry into `audit_logs` capturing admin ID, IP address, user agent, old payload, new payload, and reason within the decision transaction. | High |
+| **REQ-REC-07** | The system shall atomically record an immutable entry into `audit_logs` capturing staff ID, IP address, user agent, old payload, new payload, and reason within the decision transaction. | High |
 | **REQ-REC-08** | The system shall emit an asynchronous notification event (`CompanyVerificationEvent`) upon verification decision to notify the recruiter. | High |
 | **REQ-REC-09** | The system shall require a rejected company to update details and resubmit via their existing company record (`PUT /api/companies/{id}/resubmit`) along with `expectedVersion`, transitioning status from `REJECTED` back to `PENDING` and receiving the newest status. Recruiters may query their existing dossier via `GET /api/companies/tax-code/{taxCode}`. | High |
 
@@ -201,10 +209,10 @@ For paginated list responses, `data` uses the standard `PageResponse` wrapper:
 
 ## 5. Flow Diagrams
 
-### 5.1 Admin Verification Decision Flow
+### 5.1 Staff Verification Decision Flow
 
 ```text
-Admin Client              AdminController             VerificationService        Database (JDBC)        EventPublisher
+Staff Client              StaffCompanyVerificationController             VerificationService        Database (JDBC)        EventPublisher
      │                           │                            │                        │                      │
      │── PUT /{id}/verify ──────>│                            │                        │                      │
      │   (status, reason,        │── verifyCompany() ────────>│                        │                      │
@@ -233,9 +241,9 @@ Admin Client              AdminController             VerificationService       
 |---|---|---|
 | **BR-REC-01** | **Eligible Verification Status** | A company profile can only be approved (`VERIFIED`) or rejected (`REJECTED`) if its current status is `PENDING`. Attempting to decide on non-pending companies returns HTTP 400 (`40010 COMPANY_NOT_PENDING`). |
 | **BR-REC-02** | **Optimistic Concurrency Control** | Status mutation requires validating that `companies.version` equals `expectedVersion`. On mismatch, transaction aborts and returns HTTP 409 (`40022 CONCURRENT_MODIFICATION`). |
-| **BR-REC-03** | **Mandatory Rejection Feedback** | If an admin rejects a company (`REJECTED`), `rejectionReason` must be non-blank and between 10 and 1000 characters. If approved (`VERIFIED`), `rejectionReason` must be null. |
+| **BR-REC-03** | **Mandatory Rejection Feedback** | If a staff rejects a company (`REJECTED`), `rejectionReason` must be non-blank and between 10 and 1000 characters. If approved (`VERIFIED`), `rejectionReason` must be null. |
 | **BR-REC-04** | **Tax Code Uniqueness** | `tax_code` must be unique across all companies (`UNIQUE` constraint). Duplicates return HTTP 409 Conflict. |
-| **BR-REC-05** | **Role-Based Admin Access** | All `/api/admin/companies/**` endpoints require admin authorization (`role: "ADMIN"`). Unauthorized requests return HTTP 401 or HTTP 403. |
+| **BR-REC-05** | **Role-Based Staff Access** | All `/api/staff/companies/**` endpoints require staff authorization (`role: "STAFF"`). Unauthorized requests return HTTP 401 or HTTP 403. |
 | **BR-REC-06** | **Immutable Audit Trail** | Every decision atomically inserts a record into `audit_logs`. Database triggers prevent any `UPDATE`, `DELETE`, or `TRUNCATE` operations on `audit_logs`. |
 | **BR-REC-07** | **Transactional Notification Delivery** | The database transaction updating company status and writing audit log must commit before or with event notification dispatch. |
 | **BR-REC-08** | **Vietnamese Localization & UTF-8** | Rejection reasons, audit notes, and notifications must fully support UTF-8 Vietnamese text and `Asia/Ho_Chi_Minh` timezone. |
@@ -252,7 +260,7 @@ Admin Client              AdminController             VerificationService       
 | `40012` | 400 | `COMPANY_NOT_REJECTED` | Target company is not in `REJECTED` status for resubmission. |
 | `40000` | 400 | `BAD_REQUEST` | Malformed request body or invalid status value. |
 | `40100` | 401 | `UNAUTHORIZED` | Caller is not authenticated. |
-| `40300` | 403 | `FORBIDDEN` | Caller is not an Administrator (`role: "ADMIN"`). |
+| `40300` | 403 | `FORBIDDEN` | Caller is not a Staff member (`role: "STAFF"`). |
 | `40400` | 404 | `COMPANY_NOT_FOUND` | Specified company ID or tax code does not exist. |
 | `40022` | 409 | `CONCURRENT_MODIFICATION` | `expectedVersion` does not match current database `version`. |
 | `40901` | 409 | `DUPLICATE_TAX_CODE` | Tax code is already registered by another company. |
@@ -264,11 +272,11 @@ Admin Client              AdminController             VerificationService       
 
 ## 8. API Specification
 
-### Base URL: `/api/admin/companies`
+### Base URL: `/api/staff/companies`
 
 ### 8.1 Verification Queue Listing
 
-#### `GET /api/admin/companies/verifications`
+#### `GET /api/staff/companies/verifications`
 
 Retrieves a paginated FIFO queue of companies filtered by status.
 
@@ -316,13 +324,13 @@ Retrieves a paginated FIFO queue of companies filtered by status.
 
 ### 8.2 Verification Decision
 
-#### `PUT /api/admin/companies/{id}/verify`
+#### `PUT /api/staff/companies/{id}/verify`
 
 Executes an approval or rejection decision on a pending company.
 
 **Request Headers**
-- `X-Admin-Id`: `1` (Admin user ID)
-- `X-Admin-Role`: `ADMIN`
+- `Authorization`: `Bearer <accessToken>` with Platform role `STAFF`.
+- `X-Guardian-Portal`: `staff`, supplied by the trusted proxy/gateway. Actor identity comes from the verified principal; client identity/role headers do not grant authority.
 
 **Request Body**
 
@@ -370,13 +378,13 @@ Or for rejection:
 
 ### 8.3 Rejection Action
 
-#### `PUT /api/admin/companies/{id}/reject`
+#### `PUT /api/staff/companies/{id}/reject`
 
 Dedicated action to reject a pending company verification request with mandatory actionable feedback.
 
 **Request Headers**
-- `X-Admin-Id`: `1` (Admin user ID)
-- `X-Admin-Role`: `ADMIN`
+- `Authorization`: `Bearer <accessToken>` with Platform role `STAFF`.
+- `X-Guardian-Portal`: `staff`, supplied by the trusted proxy/gateway. Actor identity comes from the verified principal; client identity/role headers do not grant authority.
 
 **Request Body**
 

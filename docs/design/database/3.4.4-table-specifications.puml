@@ -1,0 +1,444 @@
+' Sources: backend/src/main/resources/db/migration/V*.sql, JPA models and scoped services.
+' Snapshot: 2026-10-19. Documents existing implementation; does not propose schema changes.
+@startuml dictionary_users
+title 3.4.4.1 users
+hide circle
+entity users {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  first_name : VARCHAR(100) [NOT NULL]
+  last_name : VARCHAR(100) [NOT NULL]
+  username : VARCHAR(50) [NOT NULL; UK]
+  email : VARCHAR(255) [NOT NULL; UK]
+  password : VARCHAR(255) [NOT NULL]
+  created_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+  updated_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+  role : VARCHAR(30) [NOT NULL; DEFAULT 'USER']
+  status : VARCHAR(30) [NOT NULL; DEFAULT 'ACTIVE']
+  email_verified : BOOLEAN [NOT NULL; DEFAULT true]
+}
+note bottom of users
+  Official user identities and platform roles; Company roles live in memberships.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_companies
+title 3.4.4.2 companies
+hide circle
+entity companies {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  name : VARCHAR(255) [NOT NULL]
+  tax_code : VARCHAR(50) [NOT NULL; UK]
+  registration_certificate_url : TEXT [NOT NULL]
+  verification_status : VARCHAR(30) [NOT NULL; DEFAULT 'PENDING']
+  rejection_reason : TEXT [NULL]
+  verified_by : BIGINT [NULL; FK; REFERENCES users.id]
+  verified_at : TIMESTAMPTZ [NULL]
+  is_banned : BOOLEAN [NOT NULL; DEFAULT false]
+  version : BIGINT [NOT NULL; DEFAULT 0]
+  created_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+  updated_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+  email : VARCHAR(255) [NULL]
+  owner_user_id : BIGINT [NULL; FK; REFERENCES users.id]
+}
+note bottom of companies
+  Company identity, current verification state and optional declared Owner.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_audit_logs
+title 3.4.4.3 audit_logs
+hide circle
+entity audit_logs {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  admin_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  action : VARCHAR(100) [NOT NULL]
+  target_type : VARCHAR(50) [NOT NULL]
+  target_id : VARCHAR(100) [NOT NULL]
+  old_payload : JSONB [NULL]
+  new_payload : JSONB [NULL]
+  reason : TEXT [NULL]
+  ip_address : VARCHAR(45) [NOT NULL]
+  user_agent : VARCHAR(255) [NULL]
+  created_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+}
+note bottom of audit_logs
+  Append-only platform administration audit records; target_id is polymorphic text.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_refresh_tokens
+title 3.4.4.4 refresh_tokens
+hide circle
+entity refresh_tokens {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  user_id : BIGINT [NOT NULL; FK; REFERENCES users.id; ON DELETE CASCADE]
+  token_hash : VARCHAR(64) [NOT NULL; UK]
+  family_id : VARCHAR(36) [NOT NULL]
+  is_revoked : BOOLEAN [NOT NULL; DEFAULT false]
+  expires_at : TIMESTAMPTZ [NOT NULL]
+  created_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+  revoked_at : TIMESTAMPTZ [NULL]
+  user_agent : VARCHAR(255) [NULL]
+  ip_address : VARCHAR(45) [NOT NULL]
+}
+note bottom of refresh_tokens
+  Hashed refresh tokens, rotation families and revocation state.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_password_reset_tokens
+title 3.4.4.5 password_reset_tokens
+hide circle
+entity password_reset_tokens {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  user_id : BIGINT [NOT NULL; FK; REFERENCES users.id; ON DELETE CASCADE]
+  token_hash : VARCHAR(64) [NOT NULL; UK]
+  is_consumed : BOOLEAN [NOT NULL; DEFAULT false]
+  expires_at : TIMESTAMPTZ [NOT NULL]
+  created_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+}
+note bottom of password_reset_tokens
+  Hashed, expiring, single-use password recovery tokens.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_company_memberships
+title 3.4.4.6 company_memberships
+hide circle
+entity company_memberships {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  company_id : BIGINT [NOT NULL; FK; REFERENCES companies.id]
+  user_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  role : VARCHAR(30) [NOT NULL]
+  status : VARCHAR(30) [NOT NULL]
+  joined_at : TIMESTAMPTZ [NOT NULL]
+  ended_at : TIMESTAMPTZ [NULL]
+  ended_by_user_id : BIGINT [NULL; FK; REFERENCES users.id]
+  created_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+}
+note bottom of company_memberships
+  Company-scoped role and membership periods; inactive periods are retained.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_company_membership_audit_events
+title 3.4.4.7 company_membership_audit_events
+hide circle
+entity company_membership_audit_events {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  actor_user_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  subject_user_id : BIGINT [NULL; FK; REFERENCES users.id]
+  company_id : BIGINT [NOT NULL; FK; REFERENCES companies.id]
+  event_type : VARCHAR(100) [NOT NULL]
+  membership_id : BIGINT [NULL; FK; REFERENCES company_memberships.id]
+  invitation_id : BIGINT [NULL; FK; REFERENCES company_invitations.id]
+  review_case_reference : VARCHAR(255) [NULL]
+  reason : TEXT [NULL]
+  created_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+  reviewer_user_id : BIGINT [NULL; FK; REFERENCES users.id]
+  evidence_type : VARCHAR(80) [NULL]
+  review_decision : VARCHAR(30) [NULL]
+  reviewed_at : TIMESTAMPTZ [NULL]
+  assignment_outcome : VARCHAR(30) [NULL]
+}
+note bottom of company_membership_audit_events
+  Append-only membership and invitation audit events.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_company_ownership_reviews
+title 3.4.4.8 company_ownership_reviews
+hide circle
+entity company_ownership_reviews {
+  case_reference : VARCHAR(255) [NOT NULL; PK]
+  company_id : BIGINT [NOT NULL; FK; REFERENCES companies.id]
+  applicant_user_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  reviewer_user_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  evidence_type : VARCHAR(80) [NOT NULL]
+  decision : VARCHAR(30) [NOT NULL]
+  company_version : BIGINT [NOT NULL]
+  verification_status : VARCHAR(30) [NOT NULL]
+  company_banned : BOOLEAN [NOT NULL]
+  company_updated_at : TIMESTAMPTZ [NOT NULL]
+  reviewed_at : TIMESTAMPTZ [NOT NULL]
+  evidence_valid_until : TIMESTAMPTZ [NULL]
+}
+note bottom of company_ownership_reviews
+  Append-only approved review evidence metadata for legacy Owner assignment.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_company_invitations
+title 3.4.4.9 company_invitations
+hide circle
+entity company_invitations {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  company_id : BIGINT [NOT NULL; FK; REFERENCES companies.id]
+  recipient_email_normalized : VARCHAR(255) [NOT NULL]
+  role : VARCHAR(30) [NOT NULL]
+  invited_by_user_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  status : VARCHAR(30) [NOT NULL]
+  secret_hash : VARCHAR(64) [NOT NULL; UK]
+  issued_at : TIMESTAMPTZ [NOT NULL]
+  expires_at : TIMESTAMPTZ [NOT NULL]
+  accepted_by_user_id : BIGINT [NULL; FK; REFERENCES users.id]
+  decided_at : TIMESTAMPTZ [NULL]
+  created_at : TIMESTAMPTZ [NOT NULL]
+  updated_at : TIMESTAMPTZ [NOT NULL]
+  delivery_status : VARCHAR(30) [NOT NULL]
+  last_delivery_attempt_at : TIMESTAMPTZ [NULL]
+  accepted_membership_id : BIGINT [NULL; FK; REFERENCES company_memberships.id]
+  decided_by_user_id : BIGINT [NULL; FK; REFERENCES users.id]
+}
+note bottom of company_invitations
+  Hashed-secret Recruiter invitations and acceptance receipts.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_notification_outbox
+title 3.4.4.10 notification_outbox
+hide circle
+entity notification_outbox {
+  event_id : UUID [NOT NULL; PK]
+  recipient_user_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  event_type : VARCHAR(50) [NOT NULL]
+  company_id : BIGINT [NOT NULL; FK; REFERENCES companies.id]
+  company_name : VARCHAR(255) [NOT NULL]
+  created_at : TIMESTAMPTZ [NOT NULL]
+  attempt_count : INTEGER [NOT NULL; DEFAULT 0]
+  next_attempt_at : TIMESTAMPTZ [NOT NULL]
+  delivered_at : TIMESTAMPTZ [NULL]
+  error_category : VARCHAR(50) [NULL]
+}
+note bottom of notification_outbox
+  Transactional membership notification delivery intents and retry state.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_user_notifications
+title 3.4.4.11 user_notifications
+hide circle
+entity user_notifications {
+  id : BIGSERIAL [NOT NULL; PK; sequence default]
+  source_event_id : UUID [NOT NULL; UK, FK; REFERENCES notification_outbox.event_id]
+  recipient_user_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  event_type : VARCHAR(50) [NOT NULL]
+  company_id : BIGINT [NOT NULL; FK; REFERENCES companies.id]
+  company_name : VARCHAR(255) [NOT NULL]
+  created_at : TIMESTAMPTZ [NOT NULL]
+  read_at : TIMESTAMPTZ [NULL]
+}
+note bottom of user_notifications
+  Membership notification inbox and read state.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_candidate_profiles
+title 3.4.4.12 candidate_profiles
+hide circle
+entity candidate_profiles {
+  id : UUID [NOT NULL; PK; DEFAULT gen_random_uuid()]
+  user_id : BIGINT [NOT NULL; UK, FK; REFERENCES users.id; ON DELETE CASCADE]
+  full_name : VARCHAR(150) [NOT NULL]
+  avatar_url : VARCHAR(512) [NULL]
+  phone_number : VARCHAR(20) [NULL]
+  skills : JSONB [NOT NULL; DEFAULT '[]'::jsonb]
+  experience_summary : TEXT [NULL]
+  education_summary : TEXT [NULL]
+  is_public : BOOLEAN [NOT NULL; DEFAULT true]
+  created_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+  updated_at : TIMESTAMPTZ [NOT NULL; DEFAULT now()]
+}
+note bottom of candidate_profiles
+  Optional Candidate profile; one profile per User.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_candidate_cvs
+title 3.4.4.13 candidate_cvs
+hide circle
+entity candidate_cvs {
+  id : UUID [NOT NULL; PK]
+  candidate_id : UUID [NOT NULL]
+  file_name : VARCHAR(255) [NOT NULL]
+  file_size : BIGINT [NOT NULL]
+  content_type : VARCHAR(100) [NOT NULL]
+  public_id : VARCHAR(255) [NOT NULL]
+  is_default : BOOLEAN [NOT NULL; DEFAULT FALSE]
+  created_at : TIMESTAMP WITHOUT TIME ZONE [NOT NULL; DEFAULT now()]
+  updated_at : TIMESTAMP WITHOUT TIME ZONE [NOT NULL; DEFAULT now()]
+}
+note bottom of candidate_cvs
+  CV metadata; file content is stored in Cloudinary. candidate_id has no declared FK.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_employer_registrations
+title 3.4.4.14 employer_registrations
+hide circle
+entity employer_registrations {
+  id : UUID [NOT NULL; PK]
+  continuation_hash : VARCHAR(64) [NOT NULL]
+  email : VARCHAR(255) [NOT NULL]
+  password_hash : VARCHAR(255) [NOT NULL]
+  full_name : VARCHAR(200) [NOT NULL]
+  gender : VARCHAR(30) [NOT NULL]
+  phone : VARCHAR(20) [NOT NULL]
+  company_name : VARCHAR(255) [NOT NULL]
+  work_address : VARCHAR(1000) [NOT NULL]
+  email_secret_hash : VARCHAR(64) [NOT NULL]
+  email_expires_at : TIMESTAMPTZ [NOT NULL]
+  email_sent_at : TIMESTAMPTZ [NOT NULL]
+  promoted_user_id : BIGINT [NULL; FK; REFERENCES users.id]
+  created_at : TIMESTAMPTZ [NOT NULL]
+  version : BIGINT [NOT NULL; DEFAULT 0]
+}
+note bottom of employer_registrations
+  Pending employer registrations before promotion to an official User.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_employer_profiles
+title 3.4.4.15 employer_profiles
+hide circle
+entity employer_profiles {
+  user_id : BIGINT [NOT NULL; PK, FK; REFERENCES users.id]
+  applicant : BOOLEAN [NOT NULL]
+  full_name : VARCHAR(200) [NOT NULL]
+  gender : VARCHAR(30) [NULL]
+  email_verified_at : TIMESTAMPTZ [NULL]
+  phone : VARCHAR(20) [NULL]
+  phone_verified_at : TIMESTAMPTZ [NULL]
+  company_name : VARCHAR(255) [NULL]
+  work_address : VARCHAR(1000) [NULL]
+  email_secret_hash : VARCHAR(64) [NULL]
+  email_expires_at : TIMESTAMPTZ [NULL]
+  email_sent_at : TIMESTAMPTZ [NULL]
+  phone_secret_hash : VARCHAR(64) [NULL]
+  phone_expires_at : TIMESTAMPTZ [NULL]
+  phone_sent_at : TIMESTAMPTZ [NULL]
+  phone_failures : INTEGER [NOT NULL; DEFAULT 0]
+  phone_delivered : BOOLEAN [NOT NULL; DEFAULT FALSE]
+  version : BIGINT [NOT NULL; DEFAULT 0]
+}
+note bottom of employer_profiles
+  Personal verification state and provisional employer details; one per User.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_company_verification_documents
+title 3.4.4.16 company_verification_documents
+hide circle
+entity company_verification_documents {
+  id : UUID [NOT NULL; PK]
+  uploader_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  filename : VARCHAR(255) [NOT NULL]
+  media_type : VARCHAR(100) [NOT NULL]
+  content_hash : VARCHAR(64) [NOT NULL]
+  content : BYTEA [NOT NULL]
+  created_at : TIMESTAMPTZ [NOT NULL]
+}
+note bottom of company_verification_documents
+  Private immutable legal document bytes, metadata and content hash.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_company_verification_attempts
+title 3.4.4.17 company_verification_attempts
+hide circle
+entity company_verification_attempts {
+  id : UUID [NOT NULL; PK]
+  company_id : BIGINT [NOT NULL; FK; REFERENCES companies.id]
+  submitter_id : BIGINT [NOT NULL; FK; REFERENCES users.id]
+  company_name : VARCHAR(255) [NOT NULL]
+  tax_code : VARCHAR(50) [NOT NULL]
+  work_address : VARCHAR(1000) [NOT NULL]
+  submitter_position : VARCHAR(200) [NOT NULL]
+  representation : VARCHAR(30) [NOT NULL]
+  declaration_text : TEXT [NOT NULL]
+  declaration_version : VARCHAR(30) [NOT NULL]
+  document_id : UUID [NOT NULL; FK; REFERENCES company_verification_documents.id]
+  submitted_at : TIMESTAMPTZ [NOT NULL]
+  outcome : VARCHAR(30) [NULL]
+  rejection_reason : TEXT [NULL]
+  reviewer_id : BIGINT [NULL; FK; REFERENCES users.id]
+  reviewed_at : TIMESTAMPTZ [NULL]
+  version : BIGINT [NOT NULL; DEFAULT 0]
+}
+note bottom of company_verification_attempts
+  Immutable submission snapshots with a single review decision.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml
+
+@startuml dictionary_company_decision_deliveries
+title 3.4.4.18 company_decision_deliveries
+hide circle
+entity company_decision_deliveries {
+  id : UUID [NOT NULL; PK, FK; REFERENCES company_verification_attempts.id]
+  recipient_email : VARCHAR(255) [NOT NULL]
+  company_name : VARCHAR(255) [NOT NULL]
+  outcome : VARCHAR(30) [NOT NULL]
+  rejection_reason : TEXT [NULL]
+  attempts : INTEGER [NOT NULL; DEFAULT 0]
+  next_attempt_at : TIMESTAMPTZ [NOT NULL]
+  delivered_at : TIMESTAMPTZ [NULL]
+  version : BIGINT [NOT NULL; DEFAULT 0]
+}
+note bottom of company_decision_deliveries
+  Decision-email delivery intent and retry state; ID also references its attempt.
+  Types and defaults follow Flyway SQL, not inferred JPA DDL.
+  No DEFAULT annotation means no explicit SQL default.
+  See 3.4.5 for CHECK, partial UNIQUE and trigger constraints.
+end note
+@enduml

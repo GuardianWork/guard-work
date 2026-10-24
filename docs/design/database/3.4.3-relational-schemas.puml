@@ -1,0 +1,269 @@
+' Sources: backend/src/main/resources/db/migration/V*.sql, JPA models and scoped services.
+' Snapshot: 2026-10-19. Documents existing implementation; does not propose schema changes.
+@startuml relational_schemas
+title 3.4.3 Relational schemas - complete attribute sets
+hide circle
+hide methods
+skinparam classAttributeIconSize 0
+package "Identity and Candidate" {
+entity users {
+  id : PK; NOT NULL
+  first_name : NOT NULL
+  last_name : NOT NULL
+  username : UK; NOT NULL
+  email : UK; NOT NULL
+  password : NOT NULL
+  created_at : NOT NULL
+  updated_at : NOT NULL
+  role : NOT NULL
+  status : NOT NULL
+  email_verified : NOT NULL
+}
+entity refresh_tokens {
+  id : PK; NOT NULL
+  user_id : FK; users.id; NOT NULL
+  token_hash : UK; NOT NULL
+  family_id : NOT NULL
+  is_revoked : NOT NULL
+  expires_at : NOT NULL
+  created_at : NOT NULL
+  revoked_at : NULL
+  user_agent : NULL
+  ip_address : NOT NULL
+}
+entity password_reset_tokens {
+  id : PK; NOT NULL
+  user_id : FK; users.id; NOT NULL
+  token_hash : UK; NOT NULL
+  is_consumed : NOT NULL
+  expires_at : NOT NULL
+  created_at : NOT NULL
+}
+entity candidate_profiles {
+  id : PK; NOT NULL
+  user_id : UK, FK; users.id; NOT NULL
+  full_name : NOT NULL
+  avatar_url : NULL
+  phone_number : NULL
+  skills : NOT NULL
+  experience_summary : NULL
+  education_summary : NULL
+  is_public : NOT NULL
+  created_at : NOT NULL
+  updated_at : NOT NULL
+}
+entity candidate_cvs {
+  id : PK; NOT NULL
+  candidate_id : NOT NULL
+  file_name : NOT NULL
+  file_size : NOT NULL
+  content_type : NOT NULL
+  public_id : NOT NULL
+  is_default : NOT NULL
+  created_at : NOT NULL
+  updated_at : NOT NULL
+}
+}
+package "Company access and audit" {
+entity companies {
+  id : PK; NOT NULL
+  name : NOT NULL
+  tax_code : UK; NOT NULL
+  registration_certificate_url : NOT NULL
+  verification_status : NOT NULL
+  rejection_reason : NULL
+  verified_by : FK; users.id; NULL
+  verified_at : NULL
+  is_banned : NOT NULL
+  version : NOT NULL
+  created_at : NOT NULL
+  updated_at : NOT NULL
+  email : NULL
+  owner_user_id : FK; users.id; NULL
+}
+entity company_memberships {
+  id : PK; NOT NULL
+  company_id : FK; companies.id; NOT NULL
+  user_id : FK; users.id; NOT NULL
+  role : NOT NULL
+  status : NOT NULL
+  joined_at : NOT NULL
+  ended_at : NULL
+  ended_by_user_id : FK; users.id; NULL
+  created_at : NOT NULL
+}
+entity company_invitations {
+  id : PK; NOT NULL
+  company_id : FK; companies.id; NOT NULL
+  recipient_email_normalized : NOT NULL
+  role : NOT NULL
+  invited_by_user_id : FK; users.id; NOT NULL
+  status : NOT NULL
+  secret_hash : UK; NOT NULL
+  issued_at : NOT NULL
+  expires_at : NOT NULL
+  accepted_by_user_id : FK; users.id; NULL
+  decided_at : NULL
+  created_at : NOT NULL
+  updated_at : NOT NULL
+  delivery_status : NOT NULL
+  last_delivery_attempt_at : NULL
+  accepted_membership_id : FK; company_memberships.id; NULL
+  decided_by_user_id : FK; users.id; NULL
+}
+entity company_ownership_reviews {
+  case_reference : PK; NOT NULL
+  company_id : FK; companies.id; NOT NULL
+  applicant_user_id : FK; users.id; NOT NULL
+  reviewer_user_id : FK; users.id; NOT NULL
+  evidence_type : NOT NULL
+  decision : NOT NULL
+  company_version : NOT NULL
+  verification_status : NOT NULL
+  company_banned : NOT NULL
+  company_updated_at : NOT NULL
+  reviewed_at : NOT NULL
+  evidence_valid_until : NULL
+}
+entity company_membership_audit_events {
+  id : PK; NOT NULL
+  actor_user_id : FK; users.id; NOT NULL
+  subject_user_id : FK; users.id; NULL
+  company_id : FK; companies.id; NOT NULL
+  event_type : NOT NULL
+  membership_id : FK; company_memberships.id; NULL
+  invitation_id : FK; company_invitations.id; NULL
+  review_case_reference : NULL
+  reason : NULL
+  created_at : NOT NULL
+  reviewer_user_id : FK; users.id; NULL
+  evidence_type : NULL
+  review_decision : NULL
+  reviewed_at : NULL
+  assignment_outcome : NULL
+}
+entity audit_logs {
+  id : PK; NOT NULL
+  admin_id : FK; users.id; NOT NULL
+  action : NOT NULL
+  target_type : NOT NULL
+  target_id : NOT NULL
+  old_payload : NULL
+  new_payload : NULL
+  reason : NULL
+  ip_address : NOT NULL
+  user_agent : NULL
+  created_at : NOT NULL
+}
+}
+package "Employer onboarding and verification" {
+entity employer_registrations {
+  id : PK; NOT NULL
+  continuation_hash : NOT NULL
+  email : NOT NULL
+  password_hash : NOT NULL
+  full_name : NOT NULL
+  gender : NOT NULL
+  phone : NOT NULL
+  company_name : NOT NULL
+  work_address : NOT NULL
+  email_secret_hash : NOT NULL
+  email_expires_at : NOT NULL
+  email_sent_at : NOT NULL
+  promoted_user_id : FK; users.id; NULL
+  created_at : NOT NULL
+  version : NOT NULL
+}
+entity employer_profiles {
+  user_id : PK, FK; users.id; NOT NULL
+  applicant : NOT NULL
+  full_name : NOT NULL
+  gender : NULL
+  email_verified_at : NULL
+  phone : NULL
+  phone_verified_at : NULL
+  company_name : NULL
+  work_address : NULL
+  email_secret_hash : NULL
+  email_expires_at : NULL
+  email_sent_at : NULL
+  phone_secret_hash : NULL
+  phone_expires_at : NULL
+  phone_sent_at : NULL
+  phone_failures : NOT NULL
+  phone_delivered : NOT NULL
+  version : NOT NULL
+}
+entity company_verification_documents {
+  id : PK; NOT NULL
+  uploader_id : FK; users.id; NOT NULL
+  filename : NOT NULL
+  media_type : NOT NULL
+  content_hash : NOT NULL
+  content : NOT NULL
+  created_at : NOT NULL
+}
+entity company_verification_attempts {
+  id : PK; NOT NULL
+  company_id : FK; companies.id; NOT NULL
+  submitter_id : FK; users.id; NOT NULL
+  company_name : NOT NULL
+  tax_code : NOT NULL
+  work_address : NOT NULL
+  submitter_position : NOT NULL
+  representation : NOT NULL
+  declaration_text : NOT NULL
+  declaration_version : NOT NULL
+  document_id : FK; company_verification_documents.id; NOT NULL
+  submitted_at : NOT NULL
+  outcome : NULL
+  rejection_reason : NULL
+  reviewer_id : FK; users.id; NULL
+  reviewed_at : NULL
+  version : NOT NULL
+}
+entity company_decision_deliveries {
+  id : PK, FK; company_verification_attempts.id; NOT NULL
+  recipient_email : NOT NULL
+  company_name : NOT NULL
+  outcome : NOT NULL
+  rejection_reason : NULL
+  attempts : NOT NULL
+  next_attempt_at : NOT NULL
+  delivered_at : NULL
+  version : NOT NULL
+}
+}
+package "Membership notifications" {
+entity notification_outbox {
+  event_id : PK; NOT NULL
+  recipient_user_id : FK; users.id; NOT NULL
+  event_type : NOT NULL
+  company_id : FK; companies.id; NOT NULL
+  company_name : NOT NULL
+  created_at : NOT NULL
+  attempt_count : NOT NULL
+  next_attempt_at : NOT NULL
+  delivered_at : NULL
+  error_category : NULL
+}
+entity user_notifications {
+  id : PK; NOT NULL
+  source_event_id : UK, FK; notification_outbox.event_id; NOT NULL
+  recipient_user_id : FK; users.id; NOT NULL
+  event_type : NOT NULL
+  company_id : FK; companies.id; NOT NULL
+  company_name : NOT NULL
+  created_at : NOT NULL
+  read_at : NULL
+}
+}
+legend bottom
+  All 18 application tables and all migrated columns are included.
+  FK targets are named beside each reference attribute.
+  UNIQUE refers to unconditional keys; partial unique indexes appear in 3.4.5.
+  audit_logs.target_id and membership audit review_case_reference have no FK.
+  Company names and dossier details can be intentional historical snapshots.
+  Flyway metadata tables and sequences are outside the application entity inventory.
+endlegend
+@enduml

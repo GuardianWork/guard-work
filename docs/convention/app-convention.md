@@ -434,9 +434,16 @@ public class SecurityUtils {
 - **`DateUtils.toOffsetDateTime(Instant instant)`**: Converts `Instant` to `OffsetDateTime`.
 
 ### 3.5 Standard Role Enumeration (`PredefinedRole`)
+
+This generic template illustrates names only. GuardWork Platform roles are `USER`
+and `STAFF`; `OWNER` and `ADMIN` below are Company membership roles (alongside
+`RECRUITER`). Company `ADMIN` never grants Platform Staff authority. This example
+does not define a combined runtime authorization enum.
+
 ```java
 public enum PredefinedRole {
     USER("USER"),
+    STAFF("STAFF"),
     OWNER("OWNER"),
     ADMIN("ADMIN");
 }

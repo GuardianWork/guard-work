@@ -1,0 +1,161 @@
+' Sources: backend/src/main/resources/db/migration/V*.sql, JPA models and scoped services.
+' Snapshot: 2026-10-19. Documents existing implementation; does not propose schema changes.
+' Platform role constraint synchronized with GW-81 on 2026-10-24; Company constraints are unchanged.
+@startuml integrity_constraints
+title 3.4.5 Data integrity - database constraints and service rules
+left to right direction
+skinparam shadowing false
+skinparam noteTextAlignment left
+package "PostgreSQL-enforced constraints" {
+rectangle "Primary keys and foreign keys" as keys
+note right of keys
+  18 application tables, each with a primary key; 36 declared foreign keys.
+  Primary keys imply NOT NULL and uniqueness.
+  Ordinary UNIQUE: users.username, users.email, candidate_profiles.user_id,
+  refresh_tokens.token_hash, password_reset_tokens.token_hash,
+  company_invitations.secret_hash, companies.tax_code,
+  user_notifications.source_event_id.
+  ON DELETE CASCADE: users -> candidate_profiles, refresh_tokens, password_reset_tokens.
+  Other declared FKs use default NO ACTION; no cascade is inferred.
+end note
+rectangle "Partial unique indexes" as partials
+note right of partials
+  CREATE UNIQUE INDEX uq_company_membership_one_active_per_user ON company_memberships(user_id) WHERE status = 'ACTIVE';
+  CREATE UNIQUE INDEX uq_company_membership_one_active_owner_per_company ON company_memberships(company_id) WHERE status = 'ACTIVE' AND role = 'OWNER';
+  CREATE UNIQUE INDEX uq_legacy_assignment_case ON company_membership_audit_events(review_case_reference) WHERE event_type = 'LEGACY_OWNER_ASSIGNED';
+  CREATE UNIQUE INDEX uq_company_invitation_one_pending_per_email ON company_invitations(company_id,recipient_email_normalized) WHERE status='PENDING';
+  CREATE UNIQUE INDEX uq_employer_verified_phone ON employer_profiles(phone) WHERE phone_verified_at IS NOT NULL;
+  CREATE UNIQUE INDEX uq_company_pending_verification_attempt ON company_verification_attempts(company_id) WHERE outcome IS NULL;
+end note
+rectangle "Domain and row-level CHECK constraints" as checks
+note right of checks
+  companies
+  CHECK (verification_status IN ('PENDING', 'VERIFIED', 'REJECTED'))
+end note
+note right of checks
+  company_memberships
+  CHECK (role IN ('OWNER', 'ADMIN', 'RECRUITER'))
+  CHECK (status IN ('ACTIVE', 'LEFT', 'REMOVED'))
+  CHECK ((status = 'ACTIVE' AND ended_at IS NULL AND ended_by_user_id IS NULL) OR (status <> 'ACTIVE' AND ended_at IS NOT NULL AND ended_by_user_id IS NOT NULL AND ended_at >= joined_at))
+end note
+note right of checks
+  company_ownership_reviews
+  CHECK (evidence_type IN ('LEGAL_REPRESENTATIVE_REGISTRATION', 'LEGAL_REPRESENTATIVE_AUTHORIZATION'))
+  CHECK (decision = 'APPROVED')
+  CHECK (evidence_valid_until IS NULL OR evidence_valid_until > reviewed_at)
+end note
+note right of checks
+  company_invitations
+  CHECK (recipient_email_normalized = lower(btrim(recipient_email_normalized)))
+  CHECK (role = 'RECRUITER')
+  CHECK (status IN ('PENDING','ACCEPTED','DECLINED','EXPIRED','REVOKED'))
+  CHECK (secret_hash ~ '^[0-9a-f]{64}$')
+  CHECK (expires_at > issued_at)
+  CHECK (delivery_status IN ('UNKNOWN','PROVIDER_ACCEPTED','FAILED'))
+end note
+note right of checks
+  notification_outbox
+  CHECK (event_type IN ('RECRUITER_ACCEPTED','MEMBERSHIP_REMOVED'))
+  CHECK (attempt_count >= 0)
+end note
+note right of checks
+  user_notifications
+  CHECK (event_type IN ('RECRUITER_ACCEPTED','MEMBERSHIP_REMOVED'))
+end note
+note right of checks
+  employer_registrations
+  CHECK (gender IN ('MALE','FEMALE','OTHER','UNDISCLOSED'))
+end note
+note right of checks
+  employer_profiles
+  CHECK (phone_verified_at IS NULL OR (phone IS NOT NULL AND email_verified_at IS NOT NULL))
+end note
+note right of checks
+  company_verification_documents
+  CHECK (octet_length(content) BETWEEN 1 AND 10485760)
+end note
+note right of checks
+  company_verification_attempts
+  CHECK (representation IN ('LEGAL_REPRESENTATIVE','AUTHORIZED_REPRESENTATIVE'))
+  CHECK (outcome IN ('VERIFIED','REJECTED'))
+  CHECK ((outcome IS NULL AND reviewed_at IS NULL AND reviewer_id IS NULL) OR (outcome IS NOT NULL AND reviewed_at IS NOT NULL AND reviewer_id IS NOT NULL))
+  CHECK (outcome IS DISTINCT FROM 'REJECTED' OR length(trim(rejection_reason)) BETWEEN 10 AND 1000)
+end note
+note right of checks
+  users - added by ALTER TABLE
+  CHECK (role IN ('USER', 'STAFF'))
+  CHECK (status IN ('ACTIVE', 'SUSPENDED', 'DELETED'))
+end note
+note right of checks
+  company_membership_audit_events - added by ALTER TABLE
+  CHECK (event_type <> 'LEGACY_OWNER_ASSIGNED' OR ( review_case_reference IS NOT NULL AND reviewer_user_id IS NOT NULL AND reviewer_user_id <> actor_user_id AND evidence_type IS NOT NULL AND review_decision IS NOT NULL AND review_decision = 'APPROVED' AND reviewed_at IS NOT NULL AND assignment_outcome IS NOT NULL AND assignment_outcome = 'ASSIGNED'))
+end note
+note right of checks
+  company_membership_audit_events - added by ALTER TABLE
+  CHECK (subject_user_id IS NOT NULL OR event_type IN ('INVITATION_ISSUED','INVITATION_RESENT','INVITATION_REVOKED'))
+end note
+note right of checks
+  company_invitations - added by ALTER TABLE
+  CHECK (status <> 'ACCEPTED' OR (accepted_by_user_id IS NOT NULL AND accepted_membership_id IS NOT NULL AND decided_at IS NOT NULL))
+end note
+rectangle "Cross-row and immutability triggers" as triggers
+note right of triggers
+  Company Owner consistency is checked by DEFERRABLE INITIALLY DEFERRED triggers.
+  A Company with owner_user_id must have exactly one matching ACTIVE OWNER membership.
+  A Company without owner_user_id must have no ACTIVE OWNER membership.
+  An existing non-null Company Owner cannot be reassigned or cleared.
+  audit_logs, company_membership_audit_events and company_ownership_reviews:
+  UPDATE / DELETE / TRUNCATE are blocked by append-only triggers.
+  company_verification_documents: UPDATE / DELETE / TRUNCATE are blocked.
+  company_verification_attempts: DELETE / TRUNCATE are blocked;
+  UPDATE may change only outcome, rejection_reason, reviewer_id, reviewed_at and version,
+  and only while the old outcome is NULL. Row CHECK constraints still apply.
+end note
+}
+package "Service-enforced rules - not SQL constraints" {
+rectangle "Authentication and verification" as security
+note right of security
+  BCrypt password encoding and password complexity are enforced by application code.
+  Login checks the current User status; Company access checks persisted membership state.
+  Token/OTP expiration, verification delivery and attempt limits are checked in services.
+  Company names and legal dossiers use immutable submission snapshots.
+  Processing status CHECKED is derived; it is not a stored Company status.
+end note
+rectangle "CV and legal file validation" as files
+note right of files
+  CandidateCvService validates PDF / DOC / DOCX and 0 < file_size <= 10 MiB.
+  It counts CVs before registration and rejects when the existing count is at least 5.
+  It marks the first CV as default based on the current count.
+  These count/default rules are not protected by SQL uniqueness or quota constraints.
+  LegalDossierService checks PDF / JPEG / PNG signatures and personal verification.
+  Legal document byte size is also protected by a SQL CHECK.
+end note
+}
+package "Implementation gaps to preserve in the thesis" {
+rectangle "Not guaranteed by the current schema" as gaps
+note right of gaps
+  candidate_cvs.candidate_id has no FK and its target is not validated by the CV service.
+  No SQL uniqueness guarantees a single default CV per candidate.
+  users.email is a normal VARCHAR UNIQUE, not case-insensitive CITEXT.
+  Most email normalization is service behavior; invitation normalization has its own CHECK.
+  reviewer/Staff FKs reference users, not a role-filtered subset.
+  audit_logs.target_id is not an FK; review_case_reference is not an FK.
+  A verification document may be referenced by multiple attempts (document_id is not UNIQUE).
+  promoted_user_id is not UNIQUE: the DB does not enforce one registration per User.
+  company_decision_deliveries.outcome has no enum CHECK.
+  PostgreSQL CHECK accepts TRUE or NULL: a REJECTED attempt with NULL rejection_reason
+  passes the current length CHECK; it does not independently require a reason.
+  candidate_cvs timestamps are WITHOUT TIME ZONE; other persisted timestamps are TIMESTAMPTZ.
+  Neither updated_at maintenance nor version increments are generic database triggers.
+end note
+}
+keys -[hidden]down-> partials
+partials -[hidden]down-> checks
+checks -[hidden]down-> triggers
+legend bottom
+  CHECK expressions and partial indexes above follow migration SQL exactly.
+  A SQL CHECK is not a replacement for NOT NULL; NULL handling follows PostgreSQL semantics.
+  Service rules describe the existing call path, not protection against arbitrary direct SQL.
+  Future approved migrations are required to close schema gaps; none are introduced here.
+endlegend
+@enduml

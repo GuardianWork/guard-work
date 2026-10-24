@@ -1,0 +1,99 @@
+' Sources: backend/src/main/resources/db/migration/V*.sql, JPA models and scoped services.
+' Snapshot: 2026-10-19. Documents existing implementation; does not propose schema changes.
+' Platform role labels synchronized with GW-81 on 2026-10-24; Company roles are unchanged.
+@startuml entities_and_relationships
+title 3.4.1 Entities and principal relationships
+left to right direction
+hide circle
+skinparam linetype ortho
+package "Identity and Candidate" {
+entity users {
+  Official user identities and platform roles; Company roles live in memberships.
+}
+entity refresh_tokens {
+  Hashed refresh tokens, rotation families and revocation state.
+}
+entity password_reset_tokens {
+  Hashed, expiring, single-use password recovery tokens.
+}
+entity candidate_profiles {
+  Optional Candidate profile; one profile per User.
+}
+entity candidate_cvs {
+  CV metadata; file content is stored in Cloudinary. candidate_id has no declared FK.
+}
+}
+package "Company access and audit" {
+entity companies {
+  Company identity, current verification state and optional declared Owner.
+}
+entity company_memberships {
+  Company-scoped role and membership periods; inactive periods are retained.
+}
+entity company_invitations {
+  Hashed-secret Recruiter invitations and acceptance receipts.
+}
+entity company_ownership_reviews {
+  Append-only approved review evidence metadata for legacy Owner assignment.
+}
+entity company_membership_audit_events {
+  Append-only membership and invitation audit events.
+}
+entity audit_logs {
+  Append-only platform administration audit records; target_id is polymorphic text.
+}
+}
+package "Employer onboarding and verification" {
+entity employer_registrations {
+  Pending employer registrations before promotion to an official User.
+}
+entity employer_profiles {
+  Personal verification state and provisional employer details; one per User.
+}
+entity company_verification_documents {
+  Private immutable legal document bytes, metadata and content hash.
+}
+entity company_verification_attempts {
+  Immutable submission snapshots with a single review decision.
+}
+entity company_decision_deliveries {
+  Decision-email delivery intent and retry state; ID also references its attempt.
+}
+}
+package "Membership notifications" {
+entity notification_outbox {
+  Transactional membership notification delivery intents and retry state.
+}
+entity user_notifications {
+  Membership notification inbox and read state.
+}
+}
+users ||--o| candidate_profiles : profile
+users ||--o| employer_profiles : personal verification
+users ||--o{ refresh_tokens : sessions
+users ||--o{ password_reset_tokens : recovery
+users ||--o{ company_memberships : membership history
+companies ||--o{ company_memberships : members
+companies ||--o{ company_invitations : invitations
+companies ||--o{ company_ownership_reviews : legacy ownership reviews
+companies ||--o{ company_membership_audit_events : membership audit
+users ||--o{ audit_logs : platform audit actor
+users |o--o{ employer_registrations : promoted identity
+users ||--o{ company_verification_documents : uploader
+companies ||--o{ company_verification_attempts : dossier history
+company_verification_documents ||--o{ company_verification_attempts : attached evidence
+company_verification_attempts ||--o| company_decision_deliveries : decision email
+companies ||--o{ notification_outbox : membership events
+notification_outbox ||--o| user_notifications : inbox delivery
+note bottom of candidate_cvs
+  candidate_id is a UUID provided by the API caller.
+  The current code does not establish its target with an FK
+  or an existence check against candidate_profiles.
+end note
+legend bottom
+  Principal relationships only; all declared FKs are shown in 3.4.2.
+  Candidate and employer profiles are optional extensions of users.
+  Platform roles: USER, STAFF. Company roles: OWNER, ADMIN, RECRUITER.
+  Jobs, Applications, Interviews and Offers have no migration tables yet.
+endlegend
+@enduml

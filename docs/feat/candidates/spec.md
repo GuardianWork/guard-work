@@ -7,6 +7,7 @@
 | **File** | `docs/feat/candidates/spec.md` |
 | **Version** | 1.2.0 |
 | **Date** | 2026-09-24 |
+| **Last Updated** | 2026-10-24 |
 | **Status** | Draft / Proposed |
 
 ---
@@ -247,7 +248,7 @@ erDiagram
 
 [//]: # (| `phone_number` | VARCHAR&#40;20&#41; | NULLABLE | Contact phone number |)
 
-[//]: # (| `role` | VARCHAR&#40;30&#41; | NOT NULL, DEFAULT `'CANDIDATE'` | Role marker &#40;`CANDIDATE`, `EMPLOYER`, `ADMIN`&#41; |)
+[//]: # (| `role` | VARCHAR&#40;30&#41; | NOT NULL, DEFAULT `'CANDIDATE'` | Role marker &#40;`CANDIDATE`, `EMPLOYER`, `STAFF`&#41; |)
 
 [//]: # (| `status` | VARCHAR&#40;30&#41; | NOT NULL, DEFAULT `'UNVERIFIED'` | Account state &#40;`UNVERIFIED`, `ACTIVE`, `LOCKED`&#41; |)
 
