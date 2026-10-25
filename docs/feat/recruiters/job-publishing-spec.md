@@ -8,7 +8,7 @@
 | **File** | `job-publishing-spec.md` |
 | **Version** | 0.1.0 |
 | **Date** | 2026-09-27 |
-| **Last Updated** | 2026-09-27 |
+| **Last Updated** | 2026-10-24 |
 | **Owner** | Thinh |
 | **Approver** | Thinh |
 | **Status** | Draft |
@@ -17,7 +17,7 @@
 
 This specification defines Company Job Assignments, Job Posting authoring, moderated candidate-facing revisions, publication state, closing behavior, and basic job-scoped reporting.
 
-It does not define the Platform Administrator moderation queue, Company verification process, Application processing details, notification delivery, physical schema, API paths, or infrastructure.
+It does not define the Platform Staff moderation queue, Company verification process, Application processing details, notification delivery, physical schema, API paths, or infrastructure.
 
 ## 2. Conceptual model
 
@@ -85,7 +85,7 @@ An approved revision is immutable. Editing candidate-facing content creates anot
 
 | ID | Requirement |
 |---|---|
-| GW-JP-020 | Every new Job Posting shall require Platform Administrator approval before publication. |
+| GW-JP-020 | Every new Job Posting shall require Platform Staff approval before publication. |
 | GW-JP-021 | Approval of the first revision shall publish the Job Posting immediately. |
 | GW-JP-022 | A moderation rejection shall preserve the reviewed revision, decision, reason, reviewer, and time. |
 | GW-JP-023 | Resubmission after rejection shall create a new review attempt without overwriting prior history. |
@@ -123,7 +123,7 @@ An approved revision is immutable. Editing candidate-facing content creates anot
 
 ## 4. Role capability summary
 
-| Capability | Assigned Recruiter | Owner/Admin | Platform Administrator |
+| Capability | Assigned Recruiter | Owner/Admin | Platform Staff |
 |---|---:|---:|---:|
 | Draft and edit revision | Yes | Yes | No |
 | Submit or withdraw review request | Yes | Yes | No |
@@ -175,7 +175,7 @@ An approved revision is immutable. Editing candidate-facing content creates anot
 ## 8. Dependencies and unresolved contracts
 
 - GW-SR-COMPANY-MEMBERSHIP
-- Company verification and Platform Administrator moderation specifications
+- Company verification and Platform Staff moderation specifications
 - GW-SR-APPLICATION-PIPELINE
 - Shared API, authentication, notification, enforcement, appeal, and audit specifications
 - Physical schema, indexes, and revision-storage design

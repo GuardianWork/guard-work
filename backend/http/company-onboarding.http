@@ -1,0 +1,109 @@
+# GuardWork Company onboarding and verification
+# Run against a disposable local database at http://localhost:8080.
+# Run requests selectively; use fresh values for repeat registration runs.
+# Use a fresh username/email/tax code for each registration run.
+# Registration creates a USER account. Verification requests require an existing platform ADMIN token.
+# Copy accessToken and IDs/versions from the response into the variables below when prompted.
+
+@baseUrl = http://localhost:8080
+@ownerToken=REPLACE_WITH_OWNER_ACCESS_TOKEN
+@adminToken=REPLACE_WITH_EXISTING_PLATFORM_ADMIN_ACCESS_TOKEN
+@ownerUsername = gw_owner_test_01
+@ownerEmail = gw-owner-test@example.test
+@ownerPassword = LocalTestPass123
+@companyId = 1
+@companyVersion = 0
+@uniqueTaxCode = REPLACE_WITH_UNIQUE_TAX_CODE
+
+### Register a disposable Owner account
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "firstName": "Minh",
+  "lastName": "Nguyễn",
+  "username": "{{ownerUsername}}",
+  "email": "{{ownerEmail}}",
+  "password": "{{ownerPassword}}"
+}
+
+### Log in as Owner; copy data.accessToken into @ownerToken
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "{{ownerEmail}}",
+  "password": "{{ownerPassword}}"
+}
+
+### Confirm the account has no active Company yet
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{ownerToken}}
+
+### Create a Company and its first Owner membership
+POST {{baseUrl}}/api/companies/verification-request
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "name": "Công ty thử nghiệm GuardWork",
+  "taxCode": "{{uniqueTaxCode}}",
+  "email": "gw-company-test@example.test",
+  "registrationCertificateUrl": "https://example.test/registration-certificate.pdf"
+}
+
+### Read the current Owner context
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{ownerToken}}
+
+### Read the current Company identity
+GET {{baseUrl}}/api/companies/me
+Authorization: Bearer {{ownerToken}}
+
+### Read verification state and copy companyId/version from data
+GET {{baseUrl}}/api/companies/me/verification
+Authorization: Bearer {{ownerToken}}
+
+### List pending companies as an existing platform Administrator
+GET {{baseUrl}}/api/admin/companies/verifications?status=PENDING&page=0&size=20
+Authorization: Bearer {{adminToken}}
+
+### Optional rejection path: reject a pending Company instead of approving it
+### Use this path before approval, with the current Company version.
+PUT {{baseUrl}}/api/admin/companies/{{companyId}}/reject
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "REJECTED",
+  "rejectionReason": "Please provide a current registration certificate.",
+  "expectedVersion": {{companyVersion}}
+}
+
+### Optional rejection path: resubmit corrected details as the Owner
+### Set @companyVersion to the version returned by the rejection response first.
+PUT {{baseUrl}}/api/companies/me/verification
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "name": "Công ty thử nghiệm GuardWork",
+  "email": "gw-company-test@example.test",
+  "registrationCertificateUrl": "https://example.test/updated-registration-certificate.pdf",
+  "expectedVersion": {{companyVersion}}
+}
+
+### Approve the pending Company (use the ID and current numeric version)
+### If you tested rejection/resubmission, update @companyVersion from the resubmission response.
+PUT {{baseUrl}}/api/admin/companies/{{companyId}}/verify
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "VERIFIED",
+  "expectedVersion": {{companyVersion}}
+}
+
+### Confirm the Company is verified as Owner
+GET {{baseUrl}}/api/companies/me/verification
+Authorization: Bearer {{ownerToken}}

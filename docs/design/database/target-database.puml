@@ -1,0 +1,651 @@
+@startuml target_database
+title GuardWork target database Draft proposal
+hide circle
+skinparam linetype ortho
+skinparam packageStyle rectangle
+skinparam entityBackgroundColor #EAF3E8
+skinparam entityBorderColor #55745B
+package "Existing implementation - 18 tables" {
+entity users #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  role : VARCHAR(30)
+  status : VARCHAR(30)
+  tokens_valid_after : TIMESTAMPTZ <<proposed contract gate>>
+}
+entity companies #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  verification_status : VARCHAR(30)
+  verified_by : BIGINT <<FK>>
+  is_banned : BOOLEAN
+  owner_user_id : BIGINT <<FK>>
+}
+entity audit_logs #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  admin_id : BIGINT <<FK>>
+}
+entity refresh_tokens #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  user_id : BIGINT <<FK>>
+}
+entity password_reset_tokens #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  user_id : BIGINT <<FK>>
+}
+entity company_memberships #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  company_id : BIGINT <<FK>>
+  user_id : BIGINT <<FK>>
+  role : VARCHAR(30)
+  status : VARCHAR(30)
+  ended_by_user_id : BIGINT <<FK>>
+}
+entity company_membership_audit_events #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  actor_user_id : BIGINT <<FK>>
+  subject_user_id : BIGINT <<FK>>
+  company_id : BIGINT <<FK>>
+  membership_id : BIGINT <<FK>>
+  invitation_id : BIGINT <<FK>>
+  reviewer_user_id : BIGINT <<FK>>
+}
+entity company_ownership_reviews #EAF3E8 {
+  case_reference : VARCHAR(255) <<PK>>
+  company_id : BIGINT <<FK>>
+  applicant_user_id : BIGINT <<FK>>
+  reviewer_user_id : BIGINT <<FK>>
+  verification_status : VARCHAR(30)
+}
+entity company_invitations #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  company_id : BIGINT <<FK>>
+  role : VARCHAR(30)
+  invited_by_user_id : BIGINT <<FK>>
+  status : VARCHAR(30)
+  accepted_by_user_id : BIGINT <<FK>>
+  accepted_membership_id : BIGINT <<FK>>
+  decided_by_user_id : BIGINT <<FK>>
+}
+entity notification_outbox #EAF3E8 {
+  event_id : UUID <<PK>>
+  recipient_user_id : BIGINT <<FK>>
+  company_id : BIGINT <<FK>>
+  scope_type : VARCHAR(60) <<proposed contract gate>>
+  scope_reference : VARCHAR(255) <<proposed contract gate>>
+  event_sequence : BIGINT <<proposed contract gate>>
+}
+entity user_notifications #EAF3E8 {
+  id : BIGSERIAL <<PK>>
+  source_event_id : UUID <<FK>>
+  recipient_user_id : BIGINT <<FK>>
+  company_id : BIGINT <<FK>>
+  scope_type : VARCHAR(60) <<proposed contract gate>>
+  scope_reference : VARCHAR(255) <<proposed contract gate>>
+  event_sequence : BIGINT <<proposed contract gate>>
+}
+entity candidate_profiles #EAF3E8 {
+  id : UUID <<PK>>
+  user_id : BIGINT <<FK>>
+}
+entity candidate_cvs #EAF3E8 {
+  id : UUID <<PK>>
+  candidate_id : UUID <<proposed FK candidate_profiles.id>>
+  current_version_id : UUID <<proposed FK candidate_cv_versions.id>>
+  title : VARCHAR(150) <<proposed>>
+  deleted_at : TIMESTAMPTZ <<proposed nullable>>
+}
+entity employer_registrations #EAF3E8 {
+  id : UUID <<PK>>
+  promoted_user_id : BIGINT <<FK>>
+}
+entity employer_profiles #EAF3E8 {
+  user_id : BIGINT <<PK, FK>>
+}
+entity company_verification_documents #EAF3E8 {
+  id : UUID <<PK>>
+  uploader_id : BIGINT <<FK>>
+}
+entity company_verification_attempts #EAF3E8 {
+  id : UUID <<PK>>
+  company_id : BIGINT <<FK>>
+  submitter_id : BIGINT <<FK>>
+  document_id : UUID <<FK>>
+  reviewer_id : BIGINT <<FK>>
+}
+entity company_decision_deliveries #EAF3E8 {
+  id : UUID <<PK, FK>>
+}
+}
+package "Company and Candidate proposals" {
+entity company_public_profiles #FFF1D6 {
+  company_id : BIGINT [PK FK companies.id]
+  description : TEXT
+  industry : VARCHAR(150)
+  size_band : VARCHAR(50)
+  website : VARCHAR(512) [NULL]
+  logo_storage_key : VARCHAR(512) [NULL]
+  public_address : TEXT [NULL]
+  updated_at : TIMESTAMPTZ
+}
+entity candidate_cv_versions #FFF1D6 {
+  id : UUID [PK]
+  cv_id : UUID [FK candidate_cvs.id]
+  version_no : INTEGER
+  storage_key : VARCHAR(512)
+  storage_provider : VARCHAR(30)
+  file_name : VARCHAR(255)
+  file_size : BIGINT
+  content_type : VARCHAR(100)
+  content_hash : VARCHAR(64) [NULL for legacy backfill]
+  created_at : TIMESTAMPTZ
+}
+}
+package "Job publishing proposals" {
+entity job_categories #FFF1D6 {
+  id : UUID [PK]
+  code : VARCHAR(80) [UK]
+  name_vi : VARCHAR(150)
+  is_active : BOOLEAN
+}
+entity job_postings #FFF1D6 {
+  id : UUID [PK]
+  company_id : BIGINT [FK companies.id]
+  created_by_membership_id : BIGINT [FK company_memberships.id]
+  lifecycle_status : VARCHAR(30)
+  published_revision_id : UUID [NULL FK job_posting_revisions.id]
+  version : BIGINT
+  created_at : TIMESTAMPTZ
+  updated_at : TIMESTAMPTZ
+}
+entity job_posting_revisions #FFF1D6 {
+  id : UUID [PK]
+  job_id : UUID [FK job_postings.id]
+  revision_no : INTEGER
+  created_by_membership_id : BIGINT [FK company_memberships.id]
+  moderation_status : VARCHAR(30)
+  title : VARCHAR(200) [NULL while draft]
+  description : TEXT [NULL while draft]
+  responsibilities : TEXT [NULL while draft]
+  required_qualifications : TEXT [NULL while draft]
+  preferred_qualifications : TEXT [NULL]
+  experience_min_years : NUMERIC(4,1) [NULL]
+  experience_max_years : NUMERIC(4,1) [NULL]
+  employment_type : VARCHAR(30) [NULL while draft]
+  work_arrangement : VARCHAR(30) [NULL while draft]
+  locations : JSONB [structured address list; draft may be empty]
+  compensation_disclosed : BOOLEAN [NULL while draft]
+  salary_min : NUMERIC(18,2) [NULL]
+  salary_max : NUMERIC(18,2) [NULL]
+  currency : VARCHAR(3) [NULL]
+  pay_period : VARCHAR(30) [NULL]
+  benefits : TEXT [NULL while draft]
+  application_instructions : TEXT [NULL while draft]
+  deadline_at : TIMESTAMPTZ [NULL while draft]
+  deadline_time_zone : VARCHAR(100) [NULL while draft]
+  headcount : INTEGER [NULL while draft]
+  submitted_at : TIMESTAMPTZ [NULL]
+  version : BIGINT
+  created_at : TIMESTAMPTZ
+  updated_at : TIMESTAMPTZ
+}
+entity job_revision_categories #FFF1D6 {
+  revision_id : UUID [PK FK job_posting_revisions.id]
+  category_id : UUID [PK FK job_categories.id]
+}
+entity job_assignments #FFF1D6 {
+  id : UUID [PK]
+  job_id : UUID [FK job_postings.id]
+  membership_id : BIGINT [FK company_memberships.id]
+  assigned_by_user_id : BIGINT [FK users.id]
+  assigned_at : TIMESTAMPTZ
+  ended_at : TIMESTAMPTZ [NULL]
+  ended_by_user_id : BIGINT [NULL FK users.id]
+}
+entity job_posting_events #FFF1D6 {
+  id : UUID [PK]
+  job_id : UUID [FK job_postings.id]
+  revision_id : UUID [NULL FK job_posting_revisions.id]
+  actor_user_id : BIGINT [NULL FK users.id]
+  event_type : VARCHAR(50)
+  from_state : VARCHAR(30) [NULL]
+  to_state : VARCHAR(30) [NULL]
+  reason : TEXT [NULL only where allowed]
+  occurred_at : TIMESTAMPTZ
+  sequence_no : BIGINT
+}
+entity screening_questions #FFF1D6 {
+  id : UUID [PK]
+  revision_id : UUID [FK job_posting_revisions.id]
+  position : INTEGER
+  question_type : VARCHAR(30)
+  prompt : TEXT
+  is_required : BOOLEAN
+}
+entity screening_options #FFF1D6 {
+  id : UUID [PK]
+  question_id : UUID [FK screening_questions.id]
+  position : INTEGER
+  label : VARCHAR(500)
+}
+}
+package "Applications proposals" {
+entity applications #FFF1D6 {
+  id : UUID [PK]
+  candidate_id : UUID [FK candidate_profiles.id]
+  job_id : UUID [FK job_postings.id]
+  submitted_revision_id : UUID [FK job_posting_revisions.id]
+  status : VARCHAR(30)
+  current_offer_id : UUID [NULL FK offers.id]
+  previous_application_id : UUID [NULL FK applications.id]
+  reapplication_permission_id : UUID [NULL UK FK reapplication_permissions.id]
+  idempotency_key : VARCHAR(100)
+  request_hash : VARCHAR(64)
+  version : BIGINT
+  applied_at : TIMESTAMPTZ
+  updated_at : TIMESTAMPTZ
+}
+entity application_snapshots #FFF1D6 {
+  application_id : UUID [PK FK applications.id]
+  source_cv_version_id : UUID [NULL FK candidate_cv_versions.id]
+  submitted_content : JSONB [NULL only after approved purge]
+  cv_storage_key : VARCHAR(512) [NULL only after approved purge]
+  cv_storage_provider : VARCHAR(30) [NULL only after approved purge]
+  cv_content_hash : VARCHAR(64) [NULL only after approved purge]
+  cv_file_name : VARCHAR(255) [NULL only after approved purge]
+  cv_content_type : VARCHAR(100) [NULL only after approved purge]
+  cv_file_size : BIGINT [NULL only after approved purge]
+  snapshot_schema_version : INTEGER
+  captured_at : TIMESTAMPTZ
+  purged_at : TIMESTAMPTZ [NULL]
+}
+entity application_status_history #FFF1D6 {
+  id : UUID [PK]
+  application_id : UUID [FK applications.id]
+  sequence_no : BIGINT
+  actor_user_id : BIGINT [NULL FK users.id]
+  from_status : VARCHAR(30) [NULL for first event]
+  to_status : VARCHAR(30)
+  event_type : VARCHAR(40)
+  reason_category : VARCHAR(80) [NULL]
+  internal_reason : TEXT [NULL]
+  candidate_feedback : TEXT [NULL]
+  occurred_at : TIMESTAMPTZ
+}
+entity reapplication_permissions #FFF1D6 {
+  id : UUID [PK]
+  previous_application_id : UUID [FK applications.id]
+  granted_by_membership_id : BIGINT [FK company_memberships.id]
+  reason : TEXT
+  granted_at : TIMESTAMPTZ
+  consumed_at : TIMESTAMPTZ [NULL]
+  revoked_at : TIMESTAMPTZ [NULL]
+}
+entity application_notes #FFF1D6 {
+  id : UUID [PK]
+  application_id : UUID [FK applications.id]
+  author_membership_id : BIGINT [FK company_memberships.id]
+  version : BIGINT
+  created_at : TIMESTAMPTZ
+}
+entity application_note_versions #FFF1D6 {
+  id : UUID [PK]
+  note_id : UUID [FK application_notes.id]
+  version_no : INTEGER
+  text : TEXT [NULL only after approved purge]
+  edited_at : TIMESTAMPTZ
+  purged_at : TIMESTAMPTZ [NULL]
+}
+}
+package "Offer proposals" {
+entity offers #FFF1D6 {
+  id : UUID [PK]
+  application_id : UUID [FK applications.id]
+  created_by_membership_id : BIGINT [FK company_memberships.id]
+  replaces_offer_id : UUID [NULL FK offers.id]
+  status : VARCHAR(30)
+  position_title : VARCHAR(200) [NULL while draft]
+  compensation : NUMERIC(18,2) [NULL while draft]
+  currency : VARCHAR(3) [NULL while draft]
+  pay_period : VARCHAR(30) [NULL while draft]
+  expected_start_date : DATE [NULL while draft]
+  terms : TEXT [NULL while draft]
+  benefits : TEXT [NULL]
+  workplace_details : TEXT [NULL]
+  attachment_storage_key : VARCHAR(512) [NULL]
+  attachment_storage_provider : VARCHAR(30) [NULL]
+  attachment_file_name : VARCHAR(255) [NULL]
+  attachment_content_type : VARCHAR(100) [NULL]
+  attachment_size : BIGINT [NULL]
+  attachment_hash : VARCHAR(64) [NULL]
+  sent_at : TIMESTAMPTZ [NULL]
+  response_deadline_at : TIMESTAMPTZ [NULL]
+  response_time_zone : VARCHAR(100) [NULL]
+  previous_application_status : VARCHAR(30) [NULL until send]
+  responded_at : TIMESTAMPTZ [NULL]
+  version : BIGINT
+  created_at : TIMESTAMPTZ
+}
+entity offer_events #FFF1D6 {
+  id : UUID [PK]
+  offer_id : UUID [FK offers.id]
+  actor_user_id : BIGINT [NULL FK users.id]
+  event_type : VARCHAR(40)
+  reason : TEXT [NULL]
+  occurred_at : TIMESTAMPTZ
+}
+entity hiring_confirmations #FFF1D6 {
+  application_id : UUID [PK FK applications.id]
+  offer_id : UUID [UK FK offers.id]
+  confirmed_by_membership_id : BIGINT [FK company_memberships.id]
+  confirmed_at : TIMESTAMPTZ
+}
+}
+package "Candidate extensions proposals" {
+entity saved_jobs #FFF1D6 {
+  candidate_id : UUID [PK FK candidate_profiles.id]
+  job_id : UUID [PK FK job_postings.id]
+  saved_at : TIMESTAMPTZ
+}
+entity company_reviews #F0E8FA {
+  id : UUID [PK]
+  candidate_id : UUID [FK candidate_profiles.id]
+  company_id : BIGINT [FK companies.id]
+  review_context : VARCHAR(30)
+  rating : SMALLINT
+  content : TEXT
+  publication_status : VARCHAR(30)
+  created_at : TIMESTAMPTZ
+  updated_at : TIMESTAMPTZ
+  version : BIGINT
+}
+}
+package "Governance proposals" {
+entity abuse_reports #F0E8FA {
+  id : UUID [PK]
+  reporter_user_id : BIGINT [NULL FK users.id]
+  target_company_id : BIGINT [NULL FK companies.id]
+  target_candidate_id : UUID [NULL FK candidate_profiles.id]
+  target_job_id : UUID [NULL FK job_postings.id]
+  category : VARCHAR(80)
+  complaint : TEXT
+  status : VARCHAR(30)
+  existing_outcome : TEXT [NULL]
+  submitted_at : TIMESTAMPTZ
+  version : BIGINT
+}
+entity report_evidence #F0E8FA {
+  id : UUID [PK]
+  report_id : UUID [FK abuse_reports.id]
+  uploaded_by_user_id : BIGINT [NULL FK users.id]
+  storage_key : VARCHAR(512)
+  storage_provider : VARCHAR(30)
+  file_name : VARCHAR(255)
+  content_type : VARCHAR(100)
+  file_size : BIGINT
+  content_hash : VARCHAR(64)
+  created_at : TIMESTAMPTZ
+}
+entity enforcement_actions #FFF1D6 {
+  id : UUID [PK]
+  target_user_id : BIGINT [NULL FK users.id]
+  target_company_id : BIGINT [NULL FK companies.id]
+  target_job_id : UUID [NULL FK job_postings.id]
+  actor_user_id : BIGINT [FK users.id]
+  source_report_id : UUID [NULL FK abuse_reports.id]
+  action_type : VARCHAR(40)
+  reason : TEXT
+  starts_at : TIMESTAMPTZ
+  expires_at : TIMESTAMPTZ [NULL for permanent]
+  ended_at : TIMESTAMPTZ [NULL]
+  ended_by_user_id : BIGINT [NULL FK users.id]
+  end_reason : TEXT [NULL]
+  version : BIGINT
+}
+}
+package "Privacy proposals" {
+entity consent_documents #FFF1D6 {
+  id : UUID [PK]
+  purpose_code : VARCHAR(80)
+  version : VARCHAR(40)
+  locale : VARCHAR(10)
+  text : TEXT
+  text_hash : VARCHAR(64)
+  effective_at : TIMESTAMPTZ
+}
+entity consent_events #FFF1D6 {
+  id : UUID [PK]
+  user_id : BIGINT [NULL FK users.id]
+  document_id : UUID [FK consent_documents.id]
+  application_id : UUID [NULL FK applications.id]
+  action : VARCHAR(30)
+  occurred_at : TIMESTAMPTZ
+  evidence_reference : VARCHAR(255) [NULL]
+}
+entity privacy_requests #FFF1D6 {
+  id : UUID [PK]
+  subject_user_id : BIGINT [NULL FK users.id]
+  request_type : VARCHAR(30)
+  status : VARCHAR(30)
+  requested_at : TIMESTAMPTZ
+  completed_at : TIMESTAMPTZ [NULL]
+  policy_version : VARCHAR(40)
+  version : BIGINT
+}
+entity privacy_request_items #FFF1D6 {
+  id : UUID [PK]
+  request_id : UUID [FK privacy_requests.id]
+  resource_type : VARCHAR(60)
+  resource_reference : VARCHAR(255)
+  operation : VARCHAR(40)
+  status : VARCHAR(30)
+  attempt_count : INTEGER
+  next_attempt_at : TIMESTAMPTZ [NULL]
+  completed_at : TIMESTAMPTZ [NULL]
+  error_category : VARCHAR(80) [NULL]
+}
+entity sensitive_access_events #FFF1D6 {
+  id : UUID [PK]
+  actor_user_id : BIGINT [NULL FK users.id]
+  actor_membership_id : BIGINT [NULL FK company_memberships.id]
+  application_id : UUID [NULL FK applications.id]
+  offer_id : UUID [NULL FK offers.id]
+  access_type : VARCHAR(40)
+  outcome : VARCHAR(30)
+  occurred_at : TIMESTAMPTZ
+}
+}
+package "Operations proposals" {
+entity background_tasks #FFF1D6 {
+  task_key : VARCHAR(100) [PK]
+  display_name : VARCHAR(200)
+  schedule_description : VARCHAR(255) [NULL]
+  allows_concurrent_runs : BOOLEAN
+  registered_at : TIMESTAMPTZ
+}
+entity background_task_runs #FFF1D6 {
+  id : UUID [PK]
+  task_key : VARCHAR(100) [FK background_tasks.task_key]
+  triggered_by_user_id : BIGINT [NULL FK users.id]
+  trigger_type : VARCHAR(30)
+  status : VARCHAR(30)
+  requested_at : TIMESTAMPTZ
+  started_at : TIMESTAMPTZ [NULL]
+  finished_at : TIMESTAMPTZ [NULL]
+  error_category : VARCHAR(80) [NULL]
+  lease_until : TIMESTAMPTZ [NULL]
+  version : BIGINT
+}
+entity notification_preferences #F0E8FA {
+  user_id : BIGINT [PK FK users.id]
+  event_group : VARCHAR(80) [PK]
+  email_enabled : BOOLEAN
+  updated_at : TIMESTAMPTZ
+}
+}
+package "Privacy extensions proposals" {
+entity legal_holds #F0E8FA {
+  id : UUID [PK]
+  subject_user_id : BIGINT [NULL FK users.id]
+  application_id : UUID [NULL FK applications.id]
+  policy_basis_reference : VARCHAR(255)
+  imposed_by_user_id : BIGINT [NULL FK users.id]
+  starts_at : TIMESTAMPTZ
+  ends_at : TIMESTAMPTZ [NULL]
+  released_at : TIMESTAMPTZ [NULL]
+}
+}
+package "Governance extensions proposals" {
+entity appeals #F0E8FA {
+  id : UUID [PK]
+  enforcement_action_id : UUID [FK enforcement_actions.id]
+  appellant_user_id : BIGINT [NULL FK users.id]
+  statement : TEXT
+  status : VARCHAR(30)
+  reviewer_user_id : BIGINT [NULL FK users.id]
+  decision_reason : TEXT [NULL]
+  submitted_at : TIMESTAMPTZ
+  decided_at : TIMESTAMPTZ [NULL]
+  version : BIGINT
+}
+}
+users |o--o{ companies : verified_by
+users |o--o{ companies : owner_user_id
+users ||--o{ audit_logs : admin_id
+users ||--o{ refresh_tokens : user_id
+users ||--o{ password_reset_tokens : user_id
+companies ||--o{ company_memberships : company_id
+users ||--o{ company_memberships : user_id
+users |o--o{ company_memberships : ended_by_user_id
+users ||--o{ company_membership_audit_events : actor_user_id
+users |o--o{ company_membership_audit_events : subject_user_id
+companies ||--o{ company_membership_audit_events : company_id
+company_memberships |o--o{ company_membership_audit_events : membership_id
+company_invitations |o--o{ company_membership_audit_events : invitation_id
+users |o--o{ company_membership_audit_events : reviewer_user_id
+companies ||--o{ company_ownership_reviews : company_id
+users ||--o{ company_ownership_reviews : applicant_user_id
+users ||--o{ company_ownership_reviews : reviewer_user_id
+companies ||--o{ company_invitations : company_id
+users ||--o{ company_invitations : invited_by_user_id
+users |o--o{ company_invitations : accepted_by_user_id
+company_memberships |o--o{ company_invitations : accepted_membership_id
+users |o--o{ company_invitations : decided_by_user_id
+users ||--o{ notification_outbox : recipient_user_id
+companies ||--o{ notification_outbox : company_id
+notification_outbox ||--o| user_notifications : source_event_id
+users ||--o{ user_notifications : recipient_user_id
+companies ||--o{ user_notifications : company_id
+users ||--o| candidate_profiles : user_id
+users |o--o{ employer_registrations : promoted_user_id
+users ||--o| employer_profiles : user_id
+users ||--o{ company_verification_documents : uploader_id
+companies ||--o{ company_verification_attempts : company_id
+users ||--o{ company_verification_attempts : submitter_id
+company_verification_documents ||--o{ company_verification_attempts : document_id
+users |o--o{ company_verification_attempts : reviewer_id
+company_verification_attempts ||--o| company_decision_deliveries : id
+companies ||..o| company_public_profiles : company_id
+candidate_cvs ||..o{ candidate_cv_versions : cv_id
+companies ||..o{ job_postings : company_id
+company_memberships ||..o{ job_postings : created_by_membership_id
+job_posting_revisions |o..o{ job_postings : published_revision_id
+job_postings ||..o{ job_posting_revisions : job_id
+company_memberships ||..o{ job_posting_revisions : created_by_membership_id
+job_posting_revisions ||..o{ job_revision_categories : revision_id
+job_categories ||..o{ job_revision_categories : category_id
+job_postings ||..o{ job_assignments : job_id
+company_memberships ||..o{ job_assignments : membership_id
+users ||..o{ job_assignments : assigned_by_user_id
+users |o..o{ job_assignments : ended_by_user_id
+job_postings ||..o{ job_posting_events : job_id
+job_posting_revisions |o..o{ job_posting_events : revision_id
+users |o..o{ job_posting_events : actor_user_id
+job_posting_revisions ||..o{ screening_questions : revision_id
+screening_questions ||..o{ screening_options : question_id
+candidate_profiles ||..o{ applications : candidate_id
+job_postings ||..o{ applications : job_id
+job_posting_revisions ||..o{ applications : submitted_revision_id
+offers |o..o{ applications : current_offer_id
+applications |o..o{ applications : previous_application_id
+reapplication_permissions |o..o| applications : reapplication_permission_id
+applications ||..o| application_snapshots : application_id
+candidate_cv_versions |o..o{ application_snapshots : source_cv_version_id
+applications ||..o{ application_status_history : application_id
+users |o..o{ application_status_history : actor_user_id
+applications ||..o{ reapplication_permissions : previous_application_id
+company_memberships ||..o{ reapplication_permissions : granted_by_membership_id
+applications ||..o{ application_notes : application_id
+company_memberships ||..o{ application_notes : author_membership_id
+application_notes ||..o{ application_note_versions : note_id
+applications ||..o{ offers : application_id
+company_memberships ||..o{ offers : created_by_membership_id
+offers |o..o{ offers : replaces_offer_id
+offers ||..o{ offer_events : offer_id
+users |o..o{ offer_events : actor_user_id
+applications ||..o| hiring_confirmations : application_id
+offers ||..o| hiring_confirmations : offer_id
+company_memberships ||..o{ hiring_confirmations : confirmed_by_membership_id
+candidate_profiles ||..o{ saved_jobs : candidate_id
+job_postings ||..o{ saved_jobs : job_id
+candidate_profiles ||..o{ company_reviews : candidate_id
+companies ||..o{ company_reviews : company_id
+users |o..o{ abuse_reports : reporter_user_id
+companies |o..o{ abuse_reports : target_company_id
+candidate_profiles |o..o{ abuse_reports : target_candidate_id
+job_postings |o..o{ abuse_reports : target_job_id
+abuse_reports ||..o{ report_evidence : report_id
+users |o..o{ report_evidence : uploaded_by_user_id
+users |o..o{ enforcement_actions : target_user_id
+companies |o..o{ enforcement_actions : target_company_id
+job_postings |o..o{ enforcement_actions : target_job_id
+users ||..o{ enforcement_actions : actor_user_id
+abuse_reports |o..o{ enforcement_actions : source_report_id
+users |o..o{ enforcement_actions : ended_by_user_id
+users |o..o{ consent_events : user_id
+consent_documents ||..o{ consent_events : document_id
+applications |o..o{ consent_events : application_id
+users |o..o{ privacy_requests : subject_user_id
+privacy_requests ||..o{ privacy_request_items : request_id
+users |o..o{ sensitive_access_events : actor_user_id
+company_memberships |o..o{ sensitive_access_events : actor_membership_id
+applications |o..o{ sensitive_access_events : application_id
+offers |o..o{ sensitive_access_events : offer_id
+background_tasks ||..o{ background_task_runs : task_key
+users |o..o{ background_task_runs : triggered_by_user_id
+users ||..o{ notification_preferences : user_id
+users |o..o{ legal_holds : subject_user_id
+applications |o..o{ legal_holds : application_id
+users |o..o{ legal_holds : imposed_by_user_id
+enforcement_actions ||..o{ appeals : enforcement_action_id
+users |o..o{ appeals : appellant_user_id
+users |o..o{ appeals : reviewer_user_id
+candidate_profiles ||..o{ candidate_cvs : proposed candidate_id FK
+candidate_cv_versions |o..o| candidate_cvs : proposed current_version_id
+note bottom of candidate_cvs
+  Proposed FK addition requires validated legacy ownership mapping first.
+  Do not infer ownership from caller-provided UUIDs.
+  Current CV bytes migrate to the first immutable version.
+end note
+note bottom of job_postings
+  Proposed publication and administrative visibility are separate dimensions.
+  SAME-job revision pointer is enforced with composite FK or deferred trigger.
+  Final state vocabulary requires reconciliation across Draft specs.
+end note
+note bottom of applications
+  Recruitment status: APPLIED -> UNDER_REVIEW -> SHORTLISTED
+  -> INTERVIEW -> OFFER -> HIRED, with REJECTED / WITHDRAWN exits.
+  Eligible forward skips and corrections follow the Application contract.
+  INTERVIEW is an Application status only in this scoped proposal.
+  Record each change in application_status_history with actor and time.
+  Interview scheduling, slots and Interview response records are excluded.
+  Offer and Hiring Confirmation records retain their separate prerequisites.
+end note
+legend bottom
+  Green = existing tables (annotations mark proposed additions).
+  Amber = proposed tables, including items blocked on a contract.
+  Purple = conditional/post-MVP tables requiring additional product decisions.
+  Solid = existing FK. Dotted = proposed FK; endpoint counts are per named column.
+  18 existing + 34 proposed = 52 potential tables; not one implementation milestone.
+  Draft plan only. No migration, dependency, API or architecture approval is implied.
+  Full constraints, privacy rules, nullable draft fields and delivery gates are in target-database-plan.md.
+endlegend
+@enduml

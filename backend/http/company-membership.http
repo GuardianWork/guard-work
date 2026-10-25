@@ -1,0 +1,134 @@
+# GuardWork Recruiter invitation, membership, and notification APIs
+# Run against a disposable local database at http://localhost:8080.
+# Run requests selectively; this file has alternative accept/decline and remove/leave paths.
+# The Owner's Company must be VERIFIED before issuing or resending an invitation.
+# Invitation requests can send real email when Resend settings are exported to the backend process.
+# See backend/.env.example and the GW-005 section in backend/README.md for configuration.
+# A FAILED delivery leaves the invitation pending; configure delivery, then resend to get a fresh email.
+# Owner APIs return delivery status, never the raw invitation secret.
+# Copy the secret from the delivered email URL fragment after '#secret=' for recipient requests.
+# No frontend invitation page is included; use these API requests to preview/accept/decline manually.
+# Keep pasted tokens/secrets local; do not commit them in this file.
+
+@baseUrl = http://localhost:8080
+@ownerToken=REPLACE_WITH_OWNER_ACCESS_TOKEN
+@recipientToken = REPLACE_WITH_RECIPIENT_ACCESS_TOKEN
+@recipientEmail = replace-with-an-inbox-you-control@example.com
+@recipientUsername = gw_recruiter_test_01
+@recipientPassword = LocalTestPass123
+@invitationId = REPLACE_WITH_INVITATION_ID
+@invitationSecret = REPLACE_WITH_SECRET_FROM_EMAIL
+@membershipId = REPLACE_WITH_RECRUITER_MEMBERSHIP_ID
+@notificationId = REPLACE_WITH_NOTIFICATION_ID
+
+### Confirm Owner context before managing invitations
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{ownerToken}}
+
+### List this Company's invitations
+GET {{baseUrl}}/api/companies/me/invitations?page=0&size=20
+Authorization: Bearer {{ownerToken}}
+
+### Issue a Recruiter invitation (sends email when Resend settings are configured)
+POST {{baseUrl}}/api/companies/me/invitations
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "email": "{{recipientEmail}}"
+}
+
+### Resend an invitation (optional; sends another email and invalidates the previous secret)
+POST {{baseUrl}}/api/companies/me/invitations/{{invitationId}}/resend
+Authorization: Bearer {{ownerToken}}
+
+### Revoke a pending invitation (optional; do not run if you intend to accept it)
+DELETE {{baseUrl}}/api/companies/me/invitations/{{invitationId}}
+Authorization: Bearer {{ownerToken}}
+
+### Register the recipient (optional if the invited email already has an account)
+### Use the exact email address that received the invitation.
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "firstName": "Lan",
+  "lastName": "Trần",
+  "username": "{{recipientUsername}}",
+  "email": "{{recipientEmail}}",
+  "password": "{{recipientPassword}}"
+}
+
+### Log in as recipient; copy data.accessToken into @recipientToken
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "{{recipientEmail}}",
+  "password": "{{recipientPassword}}"
+}
+
+### Preview the invitation using the secret copied from the email URL fragment
+POST {{baseUrl}}/api/company-invitations/preview
+Authorization: Bearer {{recipientToken}}
+Content-Type: application/json
+
+{
+  "secret": "{{invitationSecret}}"
+}
+
+### Accept the invitation explicitly
+POST {{baseUrl}}/api/company-invitations/accept
+Authorization: Bearer {{recipientToken}}
+Content-Type: application/json
+
+{
+  "secret": "{{invitationSecret}}",
+  "confirm": true
+}
+
+### Alternative to accept: decline the invitation instead
+### Declining is final for this invitation; use a new invitation to test acceptance afterward.
+POST {{baseUrl}}/api/company-invitations/decline
+Authorization: Bearer {{recipientToken}}
+Content-Type: application/json
+
+{
+  "secret": "{{invitationSecret}}"
+}
+
+### Confirm the recipient now has the Recruiter Company context
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{recipientToken}}
+
+### Owner inbox: the accepted invitation creates a Recruiter-accepted notification
+GET {{baseUrl}}/api/me/notifications?page=0&size=20
+Authorization: Bearer {{ownerToken}}
+
+### Mark an Owner notification read
+PATCH {{baseUrl}}/api/me/notifications/{{notificationId}}/read
+Authorization: Bearer {{ownerToken}}
+
+### List active Company members; copy membershipId for the Recruiter row
+GET {{baseUrl}}/api/companies/me/members?page=0&size=20
+Authorization: Bearer {{ownerToken}}
+
+### Owner removes the Recruiter (choose this OR Recruiter departure below)
+DELETE {{baseUrl}}/api/companies/me/members/{{membershipId}}
+Authorization: Bearer {{ownerToken}}
+
+### Alternative: Recruiter leaves voluntarily (do not run after Owner removal)
+POST {{baseUrl}}/api/companies/me/membership/leave
+Authorization: Bearer {{recipientToken}}
+
+### After removal/departure, the old token should have no active Company context
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{recipientToken}}
+
+### Removed Recruiter can still read their own removal notification
+GET {{baseUrl}}/api/me/notifications?page=0&size=20
+Authorization: Bearer {{recipientToken}}
+
+### Mark the Recruiter's removal notification read
+PATCH {{baseUrl}}/api/me/notifications/{{notificationId}}/read
+Authorization: Bearer {{recipientToken}}

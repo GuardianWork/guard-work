@@ -2,7 +2,7 @@
 
 ## Mission
 
-GuardWork is a controlled Vietnamese job marketplace for Candidates, Recruiters/Organization Owners, and Platform Administrators. Build maintainable, requirement-faithful software that the three-person thesis team can explain and defend.
+GuardWork is a controlled Vietnamese job marketplace for Candidates, Recruiters/Organization Owners, and Platform Staff members. Build maintainable, requirement-faithful software that the three-person thesis team can explain and defend.
 
 Use English for code, technical documentation, requirements, and Git history. Preserve unrelated and concurrent teammate work.
 

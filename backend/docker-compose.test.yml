@@ -1,0 +1,19 @@
+name: guardwork-tests
+
+services:
+  postgres-test:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: backend_test_db
+      POSTGRES_USER: ${BACKEND_TEST_DATABASE_USER:-backend_test}
+      POSTGRES_PASSWORD: ${BACKEND_TEST_DATABASE_PASSWORD:-backend-test-only}
+    ports:
+      - "127.0.0.1:${BACKEND_TEST_DATABASE_PORT:-55432}:5432"
+    # Disposable test data; never attach the development database volume.
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 5s
+      retries: 30
