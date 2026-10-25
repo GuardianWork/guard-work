@@ -2,7 +2,7 @@
 
 | Field | Value                                  |                                                                                                                                                                               
     |---|----------------------------------------|
-| **Target User/Role** | Candidate / Recruiter / Admin / System |                                                                                                                                
+| **Target User/Role** | Candidate / Recruiter / Staff / System |
 | **Parent Feature** | [Parent feature or epic name, or N/A]  |                                                                                                                                  
 | **Owner** | [Name]                                 |                                                                                                                                                                          
 | **Date** | YYYY-MM-DD                             |      
@@ -42,7 +42,7 @@
 
 | ID | Rule / Constraint | Notes           |                                                                                                                                                              
 |---|---|-----------------|                                                                                                                                                                                   
-| BR-01 | Jobs posted by unverified employers require admin approval. |                 |                                                                                                       
+| BR-01 | Jobs posted by unverified employers require Staff approval. |                 |
 | BR-02 | User interface copy must support Vietnamese (`vi-VN`). | GuardWork standard |                                                                                                         
                                                                                                                                                                                                  
 # Sub-tasks                                                                                                                                                                  

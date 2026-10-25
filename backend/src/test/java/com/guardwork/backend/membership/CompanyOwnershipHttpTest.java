@@ -112,7 +112,7 @@ class CompanyOwnershipHttpTest {
                 .andExpect(status().isNotFound());
         http.perform(post("/api/companies/verification-request").contentType(MediaType.APPLICATION_JSON).content(company(tax)))
                 .andExpect(status().isUnauthorized());
-        http.perform(get("/api/admin/companies").header("Authorization", owner)).andExpect(status().isForbidden());
+        http.perform(get("/api/staff/companies").header("Authorization", owner)).andExpect(status().isForbidden());
     }
 
     @Test

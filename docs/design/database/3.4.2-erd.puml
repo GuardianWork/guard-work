@@ -1,0 +1,157 @@
+' Sources: backend/src/main/resources/db/migration/V*.sql, JPA models and scoped services.
+' Snapshot: 2026-10-19. Documents existing implementation; does not propose schema changes.
+@startuml physical_erd
+title 3.4.2 Physical ERD - all declared foreign keys
+hide circle
+skinparam linetype ortho
+package "Identity and Candidate" {
+entity users {
+  * id : BIGSERIAL <<PK>>
+  * username : VARCHAR(50) <<UK>>
+  * email : VARCHAR(255) <<UK>>
+}
+entity refresh_tokens {
+  * id : BIGSERIAL <<PK>>
+  * user_id : BIGINT <<FK>>
+  * token_hash : VARCHAR(64) <<UK>>
+}
+entity password_reset_tokens {
+  * id : BIGSERIAL <<PK>>
+  * user_id : BIGINT <<FK>>
+  * token_hash : VARCHAR(64) <<UK>>
+}
+entity candidate_profiles {
+  * id : UUID <<PK>>
+  * user_id : BIGINT <<UK, FK>>
+}
+entity candidate_cvs {
+  * id : UUID <<PK>>
+  * candidate_id : UUID <<NO FK>>
+}
+}
+package "Company access and audit" {
+entity companies {
+  * id : BIGSERIAL <<PK>>
+  * tax_code : VARCHAR(50) <<UK>>
+  verified_by : BIGINT <<FK>>
+  owner_user_id : BIGINT <<FK>>
+}
+entity company_memberships {
+  * id : BIGSERIAL <<PK>>
+  * company_id : BIGINT <<FK>>
+  * user_id : BIGINT <<FK>>
+  ended_by_user_id : BIGINT <<FK>>
+}
+entity company_invitations {
+  * id : BIGSERIAL <<PK>>
+  * company_id : BIGINT <<FK>>
+  * invited_by_user_id : BIGINT <<FK>>
+  * secret_hash : VARCHAR(64) <<UK>>
+  accepted_by_user_id : BIGINT <<FK>>
+  accepted_membership_id : BIGINT <<FK>>
+  decided_by_user_id : BIGINT <<FK>>
+}
+entity company_ownership_reviews {
+  * case_reference : VARCHAR(255) <<PK>>
+  * company_id : BIGINT <<FK>>
+  * applicant_user_id : BIGINT <<FK>>
+  * reviewer_user_id : BIGINT <<FK>>
+}
+entity company_membership_audit_events {
+  * id : BIGSERIAL <<PK>>
+  * actor_user_id : BIGINT <<FK>>
+  subject_user_id : BIGINT <<FK>>
+  * company_id : BIGINT <<FK>>
+  membership_id : BIGINT <<FK>>
+  invitation_id : BIGINT <<FK>>
+  reviewer_user_id : BIGINT <<FK>>
+}
+entity audit_logs {
+  * id : BIGSERIAL <<PK>>
+  * admin_id : BIGINT <<FK>>
+}
+}
+package "Employer onboarding and verification" {
+entity employer_registrations {
+  * id : UUID <<PK>>
+  promoted_user_id : BIGINT <<FK>>
+}
+entity employer_profiles {
+  * user_id : BIGINT <<PK, FK>>
+}
+entity company_verification_documents {
+  * id : UUID <<PK>>
+  * uploader_id : BIGINT <<FK>>
+}
+entity company_verification_attempts {
+  * id : UUID <<PK>>
+  * company_id : BIGINT <<FK>>
+  * submitter_id : BIGINT <<FK>>
+  * document_id : UUID <<FK>>
+  reviewer_id : BIGINT <<FK>>
+}
+entity company_decision_deliveries {
+  * id : UUID <<PK, FK>>
+}
+}
+package "Membership notifications" {
+entity notification_outbox {
+  * event_id : UUID <<PK>>
+  * recipient_user_id : BIGINT <<FK>>
+  * company_id : BIGINT <<FK>>
+}
+entity user_notifications {
+  * id : BIGSERIAL <<PK>>
+  * source_event_id : UUID <<UK, FK>>
+  * recipient_user_id : BIGINT <<FK>>
+  * company_id : BIGINT <<FK>>
+}
+}
+users |o--o{ companies : "verified_by -> id"
+users |o--o{ companies : "owner_user_id -> id"
+users ||--o{ audit_logs : "admin_id -> id"
+users ||--o{ refresh_tokens : "user_id -> id"
+users ||--o{ password_reset_tokens : "user_id -> id"
+companies ||--o{ company_memberships : "company_id -> id"
+users ||--o{ company_memberships : "user_id -> id"
+users |o--o{ company_memberships : "ended_by_user_id -> id"
+users ||--o{ company_membership_audit_events : "actor_user_id -> id"
+users |o--o{ company_membership_audit_events : "subject_user_id -> id"
+companies ||--o{ company_membership_audit_events : "company_id -> id"
+company_memberships |o--o{ company_membership_audit_events : "membership_id -> id"
+company_invitations |o--o{ company_membership_audit_events : "invitation_id -> id"
+users |o--o{ company_membership_audit_events : "reviewer_user_id -> id"
+companies ||--o{ company_ownership_reviews : "company_id -> id"
+users ||--o{ company_ownership_reviews : "applicant_user_id -> id"
+users ||--o{ company_ownership_reviews : "reviewer_user_id -> id"
+companies ||--o{ company_invitations : "company_id -> id"
+users ||--o{ company_invitations : "invited_by_user_id -> id"
+users |o--o{ company_invitations : "accepted_by_user_id -> id"
+company_memberships |o--o{ company_invitations : "accepted_membership_id -> id"
+users |o--o{ company_invitations : "decided_by_user_id -> id"
+users ||--o{ notification_outbox : "recipient_user_id -> id"
+companies ||--o{ notification_outbox : "company_id -> id"
+notification_outbox ||--o| user_notifications : "source_event_id -> event_id"
+users ||--o{ user_notifications : "recipient_user_id -> id"
+companies ||--o{ user_notifications : "company_id -> id"
+users ||--o| candidate_profiles : "user_id -> id"
+users |o--o{ employer_registrations : "promoted_user_id -> id"
+users ||--o| employer_profiles : "user_id -> id"
+users ||--o{ company_verification_documents : "uploader_id -> id"
+companies ||--o{ company_verification_attempts : "company_id -> id"
+users ||--o{ company_verification_attempts : "submitter_id -> id"
+company_verification_documents ||--o{ company_verification_attempts : "document_id -> id"
+users |o--o{ company_verification_attempts : "reviewer_id -> id"
+company_verification_attempts ||--o| company_decision_deliveries : "id -> id"
+note bottom of candidate_cvs
+  No physical FK exists for candidate_id.
+  Do not draw a confirmed profile-to-CV relationship.
+end note
+legend bottom
+  PK = primary key; FK = foreign key; UK = unconditional unique key.
+  * = NOT NULL, including implicit primary-key NOT NULL.
+  Crow-foot counts follow FK nullability and unconditional uniqueness.
+  Conditional unique indexes and deferred Owner checks are detailed in 3.4.5.
+  Multiple named lines between tables represent distinct FK roles.
+endlegend
+@enduml

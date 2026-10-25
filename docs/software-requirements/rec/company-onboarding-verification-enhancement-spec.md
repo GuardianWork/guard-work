@@ -8,7 +8,7 @@
 | **File** | `company-onboarding-verification-enhancement-spec.md` |
 | **Version** | 0.1.0 |
 | **Date** | 2026-10-18 |
-| **Last Updated** | 2026-10-18 |
+| **Last Updated** | 2026-10-24 |
 | **Owner** | VyTrg (proposed, following the existing Company Verification ownership) |
 | **Approver** | VyTrg (proposed human reviewer; formal approval pending) |
 | **Status** | Draft |
@@ -19,7 +19,7 @@ The user confirmed the consolidated product direction after a design interview o
 
 ### 1.1 Problem and goal
 
-Current registration automatically treats email as verified. Current Company onboarding accepts a complete dossier and creates the Company and its first Owner together. This enhancement introduces staged onboarding: prove mailbox access, prove possession of a Vietnamese mobile number, submit Company documents and a representation declaration, then obtain a Platform Administrator decision before employer operations become available.
+Current registration automatically treats email as verified. Current Company onboarding accepts a complete dossier and creates the Company and its first Owner together. This enhancement introduces staged onboarding: prove mailbox access, prove possession of a Vietnamese mobile number, submit Company documents and a representation declaration, then obtain a Platform Staff decision before employer operations become available.
 
 Personal verification and Company verification are separate. A verified phone does not establish Company legitimacy; a verified Company does not prove possession of every member's email or phone.
 
@@ -53,7 +53,7 @@ Register personal details and provisional Company information
     -> Edit provisional information and complete the legal dossier
     -> Accept the representation and accuracy declaration
     -> Submit dossier: PENDING
-    -> Platform Administrator checks dossier: CHECKED
+    -> Platform Staff checks dossier: CHECKED
          -> VERIFIED: employer eligibility, subject to existing authorization
          -> REJECTED: reason in settings and account email
               -> Correct the same Company dossier and resubmit: PENDING
@@ -82,7 +82,7 @@ Logout and the recovery/verification actions necessary to complete onboarding mu
 
 | Processing status | Review outcome | Meaning |
 |---|---|---|
-| `PENDING` | None | Submitted and awaiting Platform Administrator review |
+| `PENDING` | None | Submitted and awaiting Platform Staff review |
 | `CHECKED` | `VERIFIED` | Checked and approved |
 | `CHECKED` | `REJECTED` | Checked and rejected, with a mandatory reason |
 
@@ -136,7 +136,7 @@ Requirement IDs below are local to GW-SR-REC-03.
 | REQ-REC-06 | The applicant shall be able to edit provisional Company information after phone verification and submit it with the legal dossier. |
 | REQ-REC-07 | Submission shall require email and phone verification, complete dossier information, and explicit acceptance of the representation/accuracy declaration. |
 | REQ-REC-08 | Initial submission shall create the Company and first Owner atomically and place a complete dossier in the pending review queue. |
-| REQ-REC-09 | Only a Platform Administrator shall decide a pending legal dossier. |
+| REQ-REC-09 | Only a Platform Staff member shall decide a pending legal dossier. |
 | REQ-REC-10 | A completed review shall be represented as CHECKED with a VERIFIED or REJECTED outcome; rejection shall require a reason. Preserve the current 10–1000 character rejection-reason constraint. |
 | REQ-REC-11 | The system shall email the decision to the submitting account's verified email and expose rejection feedback in the account's verification settings. |
 | REQ-REC-12 | A rejected applicant shall be able to correct and resubmit the existing Company dossier, preserving Company identity, immutable MST, and previous review history. |
@@ -199,11 +199,11 @@ Reference architecture: [Company-scoped Membership ADR](../../architecture/decis
 
 ## 8. Security, privacy, and data implications
 
-- New data includes phone, gender, work address, submitter position, verification evidence, and declaration history. Access to private dossiers must remain scoped to the submitting Owner and authorized Platform Administrators.
+- New data includes phone, gender, work address, submitter position, verification evidence, and declaration history. Access to private dossiers must remain scoped to the submitting Owner and authorized Platform Staff members.
 - Employer gates must be enforced by the backend, including submission-time and operation-time checks; hiding controls is insufficient.
 - Verification material must not be logged or exposed to other applicants. Design must address challenge binding, single use, replay, concurrent claims, and pending-registration recovery without account takeover or cross-account disclosure.
 - The agreed per-attempt limits do not define all abuse controls. SMS budgets, aggregate throttling, brute-force protection, and delivery-failure behavior need approval before implementation.
-- A self-declared authorization claim leaves an impersonation risk. The user explicitly selected a retained declaration instead of mandatory authorization evidence for this journey; the Admin review checklist and dispute handling still need definition.
+- A self-declared authorization claim leaves an impersonation risk. The user explicitly selected a retained declaration instead of mandatory authorization evidence for this journey; the Staff review checklist and dispute handling still need definition.
 - Email/SMS possession is not proof of legal identity. Company approval does not grant unrestricted Candidate-data access.
 
 ## 9. Acceptance scenarios
@@ -217,10 +217,10 @@ Reference architecture: [Company-scoped Membership ADR](../../architecture/decis
 7. Resends respect 60 seconds and replace old proof; email expires at 24 hours, OTP at 5 minutes, and a sixth incorrect OTP attempt cannot succeed for that code.
 8. An applicant edits provisional Company information after phone verification and submits complete documents and an explicit declaration. Missing declaration blocks submission.
 9. A duplicate MST blocks a new request, shows temporary support guidance, and creates no extra Company, Owner, or review request. Matching names/filenames alone do not trigger this rule.
-10. Platform Admin approves a pending dossier: it becomes CHECKED/VERIFIED, records the decision, and initiates an account-email notification. Only existing authorized employer operations become eligible.
+10. Platform Staff approves a pending dossier: it becomes CHECKED/VERIFIED, records the decision, and initiates an account-email notification. Only existing authorized employer operations become eligible.
 11. Rejection without a valid reason fails. A valid rejection produces CHECKED/REJECTED, feedback in settings, and decision email; employer operations remain locked.
 12. Owner correction of a rejected dossier preserves Company ID and MST, creates a pending review attempt, and retains earlier documents, declarations, decisions, and reasons.
-13. Concurrent Admin decisions or stale resubmission cannot overwrite each other; decision-email failure does not reverse a committed decision.
+13. Concurrent Staff decisions or stale resubmission cannot overwrite each other; decision-email failure does not reverse a committed decision.
 14. An invited Recruiter must complete personal verification but does not submit the Company's legal dossier again; Company access still depends on existing membership authorization.
 15. Gender selection is required, including an option not to disclose, and never changes permissions or the review outcome.
 
@@ -233,7 +233,7 @@ Before implementation:
 - Define existing-account and existing-data migration. Existing job-seeker-to-employer onboarding is deliberately deferred, not silently supported.
 - Decide verified-identifier change/recovery policy and post-approval Candidate capability policy before delivering those paths.
 - Select and approve SMS/email integrations, delivery/retry behavior, aggregate abuse limits, and operational costs. No provider or dependency is selected by this draft.
-- Review the declaration, dossier-access controls, retention/deletion policy, Admin review checklist, and dispute route.
+- Review the declaration, dossier-access controls, retention/deletion policy, Staff review checklist, and dispute route.
 - Replace temporary support information before release and define document upload/storage validation using an approved contract.
 - Derive implementation tasks and backend/frontend checks from section 9. No endpoint, migration, frontend framework, or shared notification architecture is selected here.
 

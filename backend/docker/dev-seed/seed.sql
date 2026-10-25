@@ -8,7 +8,7 @@ CREATE TEMP TABLE demo_accounts (
 ) ON COMMIT DROP;
 INSERT INTO demo_accounts VALUES
     ('demo_candidate', 'candidate@demo.guardwork.test', 'An', 'Nguyễn Văn', 'USER', NULL, '0900000001'),
-    ('demo_admin', 'admin@demo.guardwork.test', 'Bình', 'Trần Thanh', 'ADMIN', NULL, '0900000002'),
+    ('demo_staff', 'staff@demo.guardwork.test', 'Bình', 'Trần Thanh', 'STAFF', NULL, '0900000002'),
     ('demo_owner', 'owner@demo.guardwork.test', 'Chi', 'Lê Minh', 'USER', 'OWNER', '0900000003'),
     ('demo_company_admin', 'company-admin@demo.guardwork.test', 'Dũng', 'Phạm Anh', 'USER', 'ADMIN', '0900000004'),
     ('demo_recruiter', 'recruiter@demo.guardwork.test', 'Hà', 'Võ Thu', 'USER', 'RECRUITER', '0900000005');
@@ -43,7 +43,7 @@ INSERT INTO companies (name, tax_code, registration_certificate_url, email, veri
     verified_by, verified_at, owner_user_id)
 SELECT 'Công ty TNHH GuardWork Demo', 'GW-DEMO-LOCAL-001',
     'https://example.invalid/guardwork-demo-certificate.pdf', 'company@demo.guardwork.test',
-    'VERIFIED', (SELECT id FROM users WHERE username = 'demo_admin'), now(), id
+    'VERIFIED', (SELECT id FROM users WHERE username = 'demo_staff'), now(), id
 FROM users WHERE username = 'demo_owner'
 ON CONFLICT (tax_code) DO NOTHING;
 

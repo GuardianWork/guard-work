@@ -87,7 +87,7 @@ class EmployerOnboardingHttpTest {
         assertThat(submitted.path("processingStatus").asText()).isEqualTo("PENDING");
         String admin = ordinaryAccount(true);
         long ownerId = database.queryForObject("SELECT id FROM users WHERE email=?", Long.class, signup.email());
-        http.perform(put("/api/admin/companies/" + company + "/verify").header("Authorization", admin)
+        http.perform(put("/api/staff/companies/" + company + "/verify").header("Authorization", admin)
                 .header("X-Admin-Id", ownerId).header("X-Admin-Role", "USER")
                 .contentType(MediaType.APPLICATION_JSON).content(body(Map.of("status", "REJECTED", "expectedVersion", 0,
                         "rejectionReason", "Giấy phép chưa rõ thông tin"))))
@@ -139,11 +139,18 @@ class EmployerOnboardingHttpTest {
         http.perform(
                 get("/api/company-verification-documents/" + document).header("Authorization", ordinaryAccount(false)))
                 .andExpect(status().isNotFound());
+        http.perform(get("/api/company-verification-documents/" + document).header("Authorization", admin))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
+        http.perform(get("/api/staff/companies/" + company + "/verification-history")
+                .header("Authorization", admin)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].outcome").value("REJECTED"));
         http.perform(get("/api/company-verification-documents/" + document).header("Authorization", token))
                 .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"));
         http.perform(get("/api/companies/me/invitations").header("Authorization", token))
                 .andExpect(status().isForbidden());
-        http.perform(put("/api/admin/companies/" + company + "/verify").header("Authorization", admin)
+        http.perform(put("/api/staff/companies/" + company + "/verify").header("Authorization", admin)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(Map.of("status", "VERIFIED", "expectedVersion", 2))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.processingStatus").value("CHECKED"))
@@ -179,10 +186,10 @@ class EmployerOnboardingHttpTest {
         long id = company.path("id").asLong();
         http.perform(get("/api/companies/me/invitations").header("Authorization", token))
                 .andExpect(status().isForbidden());
-        http.perform(put("/api/admin/companies/" + id + "/verify").header("Authorization", token)
-                .header("X-Admin-Role", "ADMIN").contentType(MediaType.APPLICATION_JSON)
+        http.perform(put("/api/staff/companies/" + id + "/verify").header("Authorization", token)
+                .header("X-Staff-Role", "STAFF").contentType(MediaType.APPLICATION_JSON)
                 .content(body(Map.of("status", "VERIFIED", "expectedVersion", 0)))).andExpect(status().isForbidden());
-        http.perform(put("/api/admin/companies/" + id + "/verify").header("Authorization", ordinaryAccount(true))
+        http.perform(put("/api/staff/companies/" + id + "/verify").header("Authorization", ordinaryAccount(true))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(Map.of("status", "VERIFIED", "expectedVersion", 0))))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.reviewOutcome").value("VERIFIED"));
@@ -453,7 +460,7 @@ class EmployerOnboardingHttpTest {
                 "firstName", "Nguyễn", "lastName", "An", "username", id, "email", email, "password", PASSWORD))))
                 .andExpect(status().isCreated());
         if (admin)
-            database.update("UPDATE users SET role='ADMIN' WHERE email=?", email);
+            database.update("UPDATE users SET role='STAFF' WHERE email=?", email);
         return login(email);
     }
 

@@ -30,6 +30,7 @@ class JwtServiceTest {
         assertThat(claims.get("username", String.class)).isEqualTo("nguyen_an");
         assertThat(claims.get("email", String.class)).isEqualTo("an@example.com");
         assertThat(claims.get("role", String.class)).isEqualTo("USER");
+        assertThat(claims.get("portal", String.class)).isEqualTo("public");
 
         assertThat(jwtService.extractUserId(token)).isEqualTo(42L);
         assertThat(jwtService.extractUsername(token)).isEqualTo("nguyen_an");
@@ -53,4 +54,11 @@ class JwtServiceTest {
 
         assertThat(token1).isNotEqualTo(token2);
     }
+
+    @Test
+    void staffAccessTokenCarriesSignedStaffPortal() {
+        String token = jwtService.generateAccessToken(43L, "demo_staff", "staff@example.com", "STAFF");
+        assertThat(jwtService.parseAndValidateToken(token).get("portal", String.class)).isEqualTo("staff");
+    }
+
 }

@@ -31,6 +31,9 @@ public class RefreshToken {
     @Column(name = "token_hash", nullable = false, unique = true, length = 64)
     private String tokenHash;
 
+    @Column(nullable = false, length = 6)
+    private String portal = "public";
+
     @Column(name = "family_id", nullable = false, length = 36)
     private String familyId;
 

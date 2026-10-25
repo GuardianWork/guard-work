@@ -156,9 +156,9 @@ class RequestLoggingMvcTest {
     @Test
     void authenticatedForbiddenRequestPreservesSecurityResponse() throws Exception {
         String token = context.getBean(JwtService.class).generateAccessToken(1L, "fixture", "fixture@example.test", "USER");
-        var expected = baseline.perform(get("/api/admin/logging-fixture")
+        var expected = baseline.perform(get("/api/staff/logging-fixture")
                 .header("Authorization", "Bearer " + token)).andReturn().getResponse();
-        var actual = mvc.perform(get("/api/admin/logging-fixture").header("Authorization", "Bearer " + token))
+        var actual = mvc.perform(get("/api/staff/logging-fixture").header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.status").value(403))
                 .andReturn().getResponse();
 

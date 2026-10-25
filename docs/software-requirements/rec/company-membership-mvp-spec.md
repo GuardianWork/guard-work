@@ -11,7 +11,7 @@
 | **File** | `company-membership-mvp-spec.md` |
 | **Version** | 0.3.0 |
 | **Date** | 2026-10-08 |
-| **Last Updated** | 2026-10-08 |
+| **Last Updated** | 2026-10-24 |
 | **Owner** | Thinh |
 | **Approver** | Thinh |
 | **Lifecycle** | Draft |
@@ -44,7 +44,7 @@ Email delivery is part of GW-005. The minimal in-app inbox is part of GW-006 and
 ### 1.2 Out of scope
 
 - Frontend implementation; Job Assignments; Job Publishing; Application, Interview, Offer, and Candidate-data processing.
-- Platform Admin membership management, Admin invitations, role promotion or demotion, and ownership transfer.
+- Platform Staff membership management, Admin invitations, role promotion or demotion, and ownership transfer.
 - General mailbox verification, password-reset email repair, email campaigns, notification preferences, push delivery, and a general notification platform.
 - Company closure, account deletion, billing, or changes to platform roles.
 - A public Company ownership claim endpoint or a new ownership review dashboard.
@@ -102,7 +102,7 @@ Inactive membership periods are retained. A later admission creates a new member
 | REQ-REC-17 | The current Owner shall be able to inspect the Company's verification status, current rejection feedback, and version while verification is pending or rejected. |
 | REQ-REC-18 | Only the current Owner may correct and resubmit that Owner's rejected Company through authenticated, Company-scoped management. The existing Company ID, tax-code uniqueness, version check, and moderation history are preserved. |
 | REQ-REC-19 | Resubmission is allowed only from `REJECTED`, clears the current rejection feedback, increments the optimistic version, and returns the Company to `PENDING`. It does not verify the Company. |
-| REQ-REC-20 | Unauthenticated callers, unrelated Users, Recruiters, inactive members, and suspended Users cannot read or change private verification details. Existing Platform Administrator review and decision authority remains separate. |
+| REQ-REC-20 | Unauthenticated callers, unrelated Users, Recruiters, inactive members, and suspended Users cannot read or change private verification details. Existing Platform Staff review and decision authority remains separate. |
 | REQ-REC-21 | Pending or rejected Companies cannot issue or resend Recruiter invitations. Owners retain status, feedback, and correction access before verification. |
 
 ### 3.3 Recruiter invitations
@@ -172,7 +172,7 @@ Inactive membership periods are retained. A later admission creates a new member
 | BR-REC-22 | Current membership, Company Role, User state, and Company state are rechecked at each protected boundary; a revocation committed first prevents a protected write from committing partial effects. |
 | BR-REC-23 | Only the notification recipient can read or mark read their inbox items. Notification intent is committed with the membership event; post-commit delivery retries cannot reverse that event. |
 | BR-REC-24 | Company identifiers, tax code, and email are selectors only; none is sufficient to claim ownership or Company access. |
-| BR-REC-25 | Company Membership alone grants no access to Candidate data and no Platform Administrator authority. |
+| BR-REC-25 | Company Membership alone grants no access to Candidate data and no Platform Staff authority. |
 
 ### 4.1 Atomic creation
 
@@ -208,7 +208,7 @@ Existing Companies without an Owner remain in an unassigned state and unavailabl
 
 ### 5.1 Reviewer, evidence, and operator
 
-1. A Platform Administrator with Company verification authority reviews a case. The applicant must establish both their identity and current legal authority to represent the Company.
+1. A Platform Staff member with Company verification authority reviews a case. The applicant must establish both their identity and current legal authority to represent the Company.
 2. Acceptable evidence is a current authoritative business-registration record identifying the Company's legal representative, or a current authorization from that legal representative plus an independently checked registration record. The reviewer verifies the applicant's identity against the evidence. An email from a Company domain may corroborate a case but is never sufficient by itself.
 3. Conflicting claims, stale or contradictory records, unclear authority, or an existing active Company Membership stop the case. The reviewer rejects or escalates it for independent governance review; no first-come assignment or automatic transfer occurs.
 4. After a recorded approval, a separate authorized operations operator assigns the User through a restricted, audited one-Company operation. Reviewer and operator identities must differ. No public endpoint or general-purpose ownership dashboard is introduced.
@@ -345,7 +345,7 @@ The inbox list returns the existing `ApiResponse<PageResponse<NotificationRespon
 
 ### 6.6 Reviewed legacy assignment
 
-There is no public Company claim API. A restricted operational assignment records the reviewed case and separate reviewer/operator identities, then writes the Owner Membership and Company owner reference atomically. The executable commands are documented in the [backend README](../../../backend/README.md#reviewed-legacy-owner-assignment-gw-003). They use separate active Platform Administrator identities and a private, short-lived case input; documents remain outside application storage. The command cannot decide whether the real evidence is sufficient for the reviewer.
+There is no public Company claim API. A restricted operational assignment records the reviewed case and separate reviewer/operator identities, then writes the Owner Membership and Company owner reference atomically. The executable commands are documented in the [backend README](../../../backend/README.md#reviewed-legacy-owner-assignment-gw-003). They use separate active Platform Staff identities and a private, short-lived case input; documents remain outside application storage. The command cannot decide whether the real evidence is sufficient for the reviewer.
 
 ### 6.7 Error catalogue
 
@@ -422,7 +422,7 @@ The migrations add database checks and a deferred constraint trigger for cross-r
 - Load active membership and Company state from current persistence for every protected Company request. Never trust a role cached in a token or client context.
 - Owner-only operations: view/correct verification data; issue, list, resend, and revoke Recruiter invitations; list members; remove a Recruiter.
 - Recruiter operations: view their current Company context, preview/accept/decline their own invitation, and leave their own membership. A Recruiter cannot administer Company Members or verification.
-- Platform Administrator authority remains platform-scoped and does not arise from `OWNER`, `ADMIN`, or `RECRUITER` Company Roles. Existing verification decisions remain governed by the approved Company Verification specification.
+- Platform Staff authority remains platform-scoped and does not arise from `OWNER`, `ADMIN`, or `RECRUITER` Company Roles. Existing verification decisions remain governed by the approved Company Verification specification.
 - A Company ID, tax code, email address, notification ID, or membership ID is never authority. ID-scoped inaccessible Company or membership records return a non-enumerating not-found response.
 - A current suspended User cannot use protected Company routes. A suspended Company cannot issue/resend invitations or accept them. Acceptance rechecks `is_banned` at commit.
 - Company Membership never exposes Candidate profiles, CVs, or other Candidate private data.
@@ -491,7 +491,7 @@ The current approved Company Verification and AUTH specifications retain their a
 10. Owner removal and Recruiter departure preserve membership history and notify the required recipient. Owner leave/removal fails. The next protected read/write fails after revocation despite a still-valid JWT.
 11. Revocation that commits before a protected mutation prevents all of that mutation's effects. A membership removed from one Company allows later eligible creation or acceptance elsewhere.
 12. A removed Recruiter can read only their own removal notification; another User cannot access it. Notification dispatch failure leaves membership and audit facts committed and recovers idempotently.
-13. Membership alone cannot read Candidate data, grant Admin authority, reveal unrelated Company existence, or make an old notification link bypass current authorization.
+13. Membership alone cannot read Candidate data, grant Platform Staff authority, reveal unrelated Company existence, or make an old notification link bypass current authorization.
 
 ## 14. Approval and implementation status
 

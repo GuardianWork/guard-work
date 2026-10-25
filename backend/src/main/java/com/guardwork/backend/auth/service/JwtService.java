@@ -13,6 +13,8 @@ import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.guardwork.backend.auth.Portal;
+
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -42,12 +44,17 @@ public class JwtService {
     }
 
     public String generateAccessToken(Long userId, String username, String email, String role) {
+        return generateAccessToken(userId, username, email, role, Portal.fromRole(role));
+    }
+
+    public String generateAccessToken(Long userId, String username, String email, String role, Portal portal) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("username", username)
                 .claim("email", email)
                 .claim("role", role)
+                .claim("portal", portal.value())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(accessExpirationMs)))
                 .signWith(signingKey, Jwts.SIG.HS256)

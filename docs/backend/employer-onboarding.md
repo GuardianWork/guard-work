@@ -10,7 +10,7 @@ Pending attempts do not reserve email permanently. Each attempt has its own priv
 
 The existing Candidate registration route and legacy Company DTO constructors remain compatible. Existing Candidate accounts are not automatically converted. New-applicant accounts cannot access Candidate profile/CV APIs. Opening onboarding settings enrolls an existing member into personal-proof gating; this is an opt-in side effect, not a claim that enrollment leaves their employer access unchanged. Members joining a Company with retained verification attempts must enroll before employer operations. Invitation acceptance itself remains available. Legacy Company rollout is not silently enabled for all historical members. A personally verified existing Owner can correct a rejected legacy dossier through the new UI and begin retained attempts from that correction; earlier URL-only evidence is not fabricated as a historical retained attempt.
 
-Stored Company statuses remain PENDING/VERIFIED/REJECTED. Admin/Owner responses additionally expose `processingStatus` and `reviewOutcome`; CHECKED is derived and never substitutes for VERIFIED authorization.
+Stored Company statuses remain PENDING/VERIFIED/REJECTED. Staff/Owner responses additionally expose `processingStatus` and `reviewOutcome`; CHECKED is derived and never substitutes for VERIFIED authorization.
 
 ## API surface
 
@@ -28,15 +28,15 @@ All JSON endpoints use the existing ApiResponse envelope. Secrets are request-bo
 | POST `/api/me/employer-onboarding/phone/verify` | Six-digit `code`; 5-minute expiry, at most 5 incorrect attempts. Failed-attempt counts commit before returning an error. |
 | PUT `/api/me/employer-onboarding/company` | `companyName`, `workAddress`, `expectedVersion`; phone-verified, unsubmitted applicant only. |
 | POST `/api/me/employer-onboarding/documents` | Multipart `file`, max 10 MiB; private immutable PDF/JPEG/PNG content. |
-| GET `/api/company-verification-documents/{id}` | Authenticated attachment, no-store/nosniff; uploader before submission, current Owner or Platform Admin afterward. |
+| GET `/api/company-verification-documents/{id}` | Authenticated attachment, no-store/nosniff; uploader before submission, current Owner or Platform Staff afterward. |
 | POST `/api/companies/verification-request` | New journey: `name`, `taxCode`, `legal` object described below. Separate Company email and arbitrary certificate URL are not accepted as legal evidence for enrolled accounts. |
 | PUT `/api/companies/me/verification` or `/api/companies/{id}/resubmit` | Enhanced correction: `name`, `expectedVersion`, complete `legal`; only the same rejected Company, retaining MST and prior submissions. |
 | GET `/api/companies/me/verification/history` | Owner's retained attempts, declarations, document identities, outcomes and reasons. |
-| GET `/api/admin/companies/{id}/verification-history` | Same evidence for authenticated Platform Admin review. |
+| GET `/api/staff/companies/{id}/verification-history` | Same evidence for authenticated Platform Staff review. |
 
 `legal` contains `workAddress`, `submitterPosition`, `representation` (LEGAL_REPRESENTATIVE or AUTHORIZED_REPRESENTATIVE), `declarationAccepted: true`, and the uploaded `documentId`. A retained declaration is not independent proof of representation; no authorization-letter upload is required. Documents use basic byte-signature validation, not full malware or forensic inspection.
 
-Existing Admin decision endpoints retain pending-only/expectedVersion/reason constraints. When a real authenticated principal exists, the audit actor/role comes from that principal, overriding legacy X-Admin headers. Header-only access remains blocked by the real SecurityFilterChain. The legacy standalone controller-test seam is retained.
+Existing Staff decision endpoints retain pending-only/expectedVersion/reason constraints. The audit actor/role comes from the authenticated principal; client-supplied identity/role headers do not override it. Header-only access remains blocked by the real SecurityFilterChain.
 
 ## Configuration and delivery
 
@@ -92,7 +92,7 @@ Use the isolated PostgreSQL setup in [testing.md](testing.md). Focused commands 
 ./mvnw package
 ```
 
-Tests cover provisional registration, wrong credentials, competing claims, atomic email promotion, direct-request capability gates, phone attempt exhaustion, failed delivery, private documents, rejected correction, immutable evidence, actual Admin actor attribution and ordinary Candidate profile persistence. Test-only delivery fakes do not imply actual external delivery is configured.
+Tests cover provisional registration, wrong credentials, competing claims, atomic email promotion, direct-request capability gates, phone attempt exhaustion, failed delivery, private documents, rejected correction, immutable evidence, actual Staff actor attribution and ordinary Candidate profile persistence. Test-only delivery fakes do not imply actual external delivery is configured.
 
 Before a production rollout: choose/integrate the SMS provider, configure Resend and link origins, approve retention/deletion and aggregate abuse limits, finalize the legacy-member migration/window and support contact, and integrate job search/view. The repo does not implement job discovery; this change does not fabricate that separate subsystem. Browser interaction/accessibility and actual provider delivery require environment-backed verification in addition to API tests.
 

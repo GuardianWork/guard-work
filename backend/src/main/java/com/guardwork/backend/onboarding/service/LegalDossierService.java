@@ -72,7 +72,7 @@ public class LegalDossierService {
     public VerificationDocument document(Long actor, UUID id) {
         var user = access.requireActiveUser(actor);
         var d = documents.findById(id).orElseThrow(LegalDossierService::notFound);
-        if ("ADMIN".equals(user.getRole())) return d;
+        if ("STAFF".equals(user.getRole())) return d;
         var linked = attempts.findByDocumentId(id);
         if (linked.isEmpty() && actor.equals(d.getUploaderId())) return d;
         var current = access.findCurrentCompanyAccess(actor);
@@ -113,7 +113,7 @@ public class LegalDossierService {
     public List<AttemptInfo> history(Long actor, Long companyId) {
         var user = access.requireActiveUser(actor);
         Long id;
-        if ("ADMIN".equals(user.getRole()) && companyId != null) {
+        if ("STAFF".equals(user.getRole()) && companyId != null) {
             id = companies.findById(companyId).orElseThrow(LegalDossierService::notFound).getId();
         } else id = companyId == null ? access.requireOwner(actor).company().getId() : access.requireOwnerOf(actor, companyId).getId();
         return attempts.findByCompanyIdOrderBySubmittedAtAsc(id).stream().map(AttemptInfo::from).toList();

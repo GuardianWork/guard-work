@@ -26,6 +26,40 @@ docker compose logs -f seed
 
 The app boots on `http://localhost:8080`, migrations run automatically via Flyway (`src/main/resources/db/migration`).
 
+### Public and Staff frontend proxies
+
+The public Vite frontend runs at `http://localhost:5137` and Staff at
+`http://localhost:5138`. Both proxy `/api` to `http://localhost:8080` while preserving
+the prefix. Each proxy must overwrite `X-Guardian-Portal` with `public` or `staff`.
+Both call `POST /api/auth/login` with `{ "usernameOrEmail": "...", "password": "..." }`.
+Responses retain `{ status, message, data }`, including the JSON token pair. Send
+`Authorization: Bearer <accessToken>` for protected calls. Frontend token storage
+remains `sessionStorage`; this change introduces no cookie session.
+
+Public login accepts Platform `USER`; Staff login accepts Platform `STAFF`.
+`/api/staff/**` still checks the signed Platform role: invalid/missing/expired tokens
+return 401, insufficient role or wrong access-token portal returns 403. A portal
+header cannot grant a role. Refresh/logout also check the stored portal; a mismatch
+returns 401 without consuming the session. Omitted headers retain Swagger and older
+clients by using authenticated role/session context. Legacy access tokens without a
+portal claim use their signed role. See the [portal contract](../docs/software-requirements/auth/portal-routing-contract.md).
+
+Same-origin Vite proxy calls require no direct browser CORS. For direct cross-origin
+calls, set `GUARDWORK_CORS_ALLOWED_ORIGINS=http://localhost:5137,http://localhost:5138`
+(or the exact deployed frontend origins). The default allowlist is empty; wildcards
+are rejected. Allowed headers are `Authorization`, `Content-Type`, `X-Guardian-Portal`
+and `X-Request-ID`; no credentialed cookies are enabled. CORS is not proxy authentication.
+Deployment gateways must remove client-provided portal values and overwrite them
+from trusted routing; prevent public access that bypasses the gateway if portal
+source attribution is required.
+
+Migration `V2026.10.24.82__bind_refresh_tokens_to_portal.sql` backfills existing refresh
+sessions by Platform role and constrains new sessions to `public`/`staff`. Run it
+with this backend release and stop old refresh-token writers before migration.
+Earlier migrations are unchanged. Local Platform fixtures now use `demo_staff` /
+`staff@demo.guardwork.test`; previously seeded `demo_admin` identifiers remain usable
+with the migrated `STAFF` role. Company administrator fixtures retain Company `ADMIN`.
+
 ### Local mock data and login
 
 Run the commands in this section from `backend/`. Keep the backend running in one
@@ -72,7 +106,7 @@ or email:
 | Account | Username | Email | Platform role | Company role |
 | --- | --- | --- | --- | --- |
 | Candidate | `demo_candidate` | `candidate@demo.guardwork.test` | `USER` | None |
-| Platform administrator | `demo_admin` | `admin@demo.guardwork.test` | `ADMIN` | None |
+| Platform staff | `demo_staff` | `staff@demo.guardwork.test` | `STAFF` | None |
 | Company owner | `demo_owner` | `owner@demo.guardwork.test` | `USER` | `OWNER` |
 | Company administrator | `demo_company_admin` | `company-admin@demo.guardwork.test` | `USER` | `ADMIN` |
 | Recruiter | `demo_recruiter` | `recruiter@demo.guardwork.test` | `USER` | `RECRUITER` |
@@ -178,7 +212,7 @@ src/main/java/com/guardwork/backend/
 │   ├── model/
 │   ├── repository/
 │   └── service/
-└── admin/                         # Admin governance & verification queue/decisions
+└── staff/                         # Staff governance & verification queue/decisions
     ├── dto/
     ├── service/
     └── controller/
@@ -213,10 +247,10 @@ Swagger UI is exposed via [springdoc-openapi](https://springdoc.org/):
 - Swagger UI: http://localhost:8080/swagger-ui/index.html
 - OpenAPI spec: http://localhost:8080/v3/api-docs
 
-Admin API `ResponseStatusException`s use the standard response envelope with the original HTTP
+Staff API `ResponseStatusException`s use the standard response envelope with the original HTTP
 status and reason.
 
-Company verification responses for Admin and Owner views expose `processingStatus` and
+Company verification responses for Staff and Owner views expose `processingStatus` and
 `reviewOutcome` alongside the existing `verificationStatus`. `PENDING` maps to processing
 `PENDING` with a null outcome; `VERIFIED` and `REJECTED` map to processing `CHECKED` with the
 corresponding outcome. Eligibility continues to use `verificationStatus`; `CHECKED` alone does
@@ -226,7 +260,7 @@ APIs, frontend, private legal dossiers, delivery configuration, migration, and r
 production-readiness prerequisites. The technical choices were confirmed by the user and recorded
 in [ADR 0005](../docs/architecture/decisions/0005-staged-employer-onboarding.md).
 
-Company, Admin and known application-error advice use order `0`, ahead of the global
+Company, Staff and known application-error advice use order `0`, ahead of the global
 `InternalServerExceptionHandler` at `LOWEST_PRECEDENCE`. Spring selects the first applicable
 advice with a matching handler; this ordering preserves existing status codes and response
 envelopes before the catch-all maps unexpected exceptions to a generic HTTP 500.

@@ -4,6 +4,7 @@
 |---|---|
 | Status | Human confirmation recorded; implementation in progress; SMS/production readiness outstanding |
 | Date | 2026-10-18 |
+| Last updated | 2026-10-24 |
 | Product specification | [Company onboarding enhancement](company-onboarding-verification-enhancement-spec.md) |
 | Delivery analysis | [Current flow and gap analysis](company-onboarding-verification-gap-analysis.md) |
 | Working branch | `feat/GW-73-enhance-company-verification-flow` |
@@ -26,7 +27,7 @@ Add new Flyway migrations; do not edit existing migrations or reset existing dat
 | Personal employer-verification record | User-scoped record with actual mailbox-proof timestamp, normalized proposed phone, phone-verification timestamp and applicant origin. A unique partial index on verified normalized phone prevents simultaneous ownership. Official User email remains globally unique. |
 | Phone challenge | Account/phone-bound code digest protected with a server-side secret, expiry, failed-attempt count, resend timestamp and version/row lock. Store neither plaintext OTP nor a digest vulnerable to offline enumeration without a secret. |
 | Provisional Company information | User-scoped editable data after successful email promotion; retain before complete legal submission without creating a Company or membership. |
-| Private legal document | New table for immutable document bytes, SHA-256, original filename, allowed media type, size, uploader and upload timestamp. Proposed initial limit: 10 MiB; PDF, JPEG or PNG. Private download endpoint checks current Owner/Admin authority. No public document URL. |
+| Private legal document | New table for immutable document bytes, SHA-256, original filename, allowed media type, size, uploader and upload timestamp. Proposed initial limit: 10 MiB; PDF, JPEG or PNG. Private download endpoint checks current Company Owner or Platform Staff authority. No public document URL. |
 | Legal submission attempt | Company ID, submitter ID, immutable submitted Company/address/MST/position snapshot, legal/authorized-representative selection, declaration version/text, acceptance time, document ID, review decision/reason/reviewer/time and attempt version. One pending attempt per Company. Earlier attempts remain readable by authorized parties. |
 | Decision delivery intent | Scoped table for committed decision ID, recipient User/email snapshot, delivery state, attempts and next-attempt time. A unique decision/event identity makes retries idempotent. Pending delivery never changes a committed verification decision. |
 
@@ -46,9 +47,9 @@ Preserve the existing Candidate registration/login flow and response envelope. A
 | Read own onboarding stage | `GET /api/me/employer-onboarding` | Authenticated; exposes verified flags/stage and permitted next action, not verification secrets. |
 | Send/verify phone OTP | `POST /api/me/employer-onboarding/phone/send`, `POST /api/me/employer-onboarding/phone/verify` | Authenticated with actual email proof; new SMS is invalid unless delivery is accepted; 5-minute/5-attempt/60-second rules apply. |
 | Update provisional Company | `PUT /api/me/employer-onboarding/company` | Authenticated and phone verified; optimistic version required. |
-| Upload/view private legal document | `POST /api/me/employer-onboarding/documents`, `GET /api/company-verification-documents/{id}` | Upload after personal verification; private reads require ownership/current Company authority or Platform Admin. Download of an upload not yet submitted remains uploader-scoped. |
+| Upload/view private legal document | `POST /api/me/employer-onboarding/documents`, `GET /api/company-verification-documents/{id}` | Upload after personal verification; private reads require ownership/current Company authority or Platform Staff. Download of an upload not yet submitted remains uploader-scoped. |
 | Submit and correct dossier | Existing Company submission/correction paths, with reviewed extended request DTOs | New-onboarding accounts require actual personal proof, complete fields, retained document and declaration. Initial Company/Owner/attempt creation is atomic; corrections retain Company/MST. |
-| Read Owner/Admin verification | Existing verification responses | Add `processingStatus` and `reviewOutcome`; retain `verificationStatus` and existing fields for compatibility. Proposed attempt/history fields require contract review. |
+| Read Owner/Staff verification | Existing verification responses | Add `processingStatus` and `reviewOutcome`; retain `verificationStatus` and existing fields for compatibility. Proposed attempt/history fields require contract review. |
 
 Full name is retained verbatim in the employer record. A server-generated opaque username preserves the existing unique-username requirement, and the full name is placed in the existing display-name representation without attempting to infer Vietnamese family/given names. Existing Candidate name fields and login identifiers remain compatible; the exact mapping is part of approval.
 
@@ -62,7 +63,7 @@ Request-body secrets must be redacted. Public errors must not disclose another r
 - New employer applicants can only search/view jobs and perform their eligible verification/settings actions. Candidate profile/CV access is denied before any skeleton-profile creation or upload.
 - Keep Owner status, rejection feedback and correction reachable while Company approval is pending/rejected. Do not put a VERIFIED-only check in a shared helper that also protects these recovery actions.
 - An invited Recruiter can retain existing invitation acceptance behavior, but employer operations require actual personal email and phone proof. Invitation/delegation roles remain unchanged.
-- Preserve current Candidate accounts, Company identity/MST, audit records, historical contact emails and platform Admin capability. Do not reset accounts or revoke all tokens.
+- Preserve current Candidate accounts, Company identity/MST, audit records, historical contact emails and Platform Staff capability. Do not reset accounts or revoke all tokens.
 - Existing `email_verified=true` values remain historical compatibility flags, not proof for the new personal-verification record. Existing members need a personal-proof completion path before any newly gated employer operation. Whether rollout enables these gates for existing members immediately or only after a migration window remains a required explicit rollout decision.
 - Existing job-seeker-to-new-Company conversion and post-approval Candidate capability expansion stay deferred, as agreed in the product specification.
 
@@ -76,7 +77,7 @@ Request-body secrets must be redacted. Public errors must not disclose another r
 | Legal documents | Private, immutable PostgreSQL-backed bytes as proposed in section 2. | Approve size/types, retention/access policy and deployment capacity. |
 | Frontend | Dependency-free HTML/CSS/JavaScript under `frontend/`, packaged as Spring static resources using existing Maven resources support; same-origin APIs. In-memory access token, explicit sign-in after email verification; no external frontend framework. | Explicit frontend selection approval; final retention/privacy wording and actual support contact. |
 
-Frontend scope covers employer registration, verification confirmation, sign-in, phone proof, Company settings, private upload/declaration, status/rejection/correction and the Admin review view. Existing job discovery is not implemented in the repository; integrating search/view remains a separate dependency rather than a fabricated working feature.
+Frontend scope covers employer registration, verification confirmation, sign-in, phone proof, Company settings, private upload/declaration, status/rejection/correction and the Staff review view. Existing job discovery is not implemented in the repository; integrating search/view remains a separate dependency rather than a fabricated working feature.
 
 ## 6. Implementation and verification sequence
 
@@ -84,7 +85,7 @@ Frontend scope covers employer registration, verification confirmation, sign-in,
 2. Add migrations/models and test atomic pending-registration promotion, normalized ownership races and private claim recovery using isolated PostgreSQL.
 3. Add personal verification and gates with tests first at service and real HTTP/security seams. Verify ordinary Candidate controls and existing-session behavior.
 4. Add retained legal documents/attempts and extend initial Company/Owner and correction transactions. Preserve MST uniqueness, optimistic locking and audit rollback.
-5. Extend Admin review and derived CHECKED responses; bind reviewer identity to the authenticated principal under a reviewed header-compatibility change.
+5. Extend Staff review and derived CHECKED responses; bind reviewer identity to the authenticated principal under a reviewed header-compatibility change.
 6. Implement and test configured delivery adapters and after-commit decision retry. Test delivery failure without decision rollback.
 7. Build the approved frontend, run staged journey checks, and document deployment/configuration and unresolved production-readiness items.
 8. Run Java compilation and focused tests during development, then the full suite and required packaging check at completion. Perform Standards/Spec review and commit the completed authorized work on the current branch per the invoked implement skill.
@@ -93,11 +94,11 @@ The local `tdd` skill was not found. The implement skill says to use it where po
 
 ## 7. Work already safe under confirmed scope
 
-The derived CHECKED mapping is an additive response change and needs no database migration. It can be delivered independently with a JSON contract test for Admin and Owner responses across all three stored states. Other parts of this proposal remain subject to their explicit approvals and required provider input.
+The derived CHECKED mapping is an additive response change and needs no database migration. It can be delivered independently with a JSON contract test for Staff and Owner responses across all three stored states. Other parts of this proposal remain subject to their explicit approvals and required provider input.
 
 ### Implementation checkpoint — 2026-10-18
 
-- Implemented derived `processingStatus` and `reviewOutcome` on Admin and Owner verification responses; existing `verificationStatus` remains intact.
+- Implemented derived `processingStatus` and `reviewOutcome` on Staff and Owner verification responses; existing `verificationStatus` remains intact.
 - Added a three-case JSON contract test covering both response types. It failed for the missing fields before implementation and passed afterward.
 - Java compilation passed. The full backend suite passed: 171 tests, zero failures/errors/skips, using the documented isolated PostgreSQL test service. Mockito required execution outside the sandbox to attach its Java agent; the initial sandbox baseline failed for that environmental reason.
 - Standards and Spec reviews found no actionable defect in the mapping slice. The Spec review explicitly confirmed that email/SMS verification, retained legal submissions and decision delivery remain unimplemented.

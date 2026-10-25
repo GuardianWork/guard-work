@@ -16,7 +16,12 @@ Features must be categorized using one of the standard GuardWork domain prefixes
 | `JOB`         | Job Posting & Discovery  | Job creation, moderation queue, search filters |
 | `APP`         | Applications & Hiring    | Application pipeline, interview scheduling, offers |
 | `NOTIF`       | Notifications & Alerts   | Email notifications, push alerts, in-app updates |
-| `ADM`         | Admin, Audit & Appeals   | Admin dashboard, moderation audit log, user appeals |
+| `ADM`         | Staff, Audit & Appeals   | Staff dashboard, moderation audit log, user appeals |
+
+`ADM` remains a stable document/requirement prefix after the Platform role rename.
+Existing `adm/` and `brainstorm/admin/` planning paths are retained for traceability;
+they do not denote the current runtime role. Current Platform actors use `STAFF`
+and `/api/staff/**`; Company membership `ADMIN` is unchanged.
 
 ---
 
@@ -77,4 +82,4 @@ Maintaining consistent names ensures end-to-end traceability from planning to co
 
 ---
 
-*Last Updated: 2026-10-02*
+*Last Updated: 2026-10-24*

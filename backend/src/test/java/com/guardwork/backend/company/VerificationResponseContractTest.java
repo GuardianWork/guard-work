@@ -1,7 +1,7 @@
 package com.guardwork.backend.company;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.guardwork.backend.admin.dto.CompanyVerificationResponse;
+import com.guardwork.backend.staff.dto.CompanyVerificationResponse;
 import com.guardwork.backend.company.dto.OwnerVerificationResponse;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.model.VerificationStatus;

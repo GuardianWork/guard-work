@@ -1,5 +1,13 @@
 # Authentication, Identity & Access Control — Software Requirements Specification
 
+> Portal routing coordination (2026-10-24): the user supplied and authorized the
+> public/Staff proxy implementation contract in this session. See
+> [GW-SR-AUTH-02](portal-routing-contract.md) for header context, role enforcement,
+> bound refresh sessions, error envelopes, optional CORS, and compatibility details.
+> Platform-role and API examples below use the Staff rename recorded
+> in [Staff specification section 4.3](../../feat/staff/spec.md#43-gw-81-runtime-adoption-and-compatibility);
+> Company `ADMIN` membership remains unchanged.
+
 > Employer onboarding coordination (2026-10-18): the user approved [GW-SR-REC-03](../rec/company-onboarding-verification-enhancement-spec.md) and confirmed its implementation contract. Its new-applicant path supersedes automatic email proof, unrestricted Candidate capability, separate Company-email input and mutable-only dossier handling for enrolled employer applicants. Ordinary Candidate registration and legacy Company compatibility remain scoped as documented; CHECKED is derived from existing Company eligibility states. SMS integration, production retention and legacy rollout remain unresolved. See [implementation details](../../backend/employer-onboarding.md).
 
 | Field | Value |
@@ -10,7 +18,7 @@
 | **File** | `authentication-authorization-spec.md` |
 | **Version** | 1.0.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-08 |
+| **Last Updated** | 2026-10-24 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |
@@ -41,7 +49,7 @@
 This specification defines the platform-wide software requirements for **Authentication, Identity, and Authorization (AUTH)** across the GuardWork recruitment platform. It provides a unified, secure foundation matching all domain use cases across:
 - **Candidate Workspace**: Account registration, credential management, profile ownership, and CV privacy (`docs/feat/candidates/spec.md`, `docs/feat/candidates/usecase.md`).
 - **Company Workspace & Recruiter Operations**: Company-scoped memberships (`OWNER`, `ADMIN`, `RECRUITER`), workspace switching, and immediate access revocation (`docs/architecture/decisions/0001-company-scoped-membership.md`, `docs/feat/recruiters/company-membership-spec.md`).
-- **Platform Governance & Administration**: Platform Administrator authorization (`role: "ADMIN"`), KYB verification queue access, and tamper-proof audit trails (`docs/software-requirements/rec/company-verification-spec.md`).
+- **Platform Governance & Administration**: Platform Staff authorization (`role: "STAFF"`), KYB verification queue access, and tamper-proof audit trails (`docs/software-requirements/rec/company-verification-spec.md`).
 
 ### 1.2 Scope
 
@@ -51,7 +59,7 @@ This specification defines the platform-wide software requirements for **Authent
 | **Authentication & Token Issuance** | Dual-token authentication issuing stateless short-lived JWT Access Tokens and database-persisted Refresh Tokens. |
 | **Token Refresh & Rotation** | Sliding-window refresh token rotation with reuse detection and instant family revocation. |
 | **Session Invalidation & Logout** | Voluntary session logout (single device) and global session invalidation (all devices). |
-| **Platform-Level RBAC** | System role enforcement (`PLATFORM_ADMIN` vs `USER`) protecting administrative governance endpoints. |
+| **Platform-Level RBAC** | System role enforcement (`STAFF` vs `USER`) protecting administrative governance endpoints. |
 | **Company-Scoped Workspace Authorization** | Dynamic membership validation (`OWNER`, `ADMIN`, `RECRUITER`) enforcing immediate revocation without waiting for token expiry. |
 | **Password Lifecycle & Account Recovery** | Secure password change and cryptographic reset token generation/consumption. |
 
@@ -74,7 +82,7 @@ This specification defines the platform-wide software requirements for **Authent
 ### 2.1 High-Level Flow
 
 ```text
-Client (Candidate / Recruiter / Admin)
+Client (Candidate / Recruiter / Staff)
    │
    ├── POST /api/auth/login ──────────> [AuthService]
    │   (username/email, password)           ├── Verify credentials (BCrypt)
@@ -85,7 +93,7 @@ Client (Candidate / Recruiter / Admin)
    │   ("Authorization: Bearer <jwt>")      ├── Validate signature & expiry
    │                                        └── Populate SecurityContext (userId, platformRole)
    │
-   ├── Accessing /api/admin/** ────────> Method Security (@PreAuthorize("hasRole('ADMIN')"))
+   ├── Accessing /api/staff/** ────────> Method Security (@PreAuthorize("hasRole('STAFF')"))
    │
    └── Accessing /api/companies/{id}/** > CompanySecurityService (Dynamic DB check)
                                             ├── Verify User has ACTIVE membership in Company
@@ -96,7 +104,7 @@ Client (Candidate / Recruiter / Admin)
 
 #### User Account State Machine
 ```text
-[REGISTERED] ──(Auto-activated MVP)──> [ACTIVE] ──(Admin Suspension)──> [SUSPENDED]
+[REGISTERED] ──(Auto-activated MVP)──> [ACTIVE] ──(Staff Suspension)──> [SUSPENDED]
                                           │                                 │
                                           └──(Self Deletion)──> [DELETED] <─┘
 ```
@@ -144,7 +152,7 @@ Error responses serialize through custom `AuthenticationEntryPoint` and `AccessD
 | **Protected (User)** | `/api/auth/me` | Authenticated | Current user profile & memberships |
 | **Protected (User)** | `/api/auth/change-password`| Authenticated | In-session password update |
 | **Protected (User)** | `/api/auth/logout` | Authenticated | Current session termination |
-| **Protected (Admin)**| `/api/admin/**` | `role: 'ADMIN'` | Administrative governance & KYB |
+| **Protected (Staff)**| `/api/staff/**` | `role: 'STAFF'` | Administrative governance & KYB |
 | **Protected (Company)**| `/api/companies/{id}/**` | Active Member | Scoped by Company Membership role |
 
 ---
@@ -159,7 +167,7 @@ Enhances the existing `users` table to support platform-level RBAC and account s
 
 | Column | Type | Constraints | Description |
 |---|---|---|---|
-| `role` | VARCHAR(30) | NOT NULL, DEFAULT `'USER'` | Platform role: `'USER'` (Candidate/general) or `'ADMIN'` (Platform Admin) |
+| `role` | VARCHAR(30) | NOT NULL, DEFAULT `'USER'` | Platform role: `'USER'` (Candidate/general) or `'STAFF'` (Platform Staff) |
 | `status` | VARCHAR(30) | NOT NULL, DEFAULT `'ACTIVE'` | Account status: `'ACTIVE'`, `'SUSPENDED'`, `'DELETED'` |
 | `email_verified` | BOOLEAN | NOT NULL, DEFAULT `true` | Email confirmation status |
 
@@ -195,7 +203,7 @@ Manages short-lived, single-use password recovery tokens:
 
 ### 3.2 Database Indexes
 
-- `idx_users_role_status`: `ON users (role, status)` for admin indexing.
+- `idx_users_role_status`: `ON users (role, status)` for Staff indexing.
 - `idx_refresh_tokens_lookup`: `ON refresh_tokens (token_hash, is_revoked, expires_at)`.
 - `idx_refresh_tokens_family`: `ON refresh_tokens (family_id)`.
 - `idx_password_reset_lookup`: `ON password_reset_tokens (token_hash, is_consumed, expires_at)`.
@@ -227,7 +235,7 @@ Manages short-lived, single-use password recovery tokens:
 
 | ID | Requirement |
 |---|---|
-| **REQ-AUTH-10** | The system shall protect all administrative endpoints (`/api/admin/**`) requiring platform role `ADMIN`. Calls with `USER` role or missing tokens shall be rejected with HTTP 403 Forbidden or HTTP 401 Unauthorized. |
+| **REQ-AUTH-10** | The system shall protect all administrative endpoints (`/api/staff/**`) requiring platform role `STAFF`. Calls with `USER` role or missing tokens shall be rejected with HTTP 403 Forbidden or HTTP 401 Unauthorized. |
 | **REQ-AUTH-11** | The system shall resolve Company Workspace authority by dynamically querying the user's active `CompanyMembership` record. |
 | **REQ-AUTH-12** | If a user's company membership is inactive (`LEFT` or `REMOVED`) or the company is banned, all company-scoped actions shall immediately return HTTP 403 Forbidden, regardless of JWT validity. |
 | **REQ-AUTH-13** | The system shall enforce role boundaries within Company Workspaces: `OWNER` can transfer ownership; `ADMIN` can manage recruiters; `RECRUITER` can only manage assigned jobs and applications per `company-membership-spec.md`. |
@@ -292,7 +300,7 @@ Client                           JwtAuthenticationFilter       CompanyController
 | **BR-AUTH-03** | **Access Token Ephemerality** | Access tokens are stateless and expire strictly after 15 minutes. No token blacklisting is required for access tokens. |
 | **BR-AUTH-04** | **Refresh Token Rotation (RTR)** | Every refresh operation consumes the provided refresh token and produces a new one. A consumed token cannot be reused. |
 | **BR-AUTH-05** | **Automatic Family Invalidation** | If a previously rotated refresh token is presented, the system detects a token hijacking attempt, revokes all tokens in the `family_id`, and requires re-authentication. |
-| **BR-AUTH-06** | **Platform vs Company Role Separation** | Platform role (`role`) is stored in `users.role` (`USER` or `ADMIN`). Company role is strictly entity-scoped (`CompanyMembership.role`). An `ADMIN` of a Company does NOT possess Platform `ADMIN` authority. |
+| **BR-AUTH-06** | **Platform vs Company Role Separation** | Platform role (`role`) is stored in `users.role` (`USER` or `STAFF`). Company role is strictly entity-scoped (`CompanyMembership.role`). An `ADMIN` of a Company does NOT possess Platform `STAFF` authority. |
 | **BR-AUTH-07** | **Single Active Company Membership** | Per ADR 0001, a user may hold at most one active Company Membership (`ACTIVE`). Accepting a new invitation is blocked until existing membership is terminated. |
 | **BR-AUTH-08** | **Immediate Access Revocation** | Deactivating or removing a company membership immediately terminates company access on the subsequent request; company authority is never cached in stateless tokens. |
 | **BR-AUTH-09** | **Candidate-Company Conflict of Interest** | An active member of a company is strictly forbidden from applying to job postings published by that same company (`GW-CM-005`). |
@@ -310,7 +318,7 @@ Client                           JwtAuthenticationFilter       CompanyController
 | `40102` | 401 | `EXPIRED_ACCESS_TOKEN` | Bearer JWT signature has expired (client should refresh). |
 | `40103` | 401 | `INVALID_TOKEN` | Malformed, tampered, or unsupported token signature. |
 | `40104` | 401 | `REVOKED_REFRESH_TOKEN` | Refresh token has been revoked or reuse attack detected. |
-| `40301` | 403 | `FORBIDDEN_PLATFORM_ADMIN` | Caller lacks `ADMIN` platform role for `/api/admin/**`. |
+| `40301` | 403 | `FORBIDDEN_PLATFORM_ADMIN` | Legacy catalogue symbol; caller lacks `STAFF` platform role for `/api/staff/**`. |
 | `40302` | 403 | `NOT_COMPANY_MEMBER` | Caller is not an active member of the targeted company. |
 | `40303` | 403 | `INSUFFICIENT_COMPANY_ROLE` | Caller membership role is insufficient for requested operation. |
 | `40304` | 403 | `ACCOUNT_SUSPENDED` | Account has been administratively suspended. |
@@ -549,7 +557,7 @@ HTTP Request
      ▼
 [AuthorizationFilter] ─────> Checks request authorization matcher rules
      │                        • /api/auth/** -> permitAll()
-     │                        • /api/admin/** -> hasRole('ADMIN')
+     │                        • /api/staff/** -> hasRole('STAFF')
      │                        • Any other -> authenticated()
      │
      ▼

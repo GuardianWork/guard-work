@@ -81,7 +81,7 @@ public class LegacyOwnershipCommand {
   @Transactional
   public AuditReport inspect(String operatorToken, String caseReference) {
     Long actor = authenticated(operatorToken);
-    requireAdmin(lockUsers(actor).get(actor));
+    requireStaff(lockUsers(actor).get(actor));
     MembershipAuditEvent audit =
         audits
             .findByReviewCaseReferenceAndEventType(caseReference, "LEGACY_OWNER_ASSIGNED")
@@ -105,7 +105,7 @@ public class LegacyOwnershipCommand {
     Long reviewerId = authenticated(reviewerToken);
     validate(input);
     Map<Long, User> locked = lockUsers(reviewerId, input.applicantUserId());
-    requireAdmin(locked.get(reviewerId));
+    requireStaff(locked.get(reviewerId));
     requireActiveApplicant(locked.get(input.applicantUserId()));
     Company company =
         companies
@@ -149,8 +149,8 @@ public class LegacyOwnershipCommand {
         reviews.findById(caseReference).orElseThrow(() -> refused("Recorded approval required"));
     Map<Long, User> locked =
         lockUsers(operatorId, review.getReviewerUserId(), review.getApplicantUserId());
-    requireAdmin(locked.get(operatorId));
-    requireAdmin(locked.get(review.getReviewerUserId()));
+    requireStaff(locked.get(operatorId));
+    requireStaff(locked.get(review.getReviewerUserId()));
     if (operatorId.equals(review.getReviewerUserId()))
       throw refused("Reviewer and operator must differ");
     requireActiveApplicant(locked.get(review.getApplicantUserId()));
@@ -260,9 +260,9 @@ public class LegacyOwnershipCommand {
     return locked;
   }
 
-  private void requireAdmin(User user) {
-    if (!"ADMIN".equals(user.getRole()) || !"ACTIVE".equals(user.getStatus()))
-      throw refused("Active Platform Administrator authority required");
+  private void requireStaff(User user) {
+    if (!"STAFF".equals(user.getRole()) || !"ACTIVE".equals(user.getStatus()))
+      throw refused("Active Platform Staff authority required");
   }
 
   private void requireActiveApplicant(User user) {

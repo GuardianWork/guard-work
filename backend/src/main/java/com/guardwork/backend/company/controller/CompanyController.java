@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.guardwork.backend.admin.dto.CompanyVerificationResponse;
+import com.guardwork.backend.staff.dto.CompanyVerificationResponse;
 import com.guardwork.backend.common.ApiResponse;
 import com.guardwork.backend.company.dto.CompanyRegistrationRequest;
 import com.guardwork.backend.company.dto.CurrentCompanyResponse;

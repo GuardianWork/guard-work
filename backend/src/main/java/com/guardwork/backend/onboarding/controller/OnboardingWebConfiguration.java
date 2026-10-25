@@ -21,7 +21,7 @@ public class OnboardingWebConfiguration implements WebMvcConfigurer {
             @Override public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws java.io.IOException {
                 var authentication = SecurityContextHolder.getContext().getAuthentication();
                 if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal user
-                        && !"ADMIN".equals(user.getRole()) && !policy.permits(user.getId(),
+                        && !"STAFF".equals(user.getRole()) && !policy.permits(user.getId(),
                                 request.getRequestURI().substring(request.getContextPath().length()), request.getMethod())) {
                     response.setStatus(403); response.setContentType("application/json");
                     json.writeValue(response.getOutputStream(), new com.guardwork.backend.common.ApiResponse<>(403,
