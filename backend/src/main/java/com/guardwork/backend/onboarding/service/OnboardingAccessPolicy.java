@@ -32,6 +32,9 @@ public class OnboardingAccessPolicy {
         boolean enhancedMembership = companyId.isPresent() && attempts.existsByCompanyId(companyId.get());
         if (profile.isEmpty() && !enhancedMembership) return true; // Legacy rollout is explicitly isolated.
         if (users.findById(actor).filter(u -> "ACTIVE".equals(u.getStatus())).isEmpty()) return false;
+        // Job services enforce Company/role/assignment scope; personal proof is not required.
+        if (companyJobRoute(path, method))
+            return companyId.flatMap(companies::findById).filter(c -> !c.isBanned()).isPresent();
         if (path.startsWith("/api/auth/") || path.startsWith("/api/me/employer-onboarding")
                 || path.equals("/api/companies/me") || path.equals("/api/companies/me/verification")
                 || path.equals("/api/companies/me/verification/history") || path.startsWith("/api/company-verification-documents/")
@@ -43,12 +46,10 @@ public class OnboardingAccessPolicy {
         if (path.startsWith("/api/company-invitations/")) return true;
         if (profile.isEmpty() || profile.get().getEmailVerifiedAt() == null || profile.get().getPhoneVerifiedAt() == null)
             return false;
-        if (companyJobRoute(path, method))
-            return companyId.flatMap(companies::findById).filter(c -> !c.isBanned()).isPresent();
         return companyId.flatMap(companies::findById).filter(c -> !c.isBanned()
                 && c.getVerificationStatus() == VerificationStatus.VERIFIED).isPresent();
     }
-    /** Only known job operations bypass Company verification; business services retain their own gates. */
+    /** Only known job operations bypass personal onboarding and Company verification; business services retain their own gates. */
     private boolean companyJobRoute(String path, String method) {
         String root = "/api/companies/me/jobs";
         String job = root + "/[1-9][0-9]*";

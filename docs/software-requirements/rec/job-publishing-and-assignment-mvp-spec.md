@@ -7,7 +7,7 @@
 | Module | Job Publishing and Assignments |
 | File | `job-publishing-and-assignment-mvp-spec.md` |
 | Version | 0.1.0 |
-| Date / Last Updated | 2026-10-26 |
+| Date / Last Updated | 2026-10-27 |
 | Owner | Thinh |
 | Named human approver | Thinh (retained from baseline) |
 | Status | Approved — explicit user approval recorded on 2026-10-20 |
@@ -56,7 +56,7 @@ Only PUBLISHED and PAUSED jobs undergo deadline expiry. CLOSED remains CLOSED af
 
 | ID | Requirement |
 |---|---|
-| JP78-010 | Authorized eligible members may create incomplete drafts before Company verification. Company suspension blocks private operations. Preserve existing personal email/phone verification and legacy-rollout policy; use the confirmed scoped route exceptions in the contract for pre-verification drafts, public detail and own-inbox access. |
+| JP78-010 | Authorized eligible members may create incomplete drafts before Company verification. Company suspension blocks private operations. Personal email/phone onboarding does not gate job operations (approved 2026-10-27). Preserve active User/membership, role/assignment and Company verification gates; use the scoped route exceptions in the contract for pre-verification drafts, public detail and own-inbox access. |
 | JP78-011 | Save incomplete drafts within type, enum, length and size limits. Submission requires complete content, a future exact deadline, verified non-suspended Company, eligible submitter and at least one responsible person. Return field-specific validation information through the existing scoped response convention. |
 | JP78-012 | Required content comprises title, description, responsibilities, required/preferred qualifications, experience expectations, employment type, work arrangement, location, benefits, deadline, headcount, application instructions and a compensation range or explicit not-disclosed choice. Application instructions direct Candidates to apply through GuardWork. |
 | JP78-013 | Narrative fields are plain text with line breaks, supporting Vietnamese Unicode. Screening questions are optional, capped at ten, ordered and typed SHORT_TEXT, SINGLE_CHOICE, YES_NO or NUMERIC, each with an explicit required flag. No automated ranking or rejection. Answer collection is out of scope. |
@@ -110,3 +110,13 @@ Verification passed: 250 backend tests, 46 final focused HTTP/security/PostgreSQ
 ## Integration amendment — 2026-10-26
 
 The user explicitly confirmed that Platform `STAFF` replaces the former Platform `ADMIN` terminology and authorized the migration renumbering described in [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md). Moderation reads current persisted `STAFF` authority; Company `ADMIN` remains excluded. Job moderation uses `/api/staff/...`, matching the baseline retirement of `/api/admin/**`; these job routes are new relative to `cc8943ab`. Compare integration behavior and migration ordering against `cc8943ab`.
+
+## Approved onboarding separation — 2026-10-27
+
+After approving a configurable exception, the user explicitly replaced it with removal
+of personal-onboarding enforcement for job publishing and assignment. Known Company
+job routes bypass personal email/phone proof; job services no longer depend on
+OnboardingAccessPolicy. There is no environment flag. This supersedes JP78-010's
+personal-proof clause and section 6's corresponding requirement. Active User/membership,
+Company suspension, role/assignment authorization and VERIFIED Company publication
+gates remain enforced. Other employer routes and the onboarding journey are unchanged.

@@ -8,7 +8,6 @@ import com.guardwork.backend.membership.model.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.membership.service.CompanyAccessService;
 import com.guardwork.backend.notification.service.*;
-import com.guardwork.backend.onboarding.service.OnboardingAccessPolicy;
 import com.guardwork.backend.user.repository.UserRepository;
 import java.time.Clock;
 import java.util.*;
@@ -30,16 +29,15 @@ public class JobAssignmentService {
   private final NotificationIntentService notifications;
   private final NotificationDispatcher dispatcher;
   private final JobDraftService drafts;
-  private final OnboardingAccessPolicy onboarding;
   private final Clock clock;
 
   public JobAssignmentService(CompanyAccessService access, JobPostingRepository jobs,
       JobAssignmentRepository assignments, CompanyMembershipRepository members, UserRepository users,
       JobAuditEventRepository audit, NotificationIntentService notifications, NotificationDispatcher dispatcher,
-      JobDraftService drafts, OnboardingAccessPolicy onboarding, Clock clock) {
+      JobDraftService drafts, Clock clock) {
     this.access=access; this.jobs=jobs; this.assignments=assignments; this.members=members;
     this.users=users; this.audit=audit; this.notifications=notifications; this.dispatcher=dispatcher;
-    this.drafts=drafts; this.onboarding=onboarding; this.clock=clock;
+    this.drafts=drafts; this.clock=clock;
   }
 
   public JobDetail assign(Long actor, Long id, Long memberId, Long version, boolean enabled) {
@@ -85,10 +83,7 @@ public class JobAssignmentService {
     }
   }
   private Company owner(Long actor) {
-    var company=access.requireOwner(actor).company();
-    if(!onboarding.permits(actor,"/api/companies/me/jobs","POST"))
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40330 PERSONAL_VERIFICATION_REQUIRED: Personal verification required");
-    return company;
+    return access.requireOwner(actor).company();
   }
   private JobPosting job(Company company,Long id) {
     if(id==null || id<=0) throw DraftContent.invalid("jobId");

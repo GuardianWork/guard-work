@@ -29,9 +29,11 @@ A save replaces the entire content object; omitted fields are removed. Even iden
 saves advance both versions. Repeated POSTs create separate jobs: do not blindly retry
 an unknown creation result.
 
-Pending and rejected Companies may prepare drafts. Enrolled members must still prove
-personal email and phone; enhanced Company membership retains its existing rollout gate.
-Legacy drafting does not enroll an account or grant broader employer eligibility.
+Pending and rejected Companies may prepare drafts. Job publishing and assignment do
+not require personal email/phone onboarding. Exact known job routes bypass that gate;
+job services enforce active User/membership, Company suspension, role/assignment scope
+and Company verification for submission/resume/approval. Other employer routes retain
+their onboarding restrictions. No environment flag or migration is required.
 
 ## Content
 

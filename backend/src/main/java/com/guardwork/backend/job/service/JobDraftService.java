@@ -9,7 +9,6 @@ import com.guardwork.backend.membership.model.CompanyRole;
 import com.guardwork.backend.membership.model.MembershipStatus;
 import com.guardwork.backend.membership.service.CompanyAccessService;
 import com.guardwork.backend.notification.service.*;
-import com.guardwork.backend.onboarding.service.OnboardingAccessPolicy;
 import com.guardwork.backend.user.model.User;
 import jakarta.persistence.criteria.*;
 import java.time.Clock;
@@ -27,7 +26,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Transactional
 public class JobDraftService {
   private final CompanyAccessService access;
-  private final OnboardingAccessPolicy onboarding;
   private final JobPostingRepository jobs;
   private final JobRevisionRepository revisions;
   private final JobAssignmentRepository assignments;
@@ -39,11 +37,11 @@ public class JobDraftService {
   private final JobExpiryService expiry;
   private final JobEligibility eligibility;
 
-  public JobDraftService(CompanyAccessService access, OnboardingAccessPolicy onboarding,
+  public JobDraftService(CompanyAccessService access,
       JobPostingRepository jobs, JobRevisionRepository revisions, JobAssignmentRepository assignments,
       JobAuditEventRepository audit, DraftContent content, NotificationIntentService notifications,
       NotificationDispatcher dispatcher, Clock clock, JobExpiryService expiry, JobEligibility eligibility) {
-    this.access = access; this.onboarding = onboarding; this.jobs = jobs; this.revisions = revisions;
+    this.access = access; this.jobs = jobs; this.revisions = revisions;
     this.assignments = assignments; this.audit = audit; this.content = content;
     this.eligibility=eligibility; this.expiry=expiry; this.notifications = notifications; this.dispatcher = dispatcher; this.clock = clock;
   }
@@ -170,8 +168,6 @@ public class JobDraftService {
     }
     if (scope.membership().getRole() == CompanyRole.ADMIN)
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40303 INSUFFICIENT_COMPANY_ROLE: Owner or Recruiter required");
-    if (!onboarding.permits(actor, "/api/companies/me/jobs", "POST"))
-      throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40330 PERSONAL_VERIFICATION_REQUIRED: Personal verification required");
     return scope;
   }
 

@@ -143,11 +143,11 @@ class JobDraftHttpTest {
                 .andExpect(jsonPath("$.data.content[0].workingRevision.content.title").value("😀".repeat(200)));
     }
 
-    @Test void personalProofIsPreservedWhileVerifiedMembersCanDraftBeforeCompanyApproval() throws Exception {
+    @Test void personalProofIsIndependentOfDraftingBeforeCompanyApproval() throws Exception {
         String owner = account(); long company = createdCompany(owner); long user = userId(owner);
         database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,true,'Owner')", user);
         http.perform(post(JOBS).header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content("{\"content\":{}}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isCreated());
         database.update("UPDATE employer_profiles SET email_verified_at=now(),phone=?,phone_verified_at=now() WHERE user_id=?", "09" + user, user);
         create(owner, Map.of());
         database.update("UPDATE companies SET verification_status='REJECTED' WHERE id=?", company);
@@ -213,7 +213,7 @@ class JobDraftHttpTest {
         http.perform(patch("/api/me/notifications/" + notification + "/read").header("Authorization", owner))
                 .andExpect(status().isNotFound());
         http.perform(get("/api/me/notifications").header("Authorization", owner)).andExpect(jsonPath("$.data.totalElements").value(0));
-        http.perform(get(JOBS + "/" + job).header("Authorization", recruiter)).andExpect(status().isForbidden());
+        http.perform(get(JOBS + "/" + job).header("Authorization", recruiter)).andExpect(status().isOk());
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", recipient);
         http.perform(get("/api/me/notifications").header("Authorization", recruiter)).andExpect(status().isForbidden());
     }

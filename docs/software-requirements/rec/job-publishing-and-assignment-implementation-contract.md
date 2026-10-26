@@ -5,7 +5,7 @@
 | Specification | [GW-SR-JOB-PUBLISHING-MVP](job-publishing-and-assignment-mvp-spec.md) |
 | Status | Approved — explicit user approval recorded on 2026-10-20 |
 | Owner / named human approver | Thinh (retained from baseline) |
-| Date / Last Updated | 2026-10-26 |
+| Date / Last Updated | 2026-10-27 |
 | Base revision | `50316c8` |
 
 This concrete contract was presented for review at Q27. The user accepted it except for concurrency pending explanation, then agreed to the explained concurrency outcomes. Q26's scoped onboarding changes were also explained and accepted. On 2026-10-20, after publication of the consolidated tracker issue containing these decisions, the user instructed: "I approve the issue, write it down". Approved status records that explicit human decision, not autonomous agent approval. The user accepted the six-ticket breakdown and blocking edges on 2026-10-20, retaining this single-migration contract. The incremental-migration alternative was not adopted. Newly discovered consequential conflicts must be surfaced before changing the agreed behavior.
@@ -100,7 +100,7 @@ Index Company job queues by `(company_id, created_at DESC, id DESC)`; revisions 
 
 Current `OnboardingAccessPolicy` requires Company VERIFIED for most employer routes, conflicting with agreed pre-verification job preparation. Proposed narrow changes:
 
-1. Recognize the exact Company job route family separately: require active membership, eligible User and non-suspended Company; retain email/phone proof for enrolled/enhanced members, preserve existing legacy rollout without auto-enrollment. Allow authorized draft preparation/management for PENDING/REJECTED Companies; submit/resume and moderation approval separately require VERIFIED. Do not broaden other employer routes.
+1. Recognize the exact Company job route family separately: require active membership, eligible User and non-suspended Company; do not require personal email/phone proof or auto-enroll members (approved amendment 2026-10-27). Allow authorized draft preparation/management for PENDING/REJECTED Companies; submit/resume and moderation approval separately require VERIFIED. Do not broaden other employer routes.
 2. Permit exact public GET `/api/jobs/{numericId}` for signed-in restricted applicants as well as anonymous readers. Public projection remains identical and grants no private Company access.
 3. Permit existing own-inbox GET `/api/me/notifications` and PATCH `/api/me/notifications/{numericId}/read` while onboarding is restricted, subject to existing active-User/recipient checks. Current policy allows a different `/api/notifications` prefix, so merely adding job event types would otherwise leave affected recipients blocked.
 4. Do not bypass Company/job service checks because an interceptor allowed a route; recheck eligibility within business transactions. Preserve normal Platform Staff moderation, including own-Company reviews.
@@ -115,17 +115,17 @@ Use the existing scoped `ApiResponse` HTTP/error convention; validation fields c
 |---|---|
 | 400 | Malformed payload, missing confirmation/version, invalid field/type, incomplete submission or invalid paging. |
 | 401 | Existing unauthenticated/invalid-token behavior. |
-| 403 | Current User suspended, wrong non-resource role, personal verification required, or authenticated caller lacks Platform Admin authority. |
+| 403 | Current User suspended, wrong non-resource role, or authenticated caller lacks Platform Admin authority. |
 | 404 | Missing or inaccessible private job/revision/membership; public job not visible. |
 | 409 | Stale version, working revision already exists, not pending, Company not verified, missing responsible person, passed deadline or illegal lifecycle transition. |
 | 500 | Generic unexpected failure with request correlation; no raw constraint names, content or private metadata. |
 
-Retain existing `40000 BAD_REQUEST`, `40022 CONCURRENT_MODIFICATION`, `40100 UNAUTHORIZED`, `40304 ACCOUNT_SUSPENDED` and `40330 PERSONAL_VERIFICATION_REQUIRED` where applicable. Proposed feature codes are `40478 JOB_NOT_FOUND`, `40978 JOB_STATE_CONFLICT`, `40979 WORKING_REVISION_EXISTS`, `40980 JOB_RESPONSIBILITY_REQUIRED`, `40981 JOB_DEADLINE_PASSED`, `40982 COMPANY_VERIFICATION_REQUIRED`. Verify no collision before use. Handle new feature exceptions before catch-all advice; do not change unrelated features' errors.
+Retain existing `40000 BAD_REQUEST`, `40022 CONCURRENT_MODIFICATION`, `40100 UNAUTHORIZED`, `40304 ACCOUNT_SUSPENDED` where applicable. Proposed feature codes are `40478 JOB_NOT_FOUND`, `40978 JOB_STATE_CONFLICT`, `40979 WORKING_REVISION_EXISTS`, `40980 JOB_RESPONSIBILITY_REQUIRED`, `40981 JOB_DEADLINE_PASSED`, `40982 COMPANY_VERIFICATION_REQUIRED`. Verify no collision before use. Handle new feature exceptions before catch-all advice; do not change unrelated features' errors.
 
 Required HTTP/security/PostgreSQL coverage:
 
 - Owner and Recruiter draft creation; automatic responsibility/assignment; partial failure rolls back all effects; Unicode and malformed/oversized content.
-- Verified and pending/rejected Companies; enrolled personal proof and legacy boundaries; suspended User/Company; Company Admin denied; cross-Company hidden IDs.
+- Verified and pending/rejected Companies; personal-onboarding independence and unrelated-route restrictions; suspended User/Company; Company Admin denied; cross-Company hidden IDs.
 - One working revision and stale save/submission races; preview version/confirmation; immutable reviewed snapshots, correction, withdrawal versus decision and concurrent decisions.
 - Owner-only assignment/responsibility; duplicate retries; creator unassignment; membership removal/leave/rejoin; no resurrection; last-responsible flag and exactly-once notification.
 - Admin own-Company decisions permitted; non-Admin denied; first approval and replacement visibility; pending content never leaks.
@@ -145,3 +145,13 @@ Verification passed: 250 backend tests, 46 final focused HTTP/security/PostgreSQ
 ## Integration amendment — 2026-10-26
 
 The user explicitly confirmed that Platform `STAFF` replaces the former Platform `ADMIN` terminology and authorized the migration renumbering described in [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md). Moderation reads current persisted `STAFF` authority; Company `ADMIN` remains excluded. Job moderation uses `/api/staff/...`, matching the baseline retirement of `/api/admin/**`; these job routes are new relative to `cc8943ab`. Compare integration behavior and migration ordering against `cc8943ab`.
+
+## Approved onboarding separation — 2026-10-27
+
+After approving a configurable exception, the user explicitly replaced it with removal
+of personal-onboarding enforcement for job publishing and assignment. Known Company
+job routes bypass personal email/phone proof; job services no longer depend on
+OnboardingAccessPolicy. There is no environment flag. This supersedes JP78-010's
+personal-proof clause and section 6's corresponding requirement. Active User/membership,
+Company suspension, role/assignment authorization and VERIFIED Company publication
+gates remain enforced. Other employer routes and the onboarding journey are unchanged.
