@@ -5,7 +5,7 @@
 | Specification | [GW-SR-JOB-PUBLISHING-MVP](job-publishing-and-assignment-mvp-spec.md) |
 | Status | Approved — explicit user approval recorded on 2026-10-20 |
 | Owner / named human approver | Thinh (retained from baseline) |
-| Date / Last Updated | 2026-10-21 |
+| Date / Last Updated | 2026-10-26 |
 | Base revision | `50316c8` |
 
 This concrete contract was presented for review at Q27. The user accepted it except for concurrency pending explanation, then agreed to the explained concurrency outcomes. Q26's scoped onboarding changes were also explained and accepted. On 2026-10-20, after publication of the consolidated tracker issue containing these decisions, the user instructed: "I approve the issue, write it down". Approved status records that explicit human decision, not autonomous agent approval. The user accepted the six-ticket breakdown and blocking edges on 2026-10-20, retaining this single-migration contract. The incremental-migration alternative was not adopted. Newly discovered consequential conflicts must be surfaced before changing the agreed behavior.
@@ -14,7 +14,7 @@ This concrete contract was presented for review at Q27. The user accepted it exc
 
 Use existing `ApiResponse<T>` and `PageResponse<T>`, authenticated UserPrincipal and live active-User checks. IDs are positive BIGINT/JSON numbers consistent with Company/Membership APIs. Private Company is always derived from the actor, not client-supplied authority. All private job identifiers are scoped before returning content; inaccessible identifiers return the same 404 as absent ones.
 
-Add only GET `/api/jobs/{jobId}` as anonymous public access, with positive numeric ID parsing. No wildcard anonymous job writes or search endpoint. Platform routes require current platform ADMIN authority; Company role ADMIN grants nothing. An administrator's membership of the reviewed Company is not a reason to refuse a moderation operation.
+Add only GET `/api/jobs/{jobId}` as anonymous public access, with positive numeric ID parsing. No wildcard anonymous job writes or search endpoint. Platform routes require current platform STAFF authority; Company role ADMIN grants nothing. A Staff member's membership of the reviewed Company is not a reason to refuse a moderation operation.
 
 Lists default to `page=0&size=20`, size 1–100, page nonnegative within safe offset bounds. Company jobs sort `createdAt DESC, id DESC`; reviews sort `submittedAt ASC, id ASC`; revision history sorts revision number ascending. Paginated responses retain the existing field names.
 
@@ -39,10 +39,10 @@ Every mutation of an existing job includes `expectedJobVersion`. Draft/review mu
 | POST `/api/companies/me/jobs/{jobId}/pause` | Job version; PUBLISHED only after expiry reconciliation. |
 | POST `/api/companies/me/jobs/{jobId}/resume` | Job version; PAUSED only, approved deadline future and Company verified. |
 | POST `/api/companies/me/jobs/{jobId}/close` | Job version; PUBLISHED/PAUSED only; do not withdraw pending revision. |
-| GET `/api/admin/job-revisions` | Paginated filter `status=PENDING_REVIEW/APPROVED/REJECTED/WITHDRAWN/ALL`, default pending; never list private editable drafts as review requests. |
-| GET `/api/admin/job-revisions/{revisionId}` | Exact submitted content, current Company/job eligibility and versions, decision/withdrawal metadata. |
-| GET `/api/admin/jobs/{jobId}/revisions` | Submitted revision history including preserved rejected/withdrawn content; editable drafts excluded. |
-| PUT `/api/admin/job-revisions/{revisionId}/decision` | `{expectedJobVersion, expectedRevisionVersion, outcome: APPROVED|REJECTED, reason?}`; pending only; rejection needs reason. Return decision receipt and resulting job state/versions. |
+| GET `/api/staff/job-revisions` | Paginated filter `status=PENDING_REVIEW/APPROVED/REJECTED/WITHDRAWN/ALL`, default pending; never list private editable drafts as review requests. |
+| GET `/api/staff/job-revisions/{revisionId}` | Exact submitted content, current Company/job eligibility and versions, decision/withdrawal metadata. |
+| GET `/api/staff/jobs/{jobId}/revisions` | Submitted revision history including preserved rejected/withdrawn content; editable drafts excluded. |
+| PUT `/api/staff/job-revisions/{revisionId}/decision` | `{expectedJobVersion, expectedRevisionVersion, outcome: APPROVED|REJECTED, reason?}`; pending only; rejection needs reason. Return decision receipt and resulting job state/versions. |
 | GET `/api/jobs/{jobId}` | Public approved content, `{company: {id, name}, publicationStatus, applicationsAvailable, applicationAvailabilityReason}`. No private identifiers other than public job/Company IDs. |
 
 `applicationsAvailable` is false for PAUSED/CLOSED/EXPIRED or Company not verified, true only for verified non-suspended PUBLISHED before approved deadline. It describes job eligibility, not an implemented Application submission endpoint. Reasons: `PAUSED`, `CLOSED`, `EXPIRED`, `COMPANY_NOT_VERIFIED`, or null. Suspended Company returns 404 instead of a public dossier/status disclosure.
@@ -73,7 +73,7 @@ Question keys persist when deriving unchanged questions; changed/new questions m
 
 ## 4. Proposed database changes
 
-One new Flyway migration `V2026.10.20.78__job_publishing_and_assignments.sql`, subject to checking the final branch's migration order before implementation. Never edit committed migrations or reset development data.
+One new Flyway migration `V2026.10.26.83__job_publishing_and_assignments.sql`, ordered after the `cc8943ab` baseline's `.81` and `.82` migrations. On 2026-10-26 the user explicitly approved renumbering the unchanged committed job migration and rebuilding their disposable local database. This is a scoped exception; other committed migrations and retained/shared data remain immutable. See [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md).
 
 | Storage | Required fields and constraints |
 |---|---|
@@ -103,7 +103,7 @@ Current `OnboardingAccessPolicy` requires Company VERIFIED for most employer rou
 1. Recognize the exact Company job route family separately: require active membership, eligible User and non-suspended Company; retain email/phone proof for enrolled/enhanced members, preserve existing legacy rollout without auto-enrollment. Allow authorized draft preparation/management for PENDING/REJECTED Companies; submit/resume and moderation approval separately require VERIFIED. Do not broaden other employer routes.
 2. Permit exact public GET `/api/jobs/{numericId}` for signed-in restricted applicants as well as anonymous readers. Public projection remains identical and grants no private Company access.
 3. Permit existing own-inbox GET `/api/me/notifications` and PATCH `/api/me/notifications/{numericId}/read` while onboarding is restricted, subject to existing active-User/recipient checks. Current policy allows a different `/api/notifications` prefix, so merely adding job event types would otherwise leave affected recipients blocked.
-4. Do not bypass Company/job service checks because an interceptor allowed a route; recheck eligibility within business transactions. Preserve normal Platform Administrator moderation, including own-Company reviews.
+4. Do not bypass Company/job service checks because an interceptor allowed a route; recheck eligibility within business transactions. Preserve normal Platform Staff moderation, including own-Company reviews.
 
 These scoped compatibility changes were explained and accepted at Q26. They explicitly extend onboarding compatibility for this feature without changing unrelated route restrictions.
 
@@ -141,3 +141,7 @@ Reuse existing isolated PostgreSQL test setup and controlled Clock/delivery boun
 The backend scope is implemented on `GW-78-implement-job-publishing-and-assignment`. Ticket 01 was already complete; tickets 02–06 and the final review fix are merged into that branch. The frontend and the committed single job migration were unchanged by the remaining-ticket implementation.
 
 Verification passed: 250 backend tests, 46 final focused HTTP/security/PostgreSQL tests after the eligibility refactor, and Maven packaging. Specification review found no actionable gaps; standards review found no documented-rule violations, and its shared-eligibility duplication finding was addressed. See [backend workflow documentation](../../backend/job-drafts.md) and the backend README for routes and expiry configuration.
+
+## Integration amendment — 2026-10-26
+
+The user explicitly confirmed that Platform `STAFF` replaces the former Platform `ADMIN` terminology and authorized the migration renumbering described in [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md). Moderation reads current persisted `STAFF` authority; Company `ADMIN` remains excluded. Job moderation uses `/api/staff/...`, matching the baseline retirement of `/api/admin/**`; these job routes are new relative to `cc8943ab`. Compare integration behavior and migration ordering against `cc8943ab`.

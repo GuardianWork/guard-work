@@ -32,22 +32,27 @@ class JobPublicationHttpTest {
         clock.now=java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
         http = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
-    @Test void ownCompanyAdministratorPublishesOnlyApprovedSafeDetails() throws Exception {
+    @Test void ownCompanyStaffMemberPublishesOnlyApprovedSafeDetails() throws Exception {
         String owner=account(); long company=createdCompany(owner);
         database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
         var d=create(owner,complete()); long job=d.path("id").asLong(), revision=d.path("workingRevision").path("id").asLong();
         http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
         var pending=mapper.readTree(http.perform(post(JOBS+"/"+job+"/revisions/"+revision+"/submit").header("Authorization",owner)
             .contentType(MediaType.APPLICATION_JSON).content(confirm(d,true))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"APPROVED",null))).andExpect(status().isForbidden());
-        String admin=admin(owner);
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"APPROVED",null)))
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"APPROVED",null))).andExpect(status().isForbidden());
+        String staff=staff(owner);
+        http.perform(get("/api/admin/job-revisions").header("Authorization",staff)).andExpect(status().isNotFound());
+        http.perform(get("/api/staff/job-revisions").header("Authorization",staff)
+            .header("X-Guardian-Portal","public")).andExpect(status().isForbidden());
+        http.perform(get("/api/staff/job-revisions").header("Authorization",staff)
+            .header("X-Guardian-Portal","staff")).andExpect(status().isOk());
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"APPROVED",null)))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.publicationStatus").value("PUBLISHED"));
         http.perform(get("/api/jobs/"+job)).andExpect(status().isOk()).andExpect(jsonPath("$.data.applicationsAvailable").value(true))
             .andExpect(jsonPath("$.data.content.description").value("Dòng một\nDòng hai")).andExpect(jsonPath("$.data.company.taxCode").doesNotExist())
             .andExpect(jsonPath("$.data.assignments").doesNotExist()).andExpect(jsonPath("$.data.reviewerUserId").doesNotExist());
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"REJECTED","Needs correction"))).andExpect(status().isConflict());
-        http.perform(get("/api/me/notifications").header("Authorization",admin)).andExpect(status().isOk())
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"REJECTED","Needs correction"))).andExpect(status().isConflict());
+        http.perform(get("/api/me/notifications").header("Authorization",staff)).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isNotEmpty());
     }
     @Test void exactApprovedDeadlineExpiresWithOneFactEvenWhenWorkerIsDelayed() throws Exception {
@@ -55,7 +60,7 @@ class JobPublicationHttpTest {
         var c=complete();var deadline=clock.now.plusSeconds(30);c.put("deadline",deadline.toString());
         var d=create(owner,c);long job=d.path("id").asLong(),revision=d.path("workingRevision").path("id").asLong();
         var pending=mapper.readTree(http.perform(post(JOBS+"/"+job+"/revisions/"+revision+"/submit").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(confirm(d,true))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",admin(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"APPROVED",null))).andExpect(status().isOk());
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"APPROVED",null))).andExpect(status().isOk());
         clock.now=deadline.minusNanos(1);
         http.perform(get("/api/jobs/"+job)).andExpect(jsonPath("$.data.applicationsAvailable").value(true));
         clock.now=deadline;
@@ -66,39 +71,39 @@ class JobPublicationHttpTest {
     }
     @Test void rejectionRetainsReviewedEvidenceAndRequiresTrimmedReason() throws Exception {
         String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-        var pending=pending(owner,complete());long job=pending.path("id").asLong(),revision=pending.path("workingRevision").path("id").asLong();String admin=admin(owner);
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"REJECTED"," tiny "))).andExpect(status().isBadRequest());
+        var pending=pending(owner,complete());long job=pending.path("id").asLong(),revision=pending.path("workingRevision").path("id").asLong();String staff=staff(owner);
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"REJECTED"," tiny "))).andExpect(status().isBadRequest());
         database.update("UPDATE companies SET is_banned=true WHERE id=?",company);
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"REJECTED","  Please correct the location  "))).andExpect(status().isOk());
-        http.perform(get("/api/admin/job-revisions/"+revision).header("Authorization",admin)).andExpect(status().isOk())
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"REJECTED","  Please correct the location  "))).andExpect(status().isOk());
+        http.perform(get("/api/staff/job-revisions/"+revision).header("Authorization",staff)).andExpect(status().isOk())
           .andExpect(jsonPath("$.data.rejectionReason").value("Please correct the location")).andExpect(jsonPath("$.data.reviewerUserId").isNumber())
           .andExpect(jsonPath("$.data.decidedAt").isNotEmpty()).andExpect(jsonPath("$.data.content.description").value("Dòng một\nDòng hai"));
         http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
         database.update("UPDATE companies SET is_banned=false WHERE id=?",company);
-        http.perform(post(JOBS+"/"+job+"/revisions/"+revision+"/withdraw").header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(confirm(pending,true))).andExpect(status().isConflict());
+        http.perform(post(JOBS+"/"+job+"/revisions/"+revision+"/withdraw").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(confirm(pending,true))).andExpect(status().isConflict());
     }
-    @Test void approvalRechecksCompanyResponsibilityDeadlineAndLiveAdminAuthority() throws Exception {
+    @Test void approvalRechecksCompanyResponsibilityDeadlineAndLiveStaffAuthority() throws Exception {
         String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
         var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());
-        var pending=pending(owner,fields);long job=pending.path("id").asLong(),revision=pending.path("workingRevision").path("id").asLong();String admin=admin(owner);
-        String route="/api/admin/job-revisions/"+revision+"/decision",body=decision(pending,"APPROVED",null);
-        database.update("UPDATE users SET role='USER' WHERE id=?",userId(admin));
-        http.perform(put(route).header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden());
-        database.update("UPDATE users SET role='ADMIN' WHERE id=?",userId(admin));
+        var pending=pending(owner,fields);long job=pending.path("id").asLong(),revision=pending.path("workingRevision").path("id").asLong();String staff=staff(owner);
+        String route="/api/staff/job-revisions/"+revision+"/decision",body=decision(pending,"APPROVED",null);
+        database.update("UPDATE users SET role='USER' WHERE id=?",userId(staff));
+        http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isForbidden());
+        database.update("UPDATE users SET role='STAFF' WHERE id=?",userId(staff));
         database.update("UPDATE companies SET verification_status='PENDING' WHERE id=?",company);
-        http.perform(put(route).header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict());
+        http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict());
         database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
         database.update("UPDATE job_postings SET owner_responsible=false WHERE id=?",job);
-        http.perform(put(route).header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict());
+        http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict());
         database.update("UPDATE job_postings SET owner_responsible=true WHERE id=?",job);clock.now=deadline;
-        http.perform(put(route).header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict());
-        http.perform(get("/api/admin/job-revisions/"+revision).header("Authorization",admin)).andExpect(jsonPath("$.data.state").value("PENDING_REVIEW"));
+        http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isConflict());
+        http.perform(get("/api/staff/job-revisions/"+revision).header("Authorization",staff)).andExpect(jsonPath("$.data.state").value("PENDING_REVIEW"));
         assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type='JOB_REVISION_APPROVED'",Long.class,job)).isZero();
     }
     @Test void restrictedSignedInReadersSeeSamePublicProjectionAndCompanySuspensionHidesIt() throws Exception {
         String owner=account(),reader=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
         var p=pending(owner,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",admin(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
         database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,true,'Reader')",userId(reader));
         String anonymous=http.perform(get("/api/jobs/"+job)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         String signed=http.perform(get("/api/jobs/"+job).header("Authorization",reader)).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -117,30 +122,30 @@ class JobPublicationHttpTest {
     @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
     @Test void failedDecisionRollsBackAllFactsAndNotificationDeliveryRecoversWithoutDuplicates() throws Exception {
         String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-        var p=pending(owner,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();String admin=admin(owner);
-        String route="/api/admin/job-revisions/"+revision+"/decision",body=decision(p,"APPROVED",null);
+        var p=pending(owner,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();String staff=staff(owner);
+        String route="/api/staff/job-revisions/"+revision+"/decision",body=decision(p,"APPROVED",null);
         database.execute("CREATE FUNCTION fail_job04_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.job_id="+job+" AND NEW.event_type='JOB_REVISION_APPROVED' THEN RAISE EXCEPTION 'controlled failure'; END IF; RETURN NEW; END $$");
         database.execute("CREATE TRIGGER fail_job04_audit BEFORE INSERT ON job_audit_events FOR EACH ROW EXECUTE FUNCTION fail_job04_audit()");
-        try {http.perform(put(route).header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isInternalServerError());}
+        try {http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isInternalServerError());}
         finally {database.execute("DROP TRIGGER fail_job04_audit ON job_audit_events");database.execute("DROP FUNCTION fail_job04_audit()");}
         http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
-        http.perform(get("/api/admin/job-revisions/"+revision).header("Authorization",admin)).andExpect(jsonPath("$.data.state").value("PENDING_REVIEW"));
+        http.perform(get("/api/staff/job-revisions/"+revision).header("Authorization",staff)).andExpect(jsonPath("$.data.state").value("PENDING_REVIEW"));
         assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE job_id=?",Long.class,job)).isZero();
         database.execute("CREATE FUNCTION fail_job04_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.job_id="+job+" THEN RAISE EXCEPTION 'controlled delivery failure'; END IF; RETURN NEW; END $$");
         database.execute("CREATE TRIGGER fail_job04_delivery BEFORE INSERT ON user_notifications FOR EACH ROW EXECUTE FUNCTION fail_job04_delivery()");
-        try {http.perform(put(route).header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());}
+        try {http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());}
         finally {database.execute("DROP TRIGGER fail_job04_delivery ON user_notifications");database.execute("DROP FUNCTION fail_job04_delivery()");}
         http.perform(get("/api/jobs/"+job)).andExpect(status().isOk());
         assertThat(database.queryForObject("SELECT count(*) FROM user_notifications WHERE job_id=?",Long.class,job)).isZero();
         clock.now=clock.now.plusSeconds(31);dispatcher.dispatchDue();dispatcher.dispatchDue();
-        http.perform(get("/api/me/notifications").header("Authorization",admin)).andExpect(jsonPath("$.data.content[?(@.jobId == "+job+")]").isNotEmpty());
+        http.perform(get("/api/me/notifications").header("Authorization",staff)).andExpect(jsonPath("$.data.content[?(@.jobId == "+job+")]").isNotEmpty());
         assertThat(database.queryForObject("SELECT count(*) FROM user_notifications WHERE job_id=?",Long.class,job)).isEqualTo(1);
     }
     @Test void requestRollbackDoesNotPersistExpiryAndWorkerCommitsItExactlyOnce() throws Exception {
         String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
         var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());var p=pending(owner,fields);
         long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",admin(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
         clock.now=deadline;
         new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(tx->{
             try {http.perform(get("/api/jobs/"+job)).andExpect(jsonPath("$.data.publicationStatus").value("EXPIRED"));}
@@ -155,12 +160,12 @@ class JobPublicationHttpTest {
     @Test void competingApprovalRejectionAndWithdrawalHaveExactlyOneWinner() throws Exception {
         for(String rival:java.util.List.of("REJECTED","WITHDRAWN")) {
           String owner=account(),moderator=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-          var p=pending(owner,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();String admin=admin(moderator);
-          String route="/api/admin/job-revisions/"+revision+"/decision",approval=decision(p,"APPROVED",null),rejection=decision(p,"REJECTED","Correct the location");
+          var p=pending(owner,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();String staff=staff(moderator);
+          String route="/api/staff/job-revisions/"+revision+"/decision",approval=decision(p,"APPROVED",null),rejection=decision(p,"REJECTED","Correct the location");
           try(var connection=database.getDataSource().getConnection();var workers=java.util.concurrent.Executors.newFixedThreadPool(2)) {
             connection.setAutoCommit(false);try(var lock=connection.prepareStatement("SELECT id FROM companies WHERE id=? FOR UPDATE")){lock.setLong(1,company);lock.executeQuery().close();}
-            var first=workers.submit(()->http.perform(put(route).header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(approval)).andReturn().getResponse().getStatus());
-            String rivalToken=rival.equals("WITHDRAWN")?owner:admin(account());
+            var first=workers.submit(()->http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(approval)).andReturn().getResponse().getStatus());
+            String rivalToken=rival.equals("WITHDRAWN")?owner:staff(account());
             var second=workers.submit(()->rival.equals("WITHDRAWN")?
                 http.perform(post(JOBS+"/"+job+"/revisions/"+revision+"/withdraw").header("Authorization",rivalToken).contentType(MediaType.APPLICATION_JSON).content(confirm(p,true))).andReturn().getResponse().getStatus():
                 http.perform(put(route).header("Authorization",rivalToken).contentType(MediaType.APPLICATION_JSON).content(rejection)).andReturn().getResponse().getStatus());
@@ -181,7 +186,7 @@ class JobPublicationHttpTest {
         database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
         var p=pending(recruiter,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();
         database.update("INSERT INTO job_assignments(job_id,company_id,membership_id,membership_joined_at,assigned_by_user_id,assigned_at,ended_at,end_reason,ended_by_user_id) SELECT ?,company_id,id,joined_at,?,now(),now(),'UNASSIGNED',user_id FROM company_memberships WHERE id=?",job,userId(owner),oldMember);
-        http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",admin(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
         http.perform(get("/api/me/notifications").header("Authorization",owner)).andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isNotEmpty());
         http.perform(get("/api/me/notifications").header("Authorization",recruiter)).andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isNotEmpty());
         http.perform(get("/api/me/notifications").header("Authorization",former)).andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isEmpty());
@@ -192,8 +197,8 @@ class JobPublicationHttpTest {
         body.put("expectedRevisionVersion",pending.path("workingRevision").path("version").asLong());body.put("outcome",outcome);if(reason!=null)body.put("reason",reason);
         return mapper.writeValueAsString(body);
     }
-    String admin(String token)throws Exception {
-        long id=userId(token);database.update("UPDATE users SET role='ADMIN' WHERE id=?",id);
+    String staff(String token)throws Exception {
+        long id=userId(token);database.update("UPDATE users SET role='STAFF' WHERE id=?",id);
         String email=database.queryForObject("SELECT email FROM users WHERE id=?",String.class,id);
         return "Bearer "+mapper.readTree(http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(Map.of("usernameOrEmail",email,"password","Password123")))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data").path("accessToken").asText();

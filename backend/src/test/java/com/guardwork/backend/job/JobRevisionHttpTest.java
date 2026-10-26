@@ -35,8 +35,8 @@ class JobRevisionHttpTest {
     @Test void rejectedContentDerivesDistinctDraftAndPreservesFeedback() throws Exception {
       String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
       var fields=complete();var d=create(owner,fields);long job=d.path("id").asLong(),source=d.path("workingRevision").path("id").asLong();
-      var pending=submit(owner,d);String admin=admin(owner);
-      http.perform(put("/api/admin/job-revisions/"+source+"/decision").header("Authorization",admin).contentType(MediaType.APPLICATION_JSON)
+      var pending=submit(owner,d);String staff=staff(owner);
+      http.perform(put("/api/staff/job-revisions/"+source+"/decision").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON)
         .content(decision(pending,"REJECTED","Please correct the benefits"))).andExpect(status().isOk());
       var current=inspect(owner,job);
       var derived=mapper.readTree(http.perform(post(JOBS+"/"+job+"/draft").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON)
@@ -49,11 +49,11 @@ class JobRevisionHttpTest {
         .andExpect(jsonPath("$.data.totalElements").value(2)).andExpect(jsonPath("$.data.content[0].state").value("REJECTED"))
         .andExpect(jsonPath("$.data.content[0].rejectionReason").value("Please correct the benefits"))
         .andExpect(jsonPath("$.data.content[1].sourceRevisionId").value(source));
-      http.perform(get("/api/admin/jobs/"+job+"/revisions").header("Authorization",admin))
+      http.perform(get("/api/staff/jobs/"+job+"/revisions").header("Authorization",staff))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
       var evidence=history(owner,job).get(0);
       fields.put("title","Corrected benefits");var corrected=save(owner,derived,fields);var resubmitted=submit(owner,corrected);
-      decide(admin,resubmitted,"APPROVED");
+      decide(staff,resubmitted,"APPROVED");
       http.perform(get("/api/jobs/"+job)).andExpect(status().isOk()).andExpect(jsonPath("$.data.content.title").value("Corrected benefits"));
       assertThat(history(owner,job).get(0)).isEqualTo(evidence);
       assertThat(history(owner,job).get(1).path("state").asText()).isEqualTo("APPROVED");
@@ -84,34 +84,34 @@ class JobRevisionHttpTest {
     }
     @Test void pendingReplacementNeverLeaksAndRejectionWithdrawalPreserveApprovedContent() throws Exception {
       String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-      var original=complete();original.put("title","Approved original");var pending=submit(owner,create(owner,original));String admin=admin(owner);
-      decide(admin,pending,"APPROVED");long job=pending.path("id").asLong(),approved=pending.path("workingRevision").path("id").asLong();
+      var original=complete();original.put("title","Approved original");var pending=submit(owner,create(owner,original));String staff=staff(owner);
+      decide(staff,pending,"APPROVED");long job=pending.path("id").asLong(),approved=pending.path("workingRevision").path("id").asLong();
       var base=inspect(owner,job);var draft=derive(owner,base,approved);
       original.put("title","Private replacement");original.put("deadline","2099-12-15T12:00:00+07:00");
       draft=save(owner,draft,original);
       publicTitle(job,"Approved original");
       var replacement=submit(owner,draft);publicTitle(job,"Approved original");
       assertThat(inspect(owner,job).path("approvedDeadline").asText()).isEqualTo("2099-12-01T05:00:00Z");
-      decide(admin,replacement,"REJECTED");publicTitle(job,"Approved original");
+      decide(staff,replacement,"REJECTED");publicTitle(job,"Approved original");
       var second=derive(owner,inspect(owner,job),null);var secondPending=submit(owner,second);withdraw(owner,secondPending);
       publicTitle(job,"Approved original");var third=derive(owner,inspect(owner,job),null);
       var evidence=history(owner,job);assertThat(evidence.get(3).path("sourceRevisionId").asLong()).isEqualTo(evidence.get(2).path("id").asLong());
       assertThat(evidence.get(2).path("state").asText()).isEqualTo("WITHDRAWN");
       assertThat(evidence.get(2).path("withdrawnAt").asText()).isNotBlank();
-      var thirdPending=submit(owner,third);decide(admin,thirdPending,"APPROVED");publicTitle(job,"Private replacement");
+      var thirdPending=submit(owner,third);decide(staff,thirdPending,"APPROVED");publicTitle(job,"Private replacement");
       assertThat(inspect(owner,job).path("approvedDeadline").asText()).isEqualTo("2099-12-15T05:00:00Z");
       assertThat(history(owner,job).get(0)).isEqualTo(evidence.get(0));assertThat(history(owner,job).get(1)).isEqualTo(evidence.get(1));
-      http.perform(get("/api/admin/jobs/"+job+"/revisions").header("Authorization",admin)).andExpect(status().isOk())
+      http.perform(get("/api/staff/jobs/"+job+"/revisions").header("Authorization",staff)).andExpect(status().isOk())
         .andExpect(jsonPath("$.data.totalElements").value(4));
     }
     @Test void approvingPendingExtensionAfterOldDeadlinePreservesExpiry() throws Exception {
       String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
       var original=complete();var oldDeadline=clock.now.plusSeconds(30);original.put("deadline",oldDeadline.toString());original.put("title","Original");
-      var p=submit(owner,create(owner,original));String admin=admin(owner);decide(admin,p,"APPROVED");long job=p.path("id").asLong();
+      var p=submit(owner,create(owner,original));String staff=staff(owner);decide(staff,p,"APPROVED");long job=p.path("id").asLong();
       var draft=derive(owner,inspect(owner,job),null);original.put("deadline",oldDeadline.plusSeconds(120).toString());original.put("title","Extension");
       var replacement=submit(owner,save(owner,draft,original));publicTitle(job,"Original");clock.now=oldDeadline;
-      http.perform(put("/api/admin/job-revisions/"+replacement.path("workingRevision").path("id").asLong()+"/decision")
-        .header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(decision(replacement,"APPROVED",null)))
+      http.perform(put("/api/staff/job-revisions/"+replacement.path("workingRevision").path("id").asLong()+"/decision")
+        .header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(decision(replacement,"APPROVED",null)))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.publicationStatus").value("EXPIRED"));
       http.perform(get("/api/jobs/"+job)).andExpect(status().isOk()).andExpect(jsonPath("$.data.content.title").value("Extension"))
         .andExpect(jsonPath("$.data.publicationStatus").value("EXPIRED")).andExpect(jsonPath("$.data.applicationsAvailable").value(false));
@@ -177,8 +177,8 @@ class JobRevisionHttpTest {
       return mapper.readTree(http.perform(put(JOBS+"/"+d.path("id").asLong()+"/draft").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON)
         .content(saveBody(d,c))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
     }
-    void decide(String admin,com.fasterxml.jackson.databind.JsonNode pending,String outcome)throws Exception {
-      http.perform(put("/api/admin/job-revisions/"+pending.path("workingRevision").path("id").asLong()+"/decision").header("Authorization",admin)
+    void decide(String staff,com.fasterxml.jackson.databind.JsonNode pending,String outcome)throws Exception {
+      http.perform(put("/api/staff/job-revisions/"+pending.path("workingRevision").path("id").asLong()+"/decision").header("Authorization",staff)
         .contentType(MediaType.APPLICATION_JSON).content(decision(pending,outcome,outcome.equals("REJECTED")?"Please correct the benefits":null))).andExpect(status().isOk());
     }
     void withdraw(String owner,com.fasterxml.jackson.databind.JsonNode pending)throws Exception {
@@ -197,8 +197,8 @@ class JobRevisionHttpTest {
         body.put("expectedRevisionVersion",pending.path("workingRevision").path("version").asLong());body.put("outcome",outcome);if(reason!=null)body.put("reason",reason);
         return mapper.writeValueAsString(body);
     }
-    String admin(String token)throws Exception {
-        long id=userId(token);database.update("UPDATE users SET role='ADMIN' WHERE id=?",id);
+    String staff(String token)throws Exception {
+        long id=userId(token);database.update("UPDATE users SET role='STAFF' WHERE id=?",id);
         String email=database.queryForObject("SELECT email FROM users WHERE id=?",String.class,id);
         return "Bearer "+mapper.readTree(http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
             .content(mapper.writeValueAsString(Map.of("usernameOrEmail",email,"password","Password123")))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data").path("accessToken").asText();

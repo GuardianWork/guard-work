@@ -71,7 +71,7 @@ and option/type consistency are checked at submission. Clients render all text s
 ## Persistence and delivery
 
 The single additive Flyway migration is
-`V2026.10.20.78__job_publishing_and_assignments.sql`. It creates Job Postings,
+`V2026.10.26.83__job_publishing_and_assignments.sql`. It creates Job Postings,
 Revisions, Assignments and append-only job audit events, with same-job revision references,
 one working revision, approved deadline/pointer consistency and immutable submitted/terminal
 history protections for subsequent slices. Assignment history retains its Company and
@@ -130,11 +130,11 @@ existing pending revision. Every accepted submission/withdrawal records an immut
 audit event in the same transaction. Submitted and terminal history is protected by the
 existing PostgreSQL triggers; no new migration is introduced by ticket 03.
 
-Platform Administrators use `GET /api/admin/job-revisions`, with `status` defaulting to
+Platform Staff members use `GET /api/staff/job-revisions`, with `status` defaulting to
 PENDING_REVIEW or APPROVED/REJECTED/WITHDRAWN/ALL, `page=0`, and `size=20` (1–100).
-Ordering is `submittedAt ASC, id ASC`. `GET /api/admin/job-revisions/{revisionId}` exposes
+Ordering is `submittedAt ASC, id ASC`. `GET /api/staff/job-revisions/{revisionId}` exposes
 exact submitted content, versions, attribution and current approval eligibility.
-`GET /api/admin/jobs/{jobId}/revisions` returns submitted history ordered by revision
+`GET /api/staff/jobs/{jobId}/revisions` returns submitted history ordered by revision
 number. Editable drafts are excluded from every moderation response. All services recheck
 current User authority; Company Admin does not grant platform moderation authority.
 
@@ -217,3 +217,29 @@ checks. Approval replaces approved content while preserving PAUSED, CLOSED or EX
 approved deadline is reconciled before replacement, so an extension cannot reopen an expired job.
 Private `availableActions` reflects current effective state, working revision, Company verification,
 responsibility and draft validity. No Application subsystem, frontend or migration is added.
+
+## Integration with `cc8943ab`
+
+Platform moderation uses persisted `STAFF` authority and `/api/staff/...` routes,
+matching the baseline role migration and retired `/api/admin/**` contract. Company
+`ADMIN` remains a separate role and does not gain moderation rights. Public and
+Company job routes retain their existing payloads and authorization boundaries.
+
+The unchanged job migration is ordered after the baseline as
+`V2026.10.26.83__job_publishing_and_assignments.sql`.
+`JobMigrationCompatibilityTest` creates the baseline schema through `.82`, adds
+representative existing Staff and legacy notification data, then migrates normally
+and verifies retained data, additive nullable job context, validation and an
+idempotent rerun. All 13 baseline migration files remain byte-identical to
+`cc8943ab`. Fresh database migration is also covered by normal test startup.
+See [ADR 0007](../architecture/decisions/0007-job-integration-migration-and-staff.md)
+for the user-approved renumbering and disposable local database rebuild.
+
+Verification on 2026-10-26: `./mvnw test` passed all 272 tests. After adding final
+legacy-notification preservation and retired-job-URL assertions, the focused
+`JobMigrationCompatibilityTest`, `JobPublicationHttpTest` and
+`JobSubmissionHttpTest` run passed 15 tests. `./mvnw -DskipTests package` passed,
+reusing the completed test runs. The authorized local `backend_db` rebuild applied
+and validated all 14 migrations and restored the five standard demo accounts.
+The separate review finding about NUL in moderation rejection reasons remains
+outside this migration/Staff integration change.

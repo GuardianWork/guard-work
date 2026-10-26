@@ -286,11 +286,11 @@ docker compose -f docker-compose.test.yml up -d --wait  # start test database on
 
 ### Job publication and expiry
 
-Platform Administrators decide pending submitted revisions with
-`PUT /api/admin/job-revisions/{revisionId}/decision`, providing the current job and
+Platform Staff members decide pending submitted revisions with
+`PUT /api/staff/job-revisions/{revisionId}/decision`, providing the current job and
 revision versions, `outcome` (`APPROVED` or `REJECTED`), and a trimmed 10–1,000
 character rejection reason when rejecting. Company membership does not restrict
-platform review, including review of the administrator's own Company. Decisions
+platform review, including review of the Staff member's own Company. Decisions
 preserve submitted content and record both job and platform audit facts. Approval
 rechecks Company verification, suspension, current responsibility and the proposed
 deadline before publishing. Review recipients use the existing durable outbox and

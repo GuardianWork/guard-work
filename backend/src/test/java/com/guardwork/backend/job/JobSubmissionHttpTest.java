@@ -63,30 +63,30 @@ class JobSubmissionHttpTest {
             .content(saveBody(pending,Map.of("title","Changed")))).andExpect(status().isConflict());
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> database.update("UPDATE job_posting_revisions SET content='{}' WHERE id=?",revision))
             .isInstanceOf(org.springframework.dao.DataAccessException.class);
-        String admin=account(); long adminId=userId(admin);
-        database.update("UPDATE users SET role='ADMIN' WHERE id=?",adminId);
+        String staff=account(); long staffId=userId(staff);
+        database.update("UPDATE users SET role='STAFF' WHERE id=?",staffId);
         // Tokens must reflect the newly granted platform role; the live service check is additional protection.
-        http.perform(get("/api/admin/job-revisions").header("Authorization",owner)).andExpect(status().isForbidden());
+        http.perform(get("/api/staff/job-revisions").header("Authorization",owner)).andExpect(status().isForbidden());
         String login=http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
-            .content(mapper.writeValueAsString(Map.of("usernameOrEmail",database.queryForObject("SELECT email FROM users WHERE id=?",String.class,adminId),"password","Password123"))))
+            .content(mapper.writeValueAsString(Map.of("usernameOrEmail",database.queryForObject("SELECT email FROM users WHERE id=?",String.class,staffId),"password","Password123"))))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        admin="Bearer "+mapper.readTree(login).path("data").path("accessToken").asText();
-        http.perform(get("/api/admin/job-revisions/"+revision).header("Authorization",admin)).andExpect(status().isOk())
+        staff="Bearer "+mapper.readTree(login).path("data").path("accessToken").asText();
+        http.perform(get("/api/staff/job-revisions/"+revision).header("Authorization",staff)).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.content.description").value("Dòng một\nDòng hai"))
             .andExpect(jsonPath("$.data.approvalEligible").value(true));
         var editable=create(owner,Map.of());
-        http.perform(get("/api/admin/job-revisions/"+editable.path("workingRevision").path("id").asLong()).header("Authorization",admin))
+        http.perform(get("/api/staff/job-revisions/"+editable.path("workingRevision").path("id").asLong()).header("Authorization",staff))
             .andExpect(status().isNotFound());
-        http.perform(get("/api/admin/jobs/"+job+"/revisions").header("Authorization",admin))
+        http.perform(get("/api/staff/jobs/"+job+"/revisions").header("Authorization",staff))
             .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
-        http.perform(get("/api/admin/job-revisions?status=DRAFT").header("Authorization",admin)).andExpect(status().isBadRequest());
-        http.perform(get("/api/admin/job-revisions?status=ALL&size=1").header("Authorization",admin)).andExpect(status().isOk());
+        http.perform(get("/api/staff/job-revisions?status=DRAFT").header("Authorization",staff)).andExpect(status().isBadRequest());
+        http.perform(get("/api/staff/job-revisions?status=ALL&size=1").header("Authorization",staff)).andExpect(status().isOk());
         http.perform(post(route+"/withdraw").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON)
             .content(confirm(pending,true))).andExpect(status().isOk()).andExpect(jsonPath("$.data.workingRevision").isEmpty());
         http.perform(get(JOBS+"/"+job+"/draft/preview").header("Authorization",owner)).andExpect(status().isConflict());
-        http.perform(get("/api/admin/job-revisions/"+revision).header("Authorization",admin)).andExpect(status().isOk())
+        http.perform(get("/api/staff/job-revisions/"+revision).header("Authorization",staff)).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.state").value("WITHDRAWN")).andExpect(jsonPath("$.data.withdrawnAt").isNotEmpty());
-        http.perform(get("/api/admin/job-revisions?status=WITHDRAWN").header("Authorization",admin)).andExpect(status().isOk());
+        http.perform(get("/api/staff/job-revisions?status=WITHDRAWN").header("Authorization",staff)).andExpect(status().isOk());
         assertThat(database.queryForObject("SELECT state FROM job_posting_revisions WHERE id=?",String.class,revision)).isEqualTo("WITHDRAWN");
         assertThat(database.queryForObject("SELECT count(*) FROM job_posting_revisions WHERE job_id=?",Long.class,job)).isEqualTo(1);
         assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type IN ('JOB_REVISION_SUBMITTED','JOB_REVISION_WITHDRAWN')",Long.class,job)).isEqualTo(2);

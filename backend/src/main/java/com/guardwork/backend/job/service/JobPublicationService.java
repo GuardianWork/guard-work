@@ -47,7 +47,7 @@ public class JobPublicationService {
       Instant approvedDeadline,boolean applicationsAvailable,String applicationAvailabilityReason) {}
 
   public Receipt decide(Long actor,Long revisionId,Decision request,String ip,String agent) {
-    reviews.requireAdmin(actor);
+    reviews.requireStaff(actor);
     var hint=revisions.findById(revisionId).filter(r->!"DRAFT".equals(r.getState())).orElseThrow(JobDraftService::notFound);
     var jobHint=jobs.findById(hint.getJobId()).orElseThrow(JobDraftService::notFound);
     var company=companies.findByIdForUpdate(jobHint.getCompanyId()).orElseThrow(JobDraftService::notFound);

@@ -9,7 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class JobLifecycleHttpTest extends JobRevisionHttpTest {
  @Test void ownerPausesResumesAndClosesWithoutChangingApprovedContent() throws Exception {
   String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-  var pending=submit(owner,create(owner,complete()));String admin=admin(owner);decide(admin,pending,"APPROVED");long job=pending.path("id").asLong();
+  var pending=submit(owner,create(owner,complete()));String staff=staff(owner);decide(staff,pending,"APPROVED");long job=pending.path("id").asLong();
   var published=inspect(owner,job);
   assertThat(published.path("availableActions").toString()).contains("CREATE_DRAFT","PAUSE","CLOSE");
   http.perform(post(JOBS+"/"+job+"/pause").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(version(published)))
@@ -26,7 +26,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
  @Test void effectiveExpiryBlocksDraftChangesAndFiltersPrivateListBeforeWorker() throws Exception {
   String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
   var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());
-  var pending=submit(owner,create(owner,fields));decide(admin(owner),pending,"APPROVED");long job=pending.path("id").asLong();
+  var pending=submit(owner,create(owner,fields));decide(staff(owner),pending,"APPROVED");long job=pending.path("id").asLong();
   var draft=derive(owner,inspect(owner,job),null);fields.put("deadline",deadline.plusSeconds(120).toString());draft=save(owner,draft,fields);
   clock.now=deadline;
   http.perform(get(JOBS+"?status=EXPIRED").header("Authorization",owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1)).andExpect(jsonPath("$.data.content[0].status").value("EXPIRED"));
@@ -42,7 +42,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
   for(String state:java.util.List.of("PAUSED","CLOSED","EXPIRED")) {
    String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
    var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());fields.put("title","Original");
-   var original=submit(owner,create(owner,fields));String admin=admin(owner);decide(admin,original,"APPROVED");long job=original.path("id").asLong();
+   var original=submit(owner,create(owner,fields));String staff=staff(owner);decide(staff,original,"APPROVED");long job=original.path("id").asLong();
    var draft=derive(owner,inspect(owner,job),null);fields.put("title","Retained replacement");fields.put("deadline",deadline.plusSeconds(120).toString());
    var replacement=submit(owner,save(owner,draft,fields));
    if(!state.equals("EXPIRED"))lifecycle(owner,replacement,state.equals("PAUSED")?"pause":"close").andExpect(status().isOk());
@@ -52,7 +52,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
    http.perform(get("/api/jobs/"+job)).andExpect(jsonPath("$.data.content.title").value("Original"));
    // Reload after public request-time expiry reconciliation as a real review client would.
    current=inspect(owner,job);
-   http.perform(put("/api/admin/job-revisions/"+replacement.path("workingRevision").path("id").asLong()+"/decision").header("Authorization",admin)
+   http.perform(put("/api/staff/job-revisions/"+replacement.path("workingRevision").path("id").asLong()+"/decision").header("Authorization",staff)
     .contentType(MediaType.APPLICATION_JSON).content(decision(current,"APPROVED",null))).andExpect(status().isOk()).andExpect(jsonPath("$.data.publicationStatus").value(state));
    http.perform(get("/api/jobs/"+job)).andExpect(jsonPath("$.data.content.title").value("Retained replacement"))
     .andExpect(jsonPath("$.data.applicationsAvailable").value(false)).andExpect(jsonPath("$.data.applicationAvailabilityReason").value(state));
@@ -66,15 +66,15 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
  @Test void terminalPendingReviewsCanBeWithdrawnOrRejectedAndExistingDraftStaysReadable() throws Exception {
   for(String outcome:java.util.List.of("WITHDRAWN","REJECTED")) {
    String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-   var original=submit(owner,create(owner,complete()));String admin=admin(owner);decide(admin,original,"APPROVED");long job=original.path("id").asLong();
+   var original=submit(owner,create(owner,complete()));String staff=staff(owner);decide(staff,original,"APPROVED");long job=original.path("id").asLong();
    var replacement=submit(owner,derive(owner,inspect(owner,job),null));lifecycle(owner,replacement,"close").andExpect(status().isOk());var current=inspect(owner,job);
    assertThat(current.path("availableActions").toString()).contains("WITHDRAW").doesNotContain("SUBMIT","CREATE_DRAFT");
-   if(outcome.equals("WITHDRAWN"))withdraw(owner,current);else decide(admin,current,"REJECTED");
+   if(outcome.equals("WITHDRAWN"))withdraw(owner,current);else decide(staff,current,"REJECTED");
    assertThat(history(owner,job).get(1).path("state").asText()).isEqualTo(outcome);
    assertThat(inspect(owner,job).path("status").asText()).isEqualTo("CLOSED");
   }
   String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-  var p=submit(owner,create(owner,complete()));decide(admin(owner),p,"APPROVED");long job=p.path("id").asLong();var draft=derive(owner,inspect(owner,job),null);
+  var p=submit(owner,create(owner,complete()));decide(staff(owner),p,"APPROVED");long job=p.path("id").asLong();var draft=derive(owner,inspect(owner,job),null);
   lifecycle(owner,draft,"close").andExpect(status().isOk());var closed=inspect(owner,job);
   http.perform(put(JOBS+"/"+job+"/draft").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(saveBody(closed,complete()))).andExpect(status().isConflict());
   http.perform(get(JOBS+"/"+job+"/draft/preview").header("Authorization",owner)).andExpect(status().isOk()).andExpect(jsonPath("$.data.submissionEligible").value(false));
@@ -84,7 +84,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
   for(String action:java.util.List.of("pause","close")) {
    String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
    var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());
-   var p=submit(owner,create(owner,fields));decide(admin(owner),p,"APPROVED");long job=p.path("id").asLong();
+   var p=submit(owner,create(owner,fields));decide(staff(owner),p,"APPROVED");long job=p.path("id").asLong();
    lifecycle(owner,inspect(owner,job),action).andExpect(status().isOk());var prior=inspect(owner,job);clock.now=deadline;
    if(action.equals("pause")) {
     lifecycle(owner,prior,"resume").andExpect(status().isConflict());
@@ -99,14 +99,14 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
  }
  @org.springframework.beans.factory.annotation.Autowired com.guardwork.backend.job.service.JobExpiryService expiry;
  @Test void competingPauseAndReviewAtOldDeadlineCannotExtendRecruitment() throws Exception {
-  String owner=account(),moderator=admin(account());long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
+  String owner=account(),moderator=staff(account());long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
   var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());var p=submit(owner,create(owner,fields));decide(moderator,p,"APPROVED");long job=p.path("id").asLong();
   var draft=derive(owner,inspect(owner,job),null);fields.put("deadline",deadline.plusSeconds(120).toString());var replacement=submit(owner,save(owner,draft,fields));
   String reviewBody=decision(replacement,"APPROVED",null),pauseBody=version(replacement);long revision=replacement.path("workingRevision").path("id").asLong();
   try(var connection=database.getDataSource().getConnection();var workers=java.util.concurrent.Executors.newFixedThreadPool(2)) {
    connection.setAutoCommit(false);try(var lock=connection.prepareStatement("SELECT id FROM companies WHERE id=? FOR UPDATE")){lock.setLong(1,company);lock.executeQuery().close();}
    var pause=workers.submit(()->http.perform(post(JOBS+"/"+job+"/pause").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(pauseBody)).andReturn().getResponse().getStatus());
-   var approval=workers.submit(()->http.perform(put("/api/admin/job-revisions/"+revision+"/decision").header("Authorization",moderator).contentType(MediaType.APPLICATION_JSON).content(reviewBody)).andReturn().getResponse().getStatus());
+   var approval=workers.submit(()->http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",moderator).contentType(MediaType.APPLICATION_JSON).content(reviewBody)).andReturn().getResponse().getStatus());
    try{awaitLocks(2);clock.now=deadline;connection.commit();}finally{connection.rollback();}
    assertThat(pause.get(10,java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(409);
    assertThat(approval.get(10,java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
@@ -120,7 +120,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
  }
  @Test void lifecycleAuditFailureRollsBackPublicationStateWithoutTouchingPendingHistory() throws Exception {
   String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-  var p=submit(owner,create(owner,complete()));decide(admin(owner),p,"APPROVED");long job=p.path("id").asLong();var replacement=submit(owner,derive(owner,inspect(owner,job),null));var before=history(owner,job);
+  var p=submit(owner,create(owner,complete()));decide(staff(owner),p,"APPROVED");long job=p.path("id").asLong();var replacement=submit(owner,derive(owner,inspect(owner,job),null));var before=history(owner,job);
   database.execute("CREATE FUNCTION gw78_lifecycle_fail() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'controlled failure'; END; $$ LANGUAGE plpgsql");
   database.execute("CREATE TRIGGER gw78_lifecycle_fail BEFORE INSERT ON job_audit_events FOR EACH ROW WHEN (NEW.job_id="+job+" AND NEW.event_type='JOB_PAUSED') EXECUTE FUNCTION gw78_lifecycle_fail()");
   try{lifecycle(owner,replacement,"pause").andExpect(status().isInternalServerError());}
@@ -130,7 +130,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
 
  @Test void lifecycleRechecksMembershipVersionsAndResumeCompanyEligibility() throws Exception {
   String owner=account(),recruiter=account(),outsider=account(),otherOwner=account();long company=createdCompany(owner);createdCompany(otherOwner);long member=recruiter(company,recruiter);
-  database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);var p=submit(recruiter,create(recruiter,complete()));decide(admin(owner),p,"APPROVED");long job=p.path("id").asLong();var published=inspect(owner,job);
+  database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);var p=submit(recruiter,create(recruiter,complete()));decide(staff(owner),p,"APPROVED");long job=p.path("id").asLong();var published=inspect(owner,job);
   lifecycle(outsider,published,"pause").andExpect(status().isNotFound());lifecycle(otherOwner,published,"pause").andExpect(status().isNotFound());
   http.perform(post(JOBS+"/"+job+"/pause").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content("{}"))
    .andExpect(status().isBadRequest());
@@ -148,21 +148,21 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
  }
  @Test void finalResponsibleLossPreservesPublicationAndBlocksReplacementUntilResponsibilityReturns() throws Exception {
   String owner=account(),recruiter=account();long company=createdCompany(owner),member=recruiter(company,recruiter);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-  var first=submit(recruiter,create(recruiter,complete()));String admin=admin(owner);decide(admin,first,"APPROVED");long job=first.path("id").asLong();
+  var first=submit(recruiter,create(recruiter,complete()));String staff=staff(owner);decide(staff,first,"APPROVED");long job=first.path("id").asLong();
   var replacement=submit(owner,derive(owner,inspect(owner,job),null));
   http.perform(delete(JOBS+"/"+job+"/assignments/"+member+"?expectedJobVersion="+replacement.path("version").asLong()).header("Authorization",owner)).andExpect(status().isOk());
   var current=inspect(owner,job);assertThat(current.path("needsReassignment").asBoolean()).isTrue();
   http.perform(get("/api/jobs/"+job)).andExpect(jsonPath("$.data.applicationsAvailable").value(true));
-  http.perform(put("/api/admin/job-revisions/"+replacement.path("workingRevision").path("id").asLong()+"/decision").header("Authorization",admin).contentType(MediaType.APPLICATION_JSON).content(decision(current,"APPROVED",null)))
+  http.perform(put("/api/staff/job-revisions/"+replacement.path("workingRevision").path("id").asLong()+"/decision").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(decision(current,"APPROVED",null)))
    .andExpect(status().isConflict()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("RESPONSIBILITY_REQUIRED")));
   http.perform(put(JOBS+"/"+job+"/owner-responsibility").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON)
    .content(mapper.writeValueAsString(java.util.Map.of("expectedJobVersion",current.path("version").asLong(),"responsible",true)))).andExpect(status().isOk());
-  decide(admin,inspect(owner,job),"APPROVED");
+  decide(staff,inspect(owner,job),"APPROVED");
  }
 
  @Test void withdrawingRetainedReviewAtDeadlineCommitsExpiryAndKeepsHistory() throws Exception {
   String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
-  var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());var first=submit(owner,create(owner,fields));decide(admin(owner),first,"APPROVED");long job=first.path("id").asLong();
+  var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());var first=submit(owner,create(owner,fields));decide(staff(owner),first,"APPROVED");long job=first.path("id").asLong();
   var draft=derive(owner,inspect(owner,job),null);fields.put("deadline",deadline.plusSeconds(120).toString());var replacement=submit(owner,save(owner,draft,fields));
   lifecycle(owner,replacement,"pause").andExpect(status().isOk());var paused=inspect(owner,job);clock.now=deadline;withdraw(owner,paused);
   assertThat(database.queryForObject("SELECT status FROM job_postings WHERE id=?",String.class,job)).isEqualTo("EXPIRED");

@@ -33,24 +33,24 @@ public class JobReviewQueueService {
       Long reviewerUserId, Instant decidedAt, String rejectionReason, Long withdrawerUserId, Instant withdrawnAt,
       boolean companyVerified, boolean companySuspended, boolean needsReassignment,
       boolean approvalEligible, List<DraftContent.ValidationIssue> validationIssues) {}
-  public void requireAdmin(Long actor) {
+  public void requireStaff(Long actor) {
     var user=users.findByIdForUpdate(actor).orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED,"40100 UNAUTHORIZED"));
     if (!"ACTIVE".equals(user.getStatus())) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40304 ACCOUNT_SUSPENDED");
-    if (!"ADMIN".equals(user.getRole())) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40300 FORBIDDEN: Platform Administrator required");
+    if (!"STAFF".equals(user.getRole())) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40300 FORBIDDEN: Platform Staff required");
   }
   public PageResponse<Review> queue(Long actor, String status, int page, int size) {
-    requireAdmin(actor); paging(page,size);
+    requireStaff(actor); paging(page,size);
     if (!Set.of("PENDING_REVIEW","APPROVED","REJECTED","WITHDRAWN","ALL").contains(status)) throw DraftContent.invalid("status");
     Specification<JobRevision> filter=(r,q,c)-> status.equals("ALL") ? c.notEqual(r.get("state"),"DRAFT") : c.equal(r.get("state"),status);
     var result=revisions.findAll(filter,PageRequest.of(page,size,Sort.by("submittedAt","id")));
     return PageResponse.of(result.stream().map(this::review).toList(),page,size,result.getTotalElements());
   }
   public Review inspect(Long actor, Long id) {
-    requireAdmin(actor);
+    requireStaff(actor);
     return review(revisions.findById(id).filter(r->!"DRAFT".equals(r.getState())).orElseThrow(JobDraftService::notFound));
   }
   public PageResponse<Review> history(Long actor, Long jobId, int page, int size) {
-    requireAdmin(actor); paging(page,size);
+    requireStaff(actor); paging(page,size);
     if (!jobs.existsById(jobId)) throw JobDraftService.notFound();
     Specification<JobRevision> filter=(r,q,c)->c.and(c.equal(r.get("jobId"),jobId),c.notEqual(r.get("state"),"DRAFT"));
     var result=revisions.findAll(filter,PageRequest.of(page,size,Sort.by("revisionNumber")));

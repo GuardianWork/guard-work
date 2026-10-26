@@ -7,7 +7,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/admin")
+@RequestMapping("/api/staff")
 public class JobReviewQueueController {
   private final JobReviewQueueService service;
   public JobReviewQueueController(JobReviewQueueService service) {this.service=service;}

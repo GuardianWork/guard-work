@@ -2,7 +2,7 @@
 # Run against a disposable local database at http://localhost:8080.
 # Run requests selectively; use fresh values for repeat registration runs.
 # Use a fresh username/email/tax code for each registration run.
-# Registration creates a USER account. Verification requests require an existing platform ADMIN token.
+# Registration creates a USER account. Verification requests require an existing platform STAFF token.
 # Copy accessToken and IDs/versions from the response into the variables below when prompted.
 
 @baseUrl = http://localhost:8080

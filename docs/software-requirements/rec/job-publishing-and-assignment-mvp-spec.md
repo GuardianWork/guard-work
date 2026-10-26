@@ -7,7 +7,7 @@
 | Module | Job Publishing and Assignments |
 | File | `job-publishing-and-assignment-mvp-spec.md` |
 | Version | 0.1.0 |
-| Date / Last Updated | 2026-10-21 |
+| Date / Last Updated | 2026-10-26 |
 | Owner | Thinh |
 | Named human approver | Thinh (retained from baseline) |
 | Status | Approved — explicit user approval recorded on 2026-10-20 |
@@ -15,7 +15,7 @@
 
 ## 1. Purpose and scope
 
-Deliver backend Company job drafting, responsibility management, revision submission and review, approved public detail, pause/resume/close, deadline expiry and associated in-app notifications. Include Platform Administrator queue, detail, revision history and approve/reject APIs. No frontend implementation is included.
+Deliver backend Company job drafting, responsibility management, revision submission and review, approved public detail, pause/resume/close, deadline expiry and associated in-app notifications. Include Platform Staff queue, detail, revision history and approve/reject APIs. No frontend implementation is included.
 
 Reopening, archiving, metrics, Platform Removal/appeals, search/discovery, Applications, interviews, offers and Company Admin capabilities are separate work. Existing Applications must eventually remain unaffected by closing/expiry; GW-78 introduces no Application storage, APIs, acceptance claims or synthetic metrics.
 
@@ -45,12 +45,12 @@ Only PUBLISHED and PAUSED jobs undergo deadline expiry. CLOSED remains CLOSED af
 
 | ID | Requirement |
 |---|---|
-| JP78-001 | Read current persisted User, Company, Company Membership and Job Assignment for every protected operation. Suspended Users, suspended Companies, inactive memberships and unrelated Companies cannot perform private job operations. Company Roles do not grant Platform Administrator powers. |
+| JP78-001 | Read current persisted User, Company, Company Membership and Job Assignment for every protected operation. Suspended Users, suspended Companies, inactive memberships and unrelated Companies cannot perform private job operations. Company Roles do not grant Platform Staff powers. |
 | JP78-002 | Owner may access/manage every job in their Company. Recruiter may access a job only while assigned through their current active membership period. A Recruiter creator receives an assignment atomically with job creation. Owner-created jobs start with Owner Responsibility enabled. |
 | JP78-003 | Only Owner may add/remove Recruiter assignments and enable/disable Owner Responsibility. Only active Recruiters of the same Company are assignable. Assignment takes effect immediately without acceptance; Recruiters cannot unassign themselves. |
 | JP78-004 | Membership departure/removal ends all assignments of that membership atomically with revocation, preserving assignment history. Rejoining grants no old assignments, including where existing persistence reuses a membership identity. |
 | JP78-005 | Having no responsible person is allowed. Derive `needsReassignment` when Owner Responsibility is false and no current active assigned Recruiter exists. This blocks submission/approval, flags the job and notifies Owner without unpublishing it. Restoration clears the flag. |
-| JP78-006 | Company Admin is not enabled. Platform Administrator can inspect/moderate any Company's submitted revisions, including their own Company. Platform authority alone grants no Company authoring/assignment power. |
+| JP78-006 | Company Admin is not enabled. Platform Staff can inspect/moderate any Company's submitted revisions, including their own Company. Platform authority alone grants no Company authoring/assignment power. |
 
 ## 4. Authoring, content and moderation
 
@@ -106,3 +106,7 @@ On 2026-10-20, after publication of the consolidated tracker issue, the user exp
 The backend scope is implemented on `GW-78-implement-job-publishing-and-assignment`. Ticket 01 was already complete; tickets 02–06 and the final review fix are merged into that branch. The frontend and the committed single job migration were unchanged by the remaining-ticket implementation.
 
 Verification passed: 250 backend tests, 46 final focused HTTP/security/PostgreSQL tests after the eligibility refactor, and Maven packaging. Specification review found no actionable gaps; standards review found no documented-rule violations, and its shared-eligibility duplication finding was addressed. See [backend workflow documentation](../../backend/job-drafts.md) and the backend README for routes and expiry configuration.
+
+## Integration amendment — 2026-10-26
+
+The user explicitly confirmed that Platform `STAFF` replaces the former Platform `ADMIN` terminology and authorized the migration renumbering described in [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md). Moderation reads current persisted `STAFF` authority; Company `ADMIN` remains excluded. Job moderation uses `/api/staff/...`, matching the baseline retirement of `/api/admin/**`; these job routes are new relative to `cc8943ab`. Compare integration behavior and migration ordering against `cc8943ab`.
