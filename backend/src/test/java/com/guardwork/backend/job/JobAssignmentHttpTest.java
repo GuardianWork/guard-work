@@ -1,7 +1,9 @@
 package com.guardwork.backend.job;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 class JobAssignmentHttpTest extends JobDraftHttpTest {
@@ -82,7 +84,7 @@ class JobAssignmentHttpTest extends JobDraftHttpTest {
    http.perform(get(JOBS+"/"+id).header("Authorization",recruiter)).andExpect(status().isNotFound());
    http.perform(get(JOBS+"/"+id).header("Authorization",owner)).andExpect(jsonPath("$.data.needsReassignment").value(true));
   } finally {database.execute("DROP TRIGGER gw78_removed_inbox_fail ON user_notifications");database.execute("DROP FUNCTION gw78_removed_inbox_fail()");}
-  var events=database.queryForList("SELECT event_id FROM notification_outbox WHERE recipient_user_id=?",java.util.UUID.class,recipient);
+  var events=database.queryForList("SELECT event_id FROM notification_outbox WHERE recipient_user_id=?",UUID.class,recipient);
   for(var event:events){dispatcher.replay(event);dispatcher.replay(event);}
   http.perform(get("/api/me/notifications").header("Authorization",recruiter)).andExpect(jsonPath("$.data.totalElements").value(3));
  }

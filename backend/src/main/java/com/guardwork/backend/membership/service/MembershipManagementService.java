@@ -1,6 +1,7 @@
 package com.guardwork.backend.membership.service;
 
 import com.guardwork.backend.common.PageResponse;
+import com.guardwork.backend.job.service.JobAssignmentService;
 import com.guardwork.backend.membership.dto.*;
 import com.guardwork.backend.membership.model.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
@@ -20,7 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class MembershipManagementService {
-  private final com.guardwork.backend.job.service.JobAssignmentService jobAssignments;
+  private final JobAssignmentService jobAssignments;
   private final CompanyAccessService access;
   private final CompanyMembershipRepository memberships;
   private final UserRepository users;
@@ -31,7 +32,7 @@ public class MembershipManagementService {
   private final TransactionTemplate transaction;
 
   public MembershipManagementService(
-      com.guardwork.backend.job.service.JobAssignmentService jobAssignments,
+      JobAssignmentService jobAssignments,
       CompanyAccessService access,
       CompanyMembershipRepository memberships,
       UserRepository users,

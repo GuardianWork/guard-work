@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -41,5 +42,5 @@ public class JobLifecycleService {
     Map.of("previousStatus",previous,"status",next,"jobVersion",job.getVersion()));
   return drafts.detail(job,drafts.working(job),scope);
  }
- private static org.springframework.web.server.ResponseStatusException state(){return JobSubmissionService.conflict("40978 JOB_STATE_CONFLICT: Invalid lifecycle transition");}
+ private static ResponseStatusException state(){return JobSubmissionService.conflict("40978 JOB_STATE_CONFLICT: Invalid lifecycle transition");}
 }

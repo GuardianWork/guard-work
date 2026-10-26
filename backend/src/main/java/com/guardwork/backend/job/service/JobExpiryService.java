@@ -1,8 +1,10 @@
 package com.guardwork.backend.job.service;
 
+import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.job.model.*;
 import com.guardwork.backend.job.repository.*;
-import com.guardwork.backend.company.repository.CompanyRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.Clock;
 import java.util.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,7 +24,7 @@ public class JobExpiryService {
   private final Clock clock;
   private final TransactionTemplate transaction;
   private final int batch;
-  @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager entities;
+  @PersistenceContext private EntityManager entities;
   public JobExpiryService(JobPostingRepository jobs,CompanyRepository companies,JobAuditEventRepository audit,
       Clock clock,PlatformTransactionManager manager,@Value("${jobs.expiry.batch-size:100}") int batch) {
     if(batch<1 || batch>1000)throw new IllegalArgumentException("Expiry batch must be 1–1000");

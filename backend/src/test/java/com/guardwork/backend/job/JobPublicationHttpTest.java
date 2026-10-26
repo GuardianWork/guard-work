@@ -1,18 +1,38 @@
 package com.guardwork.backend.job;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guardwork.backend.job.service.JobExpiryService;
+import com.guardwork.backend.notification.service.NotificationDispatcher;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.context.WebApplicationContext;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -20,7 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {"company.membership.notifications.worker-enabled=false", "jobs.expiry.worker-enabled=false"})
 @ActiveProfiles("test")
-@org.springframework.context.annotation.Import(JobPublicationHttpTest.TimeConfig.class)
+@Import(JobPublicationHttpTest.TimeConfig.class)
 class JobPublicationHttpTest {
     @Autowired WebApplicationContext context;
     @Autowired ObjectMapper mapper;
@@ -29,7 +49,7 @@ class JobPublicationHttpTest {
     MockMvc http;
     static final String JOBS = "/api/companies/me/jobs";
     @BeforeEach void setup() {
-        clock.now=java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+        clock.now=Instant.now().truncatedTo(ChronoUnit.MICROS);
         http = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
     @Test void ownCompanyStaffMemberPublishesOnlyApprovedSafeDetails() throws Exception {
@@ -113,13 +133,13 @@ class JobPublicationHttpTest {
         database.update("UPDATE companies SET is_banned=true WHERE id=?",company);
         http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
     }
-    com.fasterxml.jackson.databind.JsonNode pending(String owner,Map<String,Object> content)throws Exception {
+    JsonNode pending(String owner,Map<String,Object> content)throws Exception {
         var d=create(owner,content);return mapper.readTree(http.perform(post(JOBS+"/"+d.path("id").asLong()+"/revisions/"+d.path("workingRevision").path("id").asLong()+"/submit")
           .header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(confirm(d,true))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
     }
-    @Autowired com.guardwork.backend.job.service.JobExpiryService expiry;
-    @Autowired com.guardwork.backend.notification.service.NotificationDispatcher dispatcher;
-    @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
+    @Autowired JobExpiryService expiry;
+    @Autowired NotificationDispatcher dispatcher;
+    @Autowired PlatformTransactionManager transactions;
     @Test void failedDecisionRollsBackAllFactsAndNotificationDeliveryRecoversWithoutDuplicates() throws Exception {
         String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
         var p=pending(owner,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();String staff=staff(owner);
@@ -147,7 +167,7 @@ class JobPublicationHttpTest {
         long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();
         http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
         clock.now=deadline;
-        new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(tx->{
+        new TransactionTemplate(transactions).executeWithoutResult(tx->{
             try {http.perform(get("/api/jobs/"+job)).andExpect(jsonPath("$.data.publicationStatus").value("EXPIRED"));}
             catch(Exception e){throw new RuntimeException(e);}tx.setRollbackOnly();
         });
@@ -158,11 +178,11 @@ class JobPublicationHttpTest {
         assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type='JOB_EXPIRED'",Long.class,job)).isEqualTo(1);
     }
     @Test void competingApprovalRejectionAndWithdrawalHaveExactlyOneWinner() throws Exception {
-        for(String rival:java.util.List.of("REJECTED","WITHDRAWN")) {
+        for(String rival:List.of("REJECTED","WITHDRAWN")) {
           String owner=account(),moderator=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
           var p=pending(owner,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();String staff=staff(moderator);
           String route="/api/staff/job-revisions/"+revision+"/decision",approval=decision(p,"APPROVED",null),rejection=decision(p,"REJECTED","Correct the location");
-          try(var connection=database.getDataSource().getConnection();var workers=java.util.concurrent.Executors.newFixedThreadPool(2)) {
+          try(var connection=database.getDataSource().getConnection();var workers=Executors.newFixedThreadPool(2)) {
             connection.setAutoCommit(false);try(var lock=connection.prepareStatement("SELECT id FROM companies WHERE id=? FOR UPDATE")){lock.setLong(1,company);lock.executeQuery().close();}
             var first=workers.submit(()->http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(approval)).andReturn().getResponse().getStatus());
             String rivalToken=rival.equals("WITHDRAWN")?owner:staff(account());
@@ -170,13 +190,13 @@ class JobPublicationHttpTest {
                 http.perform(post(JOBS+"/"+job+"/revisions/"+revision+"/withdraw").header("Authorization",rivalToken).contentType(MediaType.APPLICATION_JSON).content(confirm(p,true))).andReturn().getResponse().getStatus():
                 http.perform(put(route).header("Authorization",rivalToken).contentType(MediaType.APPLICATION_JSON).content(rejection)).andReturn().getResponse().getStatus());
             try {
-              long until=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+              long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
               while(database.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'",Integer.class)<2) {
                 if(System.nanoTime()>until)throw new AssertionError("Competing requests did not reach Company lock");Thread.onSpinWait();
               }
               connection.commit();
             }finally{connection.rollback();}
-            assertThat(java.util.List.of(first.get(10,java.util.concurrent.TimeUnit.SECONDS),second.get(10,java.util.concurrent.TimeUnit.SECONDS))).containsExactlyInAnyOrder(200,409);
+            assertThat(List.of(first.get(10,TimeUnit.SECONDS),second.get(10,TimeUnit.SECONDS))).containsExactlyInAnyOrder(200,409);
           }
           assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type IN ('JOB_REVISION_APPROVED','JOB_REVISION_REJECTED','JOB_REVISION_WITHDRAWN')",Long.class,job)).isEqualTo(1);
         }
@@ -192,8 +212,8 @@ class JobPublicationHttpTest {
         http.perform(get("/api/me/notifications").header("Authorization",former)).andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isEmpty());
         assertThat(database.queryForObject("SELECT count(*) FROM user_notifications WHERE job_id=? AND event_type='JOB_REVISION_APPROVED'",Long.class,job)).isEqualTo(2);
     }
-    String decision(com.fasterxml.jackson.databind.JsonNode pending,String outcome,String reason)throws Exception {
-        var body=new java.util.LinkedHashMap<String,Object>(); body.put("expectedJobVersion",pending.path("version").asLong());
+    String decision(JsonNode pending,String outcome,String reason)throws Exception {
+        var body=new LinkedHashMap<String,Object>(); body.put("expectedJobVersion",pending.path("version").asLong());
         body.put("expectedRevisionVersion",pending.path("workingRevision").path("version").asLong());body.put("outcome",outcome);if(reason!=null)body.put("reason",reason);
         return mapper.writeValueAsString(body);
     }
@@ -204,31 +224,31 @@ class JobPublicationHttpTest {
             .content(mapper.writeValueAsString(Map.of("usernameOrEmail",email,"password","Password123")))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data").path("accessToken").asText();
     }
     Map<String,Object> complete() {
-        var c=new java.util.LinkedHashMap<String,Object>();
-        for(String f:java.util.List.of("title","responsibilities","requiredQualifications","preferredQualifications","experienceExpectations","benefits","location"))c.put(f,"Nội dung");
+        var c=new LinkedHashMap<String,Object>();
+        for(String f:List.of("title","responsibilities","requiredQualifications","preferredQualifications","experienceExpectations","benefits","location"))c.put(f,"Nội dung");
         c.put("description","Dòng một\nDòng hai"); c.put("applicationInstructions","Apply through GuardWork");
         c.put("employmentType","FULL_TIME");c.put("workArrangement","ONSITE");c.put("headcount",2);
-        var questions=new java.util.ArrayList<Map<String,Object>>();
-        for(String type:java.util.List.of("SHORT_TEXT","SINGLE_CHOICE","YES_NO","NUMERIC")) {
-          var q=new java.util.LinkedHashMap<String,Object>();q.put("key",UUID.randomUUID().toString());q.put("type",type);
+        var questions=new ArrayList<Map<String,Object>>();
+        for(String type:List.of("SHORT_TEXT","SINGLE_CHOICE","YES_NO","NUMERIC")) {
+          var q=new LinkedHashMap<String,Object>();q.put("key",UUID.randomUUID().toString());q.put("type",type);
           q.put("prompt","Câu hỏi "+type);q.put("required",true);
-          if(type.equals("SINGLE_CHOICE"))q.put("options",java.util.List.of("Một","Hai"));questions.add(q);
+          if(type.equals("SINGLE_CHOICE"))q.put("options",List.of("Một","Hai"));questions.add(q);
         }
         c.put("screeningQuestions",questions);
         c.put("deadline","2099-12-01T12:00:00+07:00");c.put("compensation",Map.of("disclosed",false));return c;
     }
-    String confirm(com.fasterxml.jackson.databind.JsonNode d,boolean confirmed)throws Exception {
+    String confirm(JsonNode d,boolean confirmed)throws Exception {
         return mapper.writeValueAsString(Map.of("expectedJobVersion",d.path("version").asLong(),"expectedRevisionVersion",d.path("workingRevision").path("version").asLong(),"confirmed",confirmed));
     }
 
-    @org.springframework.boot.test.context.TestConfiguration static class TimeConfig {
-        @org.springframework.context.annotation.Bean @org.springframework.context.annotation.Primary MutableClock jobTestClock(){return new MutableClock();}
+    @TestConfiguration static class TimeConfig {
+        @Bean @Primary MutableClock jobTestClock(){return new MutableClock();}
     }
-    static class MutableClock extends java.time.Clock {
-        volatile java.time.Instant now=java.time.Instant.now();
-        public java.time.ZoneId getZone(){return java.time.ZoneOffset.UTC;}
-        public java.time.Clock withZone(java.time.ZoneId zone){return this;}
-        public java.time.Instant instant(){return now;}
+    static class MutableClock extends Clock {
+        volatile Instant now=Instant.now();
+        public ZoneId getZone(){return ZoneOffset.UTC;}
+        public Clock withZone(ZoneId zone){return this;}
+        public Instant instant(){return now;}
     }
 
     long recruiter(long company, String token) throws Exception {
@@ -236,12 +256,12 @@ class JobPublicationHttpTest {
                 Long.class, company, userId(token));
     }
 
-    com.fasterxml.jackson.databind.JsonNode create(String actor, Map<String, Object> content) throws Exception {
+    JsonNode create(String actor, Map<String, Object> content) throws Exception {
         return mapper.readTree(http.perform(post(JOBS).header("Authorization", actor)
                 .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("content", content))))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("data");
     }
-    String saveBody(com.fasterxml.jackson.databind.JsonNode detail, Map<String, Object> content) throws Exception {
+    String saveBody(JsonNode detail, Map<String, Object> content) throws Exception {
         return mapper.writeValueAsString(Map.of("expectedJobVersion", detail.path("version").asLong(),
                 "expectedRevisionVersion", detail.path("workingRevision").path("version").asLong(), "content", content));
     }

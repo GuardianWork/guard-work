@@ -1,7 +1,17 @@
 package com.guardwork.backend.job;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.guardwork.backend.job.service.JobExpiryService;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.ResultActions;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -39,7 +49,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
  }
 
  @Test void retainedReplacementApprovalsPreservePausedClosedAndExpiredStates() throws Exception {
-  for(String state:java.util.List.of("PAUSED","CLOSED","EXPIRED")) {
+  for(String state:List.of("PAUSED","CLOSED","EXPIRED")) {
    String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
    var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());fields.put("title","Original");
    var original=submit(owner,create(owner,fields));String staff=staff(owner);decide(staff,original,"APPROVED");long job=original.path("id").asLong();
@@ -64,7 +74,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
   }
  }
  @Test void terminalPendingReviewsCanBeWithdrawnOrRejectedAndExistingDraftStaysReadable() throws Exception {
-  for(String outcome:java.util.List.of("WITHDRAWN","REJECTED")) {
+  for(String outcome:List.of("WITHDRAWN","REJECTED")) {
    String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
    var original=submit(owner,create(owner,complete()));String staff=staff(owner);decide(staff,original,"APPROVED");long job=original.path("id").asLong();
    var replacement=submit(owner,derive(owner,inspect(owner,job),null));lifecycle(owner,replacement,"close").andExpect(status().isOk());var current=inspect(owner,job);
@@ -81,7 +91,7 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
  }
 
  @Test void pausedDeadlineAndClosedDeadlineHaveDifferentWorkerOutcomes() throws Exception {
-  for(String action:java.util.List.of("pause","close")) {
+  for(String action:List.of("pause","close")) {
    String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
    var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());
    var p=submit(owner,create(owner,fields));decide(staff(owner),p,"APPROVED");long job=p.path("id").asLong();
@@ -97,25 +107,25 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
    assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type='JOB_EXPIRED'",Long.class,job)).isEqualTo(action.equals("pause")?1L:0L);
   }
  }
- @org.springframework.beans.factory.annotation.Autowired com.guardwork.backend.job.service.JobExpiryService expiry;
+ @Autowired JobExpiryService expiry;
  @Test void competingPauseAndReviewAtOldDeadlineCannotExtendRecruitment() throws Exception {
   String owner=account(),moderator=staff(account());long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
   var fields=complete();var deadline=clock.now.plusSeconds(30);fields.put("deadline",deadline.toString());var p=submit(owner,create(owner,fields));decide(moderator,p,"APPROVED");long job=p.path("id").asLong();
   var draft=derive(owner,inspect(owner,job),null);fields.put("deadline",deadline.plusSeconds(120).toString());var replacement=submit(owner,save(owner,draft,fields));
   String reviewBody=decision(replacement,"APPROVED",null),pauseBody=version(replacement);long revision=replacement.path("workingRevision").path("id").asLong();
-  try(var connection=database.getDataSource().getConnection();var workers=java.util.concurrent.Executors.newFixedThreadPool(2)) {
+  try(var connection=database.getDataSource().getConnection();var workers=Executors.newFixedThreadPool(2)) {
    connection.setAutoCommit(false);try(var lock=connection.prepareStatement("SELECT id FROM companies WHERE id=? FOR UPDATE")){lock.setLong(1,company);lock.executeQuery().close();}
    var pause=workers.submit(()->http.perform(post(JOBS+"/"+job+"/pause").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(pauseBody)).andReturn().getResponse().getStatus());
    var approval=workers.submit(()->http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",moderator).contentType(MediaType.APPLICATION_JSON).content(reviewBody)).andReturn().getResponse().getStatus());
    try{awaitLocks(2);clock.now=deadline;connection.commit();}finally{connection.rollback();}
-   assertThat(pause.get(10,java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(409);
-   assertThat(approval.get(10,java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
+   assertThat(pause.get(10,TimeUnit.SECONDS)).isEqualTo(409);
+   assertThat(approval.get(10,TimeUnit.SECONDS)).isEqualTo(200);
   }
   http.perform(get("/api/jobs/"+job)).andExpect(jsonPath("$.data.publicationStatus").value("EXPIRED")).andExpect(jsonPath("$.data.applicationsAvailable").value(false));
   assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type='JOB_EXPIRED'",Long.class,job)).isEqualTo(1);
  }
  void awaitLocks(int count)throws Exception {
-  long until=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+  long until=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
   while(database.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'",Integer.class)<count){if(System.nanoTime()>until)throw new AssertionError("Requests did not reach Company lock");Thread.sleep(10);}
  }
  @Test void lifecycleAuditFailureRollsBackPublicationStateWithoutTouchingPendingHistory() throws Exception {
@@ -154,9 +164,9 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
   var current=inspect(owner,job);assertThat(current.path("needsReassignment").asBoolean()).isTrue();
   http.perform(get("/api/jobs/"+job)).andExpect(jsonPath("$.data.applicationsAvailable").value(true));
   http.perform(put("/api/staff/job-revisions/"+replacement.path("workingRevision").path("id").asLong()+"/decision").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(decision(current,"APPROVED",null)))
-   .andExpect(status().isConflict()).andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("RESPONSIBILITY_REQUIRED")));
+   .andExpect(status().isConflict()).andExpect(jsonPath("$.message").value(Matchers.containsString("RESPONSIBILITY_REQUIRED")));
   http.perform(put(JOBS+"/"+job+"/owner-responsibility").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON)
-   .content(mapper.writeValueAsString(java.util.Map.of("expectedJobVersion",current.path("version").asLong(),"responsible",true)))).andExpect(status().isOk());
+   .content(mapper.writeValueAsString(Map.of("expectedJobVersion",current.path("version").asLong(),"responsible",true)))).andExpect(status().isOk());
   decide(staff,inspect(owner,job),"APPROVED");
  }
 
@@ -168,8 +178,8 @@ class JobLifecycleHttpTest extends JobRevisionHttpTest {
   assertThat(database.queryForObject("SELECT status FROM job_postings WHERE id=?",String.class,job)).isEqualTo("EXPIRED");
   assertThat(history(owner,job).get(1).path("state").asText()).isEqualTo("WITHDRAWN");
  }
- String version(com.fasterxml.jackson.databind.JsonNode job)throws Exception {return mapper.writeValueAsString(java.util.Map.of("expectedJobVersion",job.path("version").asLong()));}
- org.springframework.test.web.servlet.ResultActions lifecycle(String actor,com.fasterxml.jackson.databind.JsonNode job,String action)throws Exception {
+ String version(JsonNode job)throws Exception {return mapper.writeValueAsString(Map.of("expectedJobVersion",job.path("version").asLong()));}
+ ResultActions lifecycle(String actor,JsonNode job,String action)throws Exception {
   return http.perform(post(JOBS+"/"+job.path("id").asLong()+"/"+action).header("Authorization",actor).contentType(MediaType.APPLICATION_JSON).content(version(job)));
  }
 }

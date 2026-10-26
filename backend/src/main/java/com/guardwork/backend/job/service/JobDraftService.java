@@ -4,13 +4,16 @@ import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.job.dto.*;
 import com.guardwork.backend.job.model.*;
 import com.guardwork.backend.job.repository.*;
-import com.guardwork.backend.membership.model.CompanyRole;
 import com.guardwork.backend.membership.model.CompanyMembership;
+import com.guardwork.backend.membership.model.CompanyRole;
+import com.guardwork.backend.membership.model.MembershipStatus;
 import com.guardwork.backend.membership.service.CompanyAccessService;
 import com.guardwork.backend.notification.service.*;
 import com.guardwork.backend.onboarding.service.OnboardingAccessPolicy;
+import com.guardwork.backend.user.model.User;
 import jakarta.persistence.criteria.*;
 import java.time.Clock;
+import java.time.Instant;
 import java.util.*;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
@@ -118,7 +121,7 @@ public class JobDraftService {
       predicates.add(cb.equal(root.get("companyId"), scope.company().getId()));
       if (status != null) {
         Predicate deadlinePassed=cb.and(root.get("status").in("PUBLISHED","PAUSED"),
-            cb.lessThanOrEqualTo(root.<java.time.Instant>get("approvedDeadline"),listedAt));
+            cb.lessThanOrEqualTo(root.<Instant>get("approvedDeadline"),listedAt));
         predicates.add("EXPIRED".equals(status)
             ? cb.or(cb.equal(root.get("status"),"EXPIRED"),deadlinePassed)
             : cb.and(cb.equal(root.get("status"),status),cb.not(deadlinePassed)));
@@ -135,18 +138,18 @@ public class JobDraftService {
     return PageResponse.of(result.stream().map(j -> detail(j, working(j), scope)).toList(), page, size, result.getTotalElements());
   }
 
-  private Subquery<Long> currentAssignment(jakarta.persistence.criteria.CriteriaQuery<?> query,
+  private Subquery<Long> currentAssignment(CriteriaQuery<?> query,
       CriteriaBuilder cb, Root<JobPosting> job, Long memberId) {
     var sub = query.subquery(Long.class);
     var a = sub.from(JobAssignment.class); var m = sub.from(CompanyMembership.class);
-    var u = sub.from(com.guardwork.backend.user.model.User.class);
+    var u = sub.from(User.class);
     var predicates = new ArrayList<Predicate>();
     predicates.add(cb.equal(a.get("jobId"), job.get("id")));
     predicates.add(cb.isNull(a.get("endedAt")));
     predicates.add(cb.equal(a.get("membershipId"), m.get("id")));
     predicates.add(cb.equal(a.get("companyId"), m.get("companyId")));
     predicates.add(cb.equal(a.get("membershipJoinedAt"), m.get("joinedAt")));
-    predicates.add(cb.equal(m.get("status"), com.guardwork.backend.membership.model.MembershipStatus.ACTIVE));
+    predicates.add(cb.equal(m.get("status"), MembershipStatus.ACTIVE));
     predicates.add(cb.equal(m.get("role"), CompanyRole.RECRUITER));
     predicates.add(cb.equal(m.get("userId"), u.get("id")));
     predicates.add(cb.equal(u.get("status"), "ACTIVE"));

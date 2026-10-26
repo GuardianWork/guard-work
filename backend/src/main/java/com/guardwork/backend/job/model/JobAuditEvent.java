@@ -5,12 +5,13 @@ import java.time.Instant;
 import java.util.Map;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 @Getter
 @Setter
-@org.hibernate.annotations.Immutable
+@Immutable
 @Entity
 @Table(name = "job_audit_events")
 public class JobAuditEvent {

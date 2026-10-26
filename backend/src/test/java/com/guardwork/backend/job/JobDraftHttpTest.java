@@ -1,7 +1,14 @@
 package com.guardwork.backend.job;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guardwork.backend.notification.service.NotificationDispatcher;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,7 +19,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
-import com.fasterxml.jackson.databind.ObjectMapper;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -107,7 +114,7 @@ class JobDraftHttpTest {
         String owner = account(); createdCompany(owner);
         create(owner, Map.of("title", "😀".repeat(200)));
         create(owner, Map.of("title", "Mới"));
-        for (Map<String, Object> invalid : java.util.List.of(
+        for (Map<String, Object> invalid : List.of(
                 Map.<String, Object>of("title", "😀".repeat(201)), Map.<String, Object>of("unexpected", true),
                 Map.<String, Object>of("headcount", 0), Map.<String, Object>of("headcount", 1.5),
                 Map.<String, Object>of("headcount", 10001), Map.<String, Object>of("employmentType", "INVALID"),
@@ -117,9 +124,9 @@ class JobDraftHttpTest {
                 Map.<String, Object>of("compensation", Map.of("minimum", 1.001)),
                 Map.<String, Object>of("compensation", Map.of("currency", "EUR")),
                 Map.<String, Object>of("compensation", Map.of("unknown", true)),
-                Map.<String, Object>of("screeningQuestions", java.util.Collections.nCopies(11, Map.of())),
-                Map.<String, Object>of("screeningQuestions", java.util.List.of(Map.of("key", "not-a-uuid"))),
-                Map.<String, Object>of("screeningQuestions", java.util.List.of(Map.of("options", java.util.List.of("a", " a ")))))) {
+                Map.<String, Object>of("screeningQuestions", Collections.nCopies(11, Map.of())),
+                Map.<String, Object>of("screeningQuestions", List.of(Map.of("key", "not-a-uuid"))),
+                Map.<String, Object>of("screeningQuestions", List.of(Map.of("options", List.of("a", " a ")))))) {
             http.perform(post(JOBS).header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
                     .content(mapper.writeValueAsString(Map.of("content", invalid))))
                     .andExpect(status().isBadRequest());
@@ -158,7 +165,7 @@ class JobDraftHttpTest {
                 .andExpect(status().isForbidden());
     }
 
-    @Autowired com.guardwork.backend.notification.service.NotificationDispatcher dispatcher;
+    @Autowired NotificationDispatcher dispatcher;
 
     @Test void notificationIntentFailureRollsBackJobRevisionAssignmentAndAudit() throws Exception {
         String owner = account(), recruiter = account(); long company = createdCompany(owner);
@@ -216,7 +223,7 @@ class JobDraftHttpTest {
         recruiter(company, recruiter); var initial = create(recruiter, Map.of("title", "Original"));
         long job = initial.path("id").asLong();
         try (var connection = database.getDataSource().getConnection();
-                var workers = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+                var workers = Executors.newFixedThreadPool(2)) {
             connection.setAutoCommit(false);
             try (var guard = connection.prepareStatement("SELECT id FROM companies WHERE id=? FOR UPDATE")) {
                 guard.setLong(1, company); guard.executeQuery().close();
@@ -228,7 +235,7 @@ class JobDraftHttpTest {
             var second = workers.submit(() -> http.perform(put(JOBS + "/" + job + "/draft").header("Authorization", recruiter)
                     .contentType(MediaType.APPLICATION_JSON).content(secondBody)).andReturn().getResponse().getStatus());
             try { awaitDatabaseLocks(2); connection.commit(); } finally { connection.rollback(); }
-            assertThat(java.util.List.of(first.get(10, java.util.concurrent.TimeUnit.SECONDS), second.get(10, java.util.concurrent.TimeUnit.SECONDS)))
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
                     .containsExactlyInAnyOrder(200, 409);
         }
         var current = mapper.readTree(http.perform(get(JOBS + "/" + job).header("Authorization", owner))
@@ -245,7 +252,7 @@ class JobDraftHttpTest {
         long job = initial.path("id").asLong();
         long audits = database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=?", Long.class, job);
         try (var connection = database.getDataSource().getConnection();
-                var worker = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+                var worker = Executors.newSingleThreadExecutor()) {
             connection.setAutoCommit(false);
             try (var guard = connection.prepareStatement("SELECT id FROM companies WHERE id=? FOR UPDATE")) {
                 guard.setLong(1, company); guard.executeQuery().close();
@@ -257,7 +264,7 @@ class JobDraftHttpTest {
             var saving = worker.submit(() -> http.perform(put(JOBS + "/" + job + "/draft").header("Authorization", recruiter)
                     .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse().getStatus());
             try { awaitDatabaseLocks(1); connection.commit(); } finally { connection.rollback(); }
-            assertThat(saving.get(10, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(404);
+            assertThat(saving.get(10, TimeUnit.SECONDS)).isEqualTo(404);
         }
         http.perform(get(JOBS + "/" + job).header("Authorization", owner))
                 .andExpect(jsonPath("$.data.workingRevision.content.title").value("Original"));
@@ -265,7 +272,7 @@ class JobDraftHttpTest {
     }
 
     void awaitDatabaseLocks(int count) throws Exception {
-        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (System.nanoTime() < deadline) {
             Long waiting = database.queryForObject("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'", Long.class);
             if (waiting >= count) return;
@@ -291,12 +298,12 @@ class JobDraftHttpTest {
                 Long.class, company, userId(token));
     }
 
-    com.fasterxml.jackson.databind.JsonNode create(String actor, Map<String, Object> content) throws Exception {
+    JsonNode create(String actor, Map<String, Object> content) throws Exception {
         return mapper.readTree(http.perform(post(JOBS).header("Authorization", actor)
                 .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("content", content))))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("data");
     }
-    String saveBody(com.fasterxml.jackson.databind.JsonNode detail, Map<String, Object> content) throws Exception {
+    String saveBody(JsonNode detail, Map<String, Object> content) throws Exception {
         return mapper.writeValueAsString(Map.of("expectedJobVersion", detail.path("version").asLong(),
                 "expectedRevisionVersion", detail.path("workingRevision").path("version").asLong(), "content", content));
     }

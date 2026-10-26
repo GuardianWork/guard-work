@@ -8,6 +8,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Expected Company API errors are handled at order 0; retain the job envelope for other failures. */
 @Order(1)
@@ -21,8 +22,8 @@ public class JobErrorHandler {
         "40022 CONCURRENT_MODIFICATION: Reload current versions", null));
   }
 
-  @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
-  public ResponseEntity<ApiResponse<Void>> expected(org.springframework.web.server.ResponseStatusException error) {
+  @ExceptionHandler(ResponseStatusException.class)
+  public ResponseEntity<ApiResponse<Void>> expected(ResponseStatusException error) {
     return ResponseEntity.status(error.getStatusCode()).body(new ApiResponse<>(error.getStatusCode().value(), error.getReason(), null));
   }
 

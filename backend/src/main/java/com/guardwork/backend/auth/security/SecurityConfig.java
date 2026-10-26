@@ -1,8 +1,10 @@
 package com.guardwork.backend.auth.security;
 
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -12,8 +14,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.util.matcher.RegexRequestMatcher;
 import org.springframework.web.filter.CorsFilter;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
 
 @Configuration
 @EnableWebSecurity
@@ -42,7 +44,7 @@ public class SecurityConfig {
             .authenticationEntryPoint(authenticationEntryPoint)
             .accessDeniedHandler(accessDeniedHandler))
         .authorizeHttpRequests(auth -> auth
-            .requestMatchers(org.springframework.http.HttpMethod.POST,
+            .requestMatchers(HttpMethod.POST,
                 "/api/employer-registrations",
                 "/api/employer-registrations/*/email/resend",
                 "/api/employer-registrations/*/email/verify")
@@ -55,8 +57,7 @@ public class SecurityConfig {
                 "/v3/api-docs/**")
             .permitAll()
             .requestMatchers("/api/staff/**").hasRole("STAFF")
-            .requestMatchers(
-                new org.springframework.security.web.util.matcher.RegexRequestMatcher("/api/jobs/[1-9][0-9]*", "GET"))
+            .requestMatchers(new RegexRequestMatcher("/api/jobs/[1-9][0-9]*", "GET"))
             .permitAll()
             .anyRequest().authenticated())
         .addFilterBefore(portalCorsFilter, CorsFilter.class)

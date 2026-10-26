@@ -1,18 +1,20 @@
 package com.guardwork.backend.job.service;
 
-import com.guardwork.backend.job.model.*;
-import com.guardwork.backend.job.repository.*;
+import com.guardwork.backend.audit.service.AuditService;
 import com.guardwork.backend.company.model.*;
 import com.guardwork.backend.company.repository.CompanyRepository;
+import com.guardwork.backend.job.model.*;
+import com.guardwork.backend.job.repository.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.notification.service.*;
-import com.guardwork.backend.audit.service.AuditService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.time.*;
 import java.util.*;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.*;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -89,7 +91,7 @@ public class JobPublicationService {
     }
     return new Receipt(job.getId(),revisionId,revision.getState(),job.getStatus(),job.getVersion(),revision.getVersion());
   }
-  @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager entities;
+  @PersistenceContext private EntityManager entities;
   private void entityRefresh(JobRevision revision){entities.refresh(revision);}
 
   public PublicDetail publicDetail(Long id) {

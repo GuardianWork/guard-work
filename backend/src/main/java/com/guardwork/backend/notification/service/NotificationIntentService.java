@@ -4,6 +4,7 @@ import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.notification.model.NotificationOutbox;
 import com.guardwork.backend.notification.repository.NotificationOutboxRepository;
 import java.time.Instant;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.*;
@@ -38,7 +39,7 @@ public class NotificationIntentService {
   }
   @Transactional(propagation = Propagation.MANDATORY)
   public UUID recordJob(Long recipient, String eventType, Company company, Long jobId, Long revisionId, Instant eventTime) {
-    if (!java.util.Set.of("JOB_ASSIGNED", "JOB_UNASSIGNED", "JOB_NEEDS_REASSIGNMENT", "JOB_REVISION_APPROVED", "JOB_REVISION_REJECTED").contains(eventType))
+    if (!Set.of("JOB_ASSIGNED", "JOB_UNASSIGNED", "JOB_NEEDS_REASSIGNMENT", "JOB_REVISION_APPROVED", "JOB_REVISION_REJECTED").contains(eventType))
       throw new IllegalArgumentException("Unsupported job notification");
     var intent = new NotificationOutbox();
     intent.setEventId(UUID.randomUUID());

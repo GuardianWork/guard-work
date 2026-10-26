@@ -1,9 +1,15 @@
 package com.guardwork.backend.job.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.*;
 import org.springframework.http.HttpStatus;
@@ -21,8 +27,8 @@ public class DraftContent {
   private final ObjectMapper json;
 
   public DraftContent(ObjectMapper json) {
-    this.json = json.copy().enable(com.fasterxml.jackson.databind.DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-        .setNodeFactory(com.fasterxml.jackson.databind.node.JsonNodeFactory.withExactBigDecimals(true));
+    this.json = json.copy().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+        .setNodeFactory(JsonNodeFactory.withExactBigDecimals(true));
   }
 
   public String normalize(Object value) {
@@ -46,18 +52,18 @@ public class DraftContent {
     if (present(content, "compensation")) compensation(content.get("compensation"));
     if (present(content, "screeningQuestions")) questions(content.get("screeningQuestions"));
     try { return json.writeValueAsString(content); }
-    catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw invalid("content"); }
+    catch (JsonProcessingException e) { throw invalid("content"); }
   }
 
   public Map<String, Object> decode(String value) {
-    try { return json.readValue(value, new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {}); }
-    catch (com.fasterxml.jackson.core.JsonProcessingException e) { throw new IllegalStateException("Invalid persisted job content", e); }
+    try { return json.readValue(value, new TypeReference<Map<String, Object>>() {}); }
+    catch (JsonProcessingException e) { throw new IllegalStateException("Invalid persisted job content", e); }
   }
 
   public record ValidationIssue(String field, String code) {}
 
   /** Submission validation over the normalized draft; structural limits are enforced on every save. */
-  public List<ValidationIssue> submissionIssues(String value, java.time.Instant now) {
+  public List<ValidationIssue> submissionIssues(String value, Instant now) {
     JsonNode c = json.valueToTree(decode(value));
     List<ValidationIssue> issues = new ArrayList<>();
     for (String f : List.of("title", "description", "responsibilities", "requiredQualifications",
@@ -65,7 +71,7 @@ public class DraftContent {
         "employmentType", "workArrangement", "deadline", "headcount", "compensation"))
       if (!present(c, f) || c.get(f).isTextual() && c.get(f).textValue().isBlank())
         issues.add(new ValidationIssue("content." + f, "REQUIRED"));
-    if (present(c, "deadline") && !java.time.Instant.parse(c.get("deadline").textValue()).isAfter(now))
+    if (present(c, "deadline") && !Instant.parse(c.get("deadline").textValue()).isAfter(now))
       issues.add(new ValidationIssue("content.deadline", "DEADLINE_PASSED"));
     if (present(c, "compensation")) {
       JsonNode pay = c.get("compensation");
@@ -136,7 +142,7 @@ public class DraftContent {
           String label = options.get(i).textValue().strip();
           if (label.isBlank() || label.indexOf('\0') >= 0 || label.codePointCount(0, label.length()) > 200 || !labels.add(label))
             throw invalid("content.screeningQuestions[].options");
-          ((com.fasterxml.jackson.databind.node.ArrayNode) options).set(i, json.getNodeFactory().textNode(label));
+          ((ArrayNode) options).set(i, json.getNodeFactory().textNode(label));
         }
       }
     }
