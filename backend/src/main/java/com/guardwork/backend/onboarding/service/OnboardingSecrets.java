@@ -7,6 +7,8 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 /** Cryptographic helpers shared by account-email proof and retained Company evidence. */
 public final class OnboardingSecrets {
@@ -29,16 +31,6 @@ public final class OnboardingSecrets {
     public static boolean matches(String raw, String digest) {
         return raw != null && digest != null && MessageDigest.isEqual(
                 hash(raw).getBytes(StandardCharsets.UTF_8), digest.getBytes(StandardCharsets.UTF_8));
-    }
-
-    public static String otpHash(String pepper, Long userId, String phone, String code) {
-        if (pepper == null || pepper.isBlank()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
-                "50330 VERIFICATION_UNAVAILABLE: Verification is not configured");
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(pepper.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return HexFormat.of().formatHex(mac.doFinal((userId + ":" + phone + ":" + code).getBytes(StandardCharsets.UTF_8)));
-        } catch (java.security.GeneralSecurityException impossible) { throw new IllegalStateException(impossible); }
     }
 
     public static String phone(String value) {

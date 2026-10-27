@@ -41,7 +41,7 @@ class CanonicalAccountPhoneHttpTest {
         String newPhone = phone();
         putProfile(account, "Original", oldPhone).andExpect(status().isOk());
         database.update("UPDATE candidate_profiles SET phone_number=? WHERE user_id=?", oldPhone, account.id());
-        database.update("INSERT INTO employer_profiles(user_id,applicant,full_name,email_verified_at,phone,phone_verified_at) VALUES (?,false,'Historical',now(),?,now())", account.id(), oldPhone);
+        database.update("INSERT INTO employer_profiles(user_id,applicant,full_name,email_verified_at,email_verified_email,phone,phone_verified_at) SELECT ?,false,'Historical',now(),email,?,now() FROM users WHERE id=?", account.id(), oldPhone, account.id());
         var history = database.queryForMap("SELECT phone,phone_verified_at FROM employer_profiles WHERE user_id=?", account.id());
 
         putProfile(account, "Changed", " " + newPhone + " ").andExpect(status().isOk())

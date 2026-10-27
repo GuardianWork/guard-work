@@ -17,30 +17,33 @@ class EmployerOnboardingHttpTest {
     @Autowired JwtService jwt;
     @MockitoBean OnboardingDelivery delivery;
     MockMvc http;
-    final Map<UUID, String> emailSecrets = new ConcurrentHashMap<>();
+    final Map<String, String> emailSecrets = new ConcurrentHashMap<>();
     static final String PASSWORD = "GuardworkTest123";
 
     @BeforeEach void setup() {
         http = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
         when(delivery.memberEmail(anyString(), anyString())).thenAnswer(call -> {
-            emailSecrets.put(call.getArgument(0), call.getArgument(1)); return true;
+            String email = call.getArgument(0);
+            assertThat(database.queryForObject("SELECT count(*) FROM users WHERE email=?", Long.class, email)).isEqualTo(1);
+            emailSecrets.put(email, call.getArgument(1));
+            return true;
         });
         when(delivery.decisionEmail(anyString(), anyString(), anyString(), nullable(String.class), any()))
                 .thenReturn(true);
     }
 
-    record Signup(UUID id, String continuation, String email, String phone) {
+    record Signup(long id, String email, String phone) {
     }
 
     @Test
     void fullJourneyPreservesReviewedEvidenceAndActualAdminIdentity() throws Exception {
         Signup signup = begin(phone());
         assertThat(database.queryForObject("SELECT count(*) FROM users WHERE email=?", Long.class, signup.email()))
-                .isZero();
+                .isEqualTo(1);
         http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                 .content(body(Map.of("usernameOrEmail", signup.email(), "password", PASSWORD))))
-                .andExpect(status().isUnauthorized());
-        String token = promote(signup);
+                .andExpect(status().isOk());
+        String token = confirmEmail(signup);
         http.perform(get("/api/v1/candidates/profile").header("Authorization", token))
                 .andExpect(status().isForbidden());
         http.perform(post("/api/companies/verification-request").header("Authorization", token)
@@ -137,13 +140,13 @@ class EmployerOnboardingHttpTest {
     @Test
     void directApprovalUnlocksEmployerAccessAndQueuesApprovalEmail() throws Exception {
         Signup signup = begin(phone());
-        String token = promote(signup);
+        String token = confirmEmail(signup);
         http.perform(get("/api/me/employer-onboarding").header("Authorization", token)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.emailVerified").value(true))
                 .andExpect(jsonPath("$.data.phoneVerified").doesNotExist())
-                .andExpect(jsonPath("$.data.stage").value("LEGAL_REQUIRED"));
+                .andExpect(jsonPath("$.data.stage").value("COMPANY_ACTION_REQUIRED"));
         http.perform(get("/api/me/employer-onboarding").header("Authorization", token)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.stage").value("LEGAL_REQUIRED"));
+                .andExpect(jsonPath("$.data.stage").value("COMPANY_ACTION_REQUIRED"));
         String document = upload(token);
         var company = data(http.perform(post("/api/companies/verification-request").header("Authorization", token)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -172,12 +175,15 @@ class EmployerOnboardingHttpTest {
         http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.token())).andExpect(status().isOk());
     }
 
-    JsonNode history(String token) throws Exception {
-        return data(http.perform(get("/api/companies/me/verification/history").header("Authorization", token))
-                .andExpect(status().isOk()).andReturn());
-    }
-    Map<String, Object> initial(String tax) {
-        return Map.of("name", "Công ty Ánh Dương", "taxCode", tax, "legal", legal("Địa chỉ ban đầu"));
+    @Test
+    void unverifiedAccountsReserveTheirIdentifiersWithoutResendingMail() throws Exception {
+        Signup first = begin(phone());
+        String unusedEmail = UUID.randomUUID() + "@example.vn";
+        registration(first.email().toUpperCase(Locale.ROOT), phone()).andExpect(status().isConflict());
+        registration(unusedEmail, "+84" + first.phone().substring(1)).andExpect(status().isConflict());
+        assertThat(database.queryForObject("SELECT count(*) FROM users WHERE email=?", Long.class, first.email())).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM users WHERE email=?", Long.class, unusedEmail)).isZero();
+        verify(delivery, times(1)).memberEmail(eq(first.email()), anyString());
     }
 
     @Test
@@ -186,7 +192,8 @@ class EmployerOnboardingHttpTest {
         long candidateId = data(http.perform(get("/api/auth/me").header("Authorization", candidate))
                 .andExpect(status().isOk()).andReturn()).path("id").asLong();
         Signup signup = begin(phone());
-        String employer = promote(signup);
+        String employer = confirmEmail(signup);
+        clearInvocations(delivery);
         for (String action : List.of("send", "verify")) {
             String path = "/api/me/employer-onboarding/phone/" + action;
             http.perform(post(path)).andExpect(status().isUnauthorized());
@@ -196,27 +203,43 @@ class EmployerOnboardingHttpTest {
                         .content("{malformed")).andExpect(status().isGone());
             }
         }
-        verify(delivery, never()).sms(anyString(), anyString());
+        verifyNoInteractions(delivery);
         assertThat(database.queryForObject("SELECT count(*) FROM employer_profiles WHERE user_id=?", Long.class, candidateId)).isZero();
         assertThat(database.queryForObject("SELECT phone FROM employer_profiles p JOIN users u ON u.id=p.user_id WHERE u.email=?", String.class, signup.email())).isNull();
         assertThat(database.queryForObject("SELECT phone_verified_at FROM employer_profiles p JOIN users u ON u.id=p.user_id WHERE u.email=?", java.sql.Timestamp.class, signup.email())).isNull();
     }
-    MockMultipartHttpServletRequestBuilder dossier(String method, String path, Map<String, Object> form) throws Exception {
-        return multipart(HttpMethod.valueOf(method), path)
-                .file(new MockMultipartFile("dossier", "dossier.json", "application/json", json.writeValueAsBytes(form)))
-                .file(new MockMultipartFile("file", "giấy-phép.pdf", "application/pdf", "%PDF-license".getBytes(StandardCharsets.UTF_8)));
+
+    @Test
+    void ordinaryCandidatesRemainUsableAndOldLinksCannotPromoteOrRevealRecords() throws Exception {
+        String candidate = ordinaryAccount(false);
+        http.perform(get("/api/v1/candidates/profile").header("Authorization", candidate)).andExpect(status().isOk());
+        Signup signup = begin(phone());
+        UUID retained = UUID.randomUUID();
+        String retainedSecret = com.guardwork.backend.onboarding.service.OnboardingSecrets.hash("retained-secret");
+        database.update("INSERT INTO employer_registrations(id,continuation_hash,email,password_hash,full_name,gender,phone,company_name,work_address,email_secret_hash,email_expires_at,email_sent_at,created_at) VALUES (?,?,?,'retained-password-hash','Legacy attempt','OTHER',?,'Legacy company','Legacy address',?,now()+interval '1 day',now(),now())",
+                retained, com.guardwork.backend.onboarding.service.OnboardingSecrets.hash("retained-continuation"), signup.email(), signup.phone(), retainedSecret);
+        for (String action : List.of("resend", "verify")) {
+            for (String id : List.of(retained.toString(), UUID.randomUUID().toString(), "invalid-id")) {
+                http.perform(post("/api/employer-registrations/" + id + "/email/" + action))
+                        .andExpect(status().isGone()).andExpect(jsonPath("$.status").value(410));
+                http.perform(post("/api/employer-registrations/" + id + "/email/" + action)
+                        .contentType(MediaType.APPLICATION_JSON).content("{malformed"))
+                        .andExpect(status().isGone());
+            }
+        }
+        assertThat(database.queryForObject("SELECT promoted_user_id FROM employer_registrations WHERE id=?", Long.class, retained)).isNull();
+        assertThat(database.queryForObject("SELECT email_secret_hash FROM employer_registrations WHERE id=?", String.class, retained)).isEqualTo(retainedSecret);
+        assertThat(database.queryForObject("SELECT full_name FROM employer_profiles WHERE user_id=?", String.class, signup.id())).isEqualTo("Nguyễn Ánh Dương");
+        assertThat(database.queryForObject("SELECT email_secret_hash FROM employer_profiles WHERE user_id=?", String.class, signup.id()))
+                .isNotEqualTo(emailSecrets.get(signup.email()));
     }
-    Account account() throws Exception {
-        String name = "journey_" + UUID.randomUUID().toString().replace("-", "");
-        String email = name + "@example.vn";
-        long id = data(http.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON)
-                .content(body(Map.of("firstName", "An", "lastName", "Nguyễn", "username", name,
-                        "email", email, "password", "GuardworkTest123"))))
-                .andExpect(status().isCreated()).andReturn()).path("id").asLong();
-        var login = data(http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
-                .content(body(Map.of("usernameOrEmail", name, "password", "GuardworkTest123"))))
-                .andExpect(status().isOk()).andReturn());
-        return new Account(id, email, "Bearer " + login.path("accessToken").asText());
+
+    @Test
+    void concurrentRegistrationsWithEmailAliasesCreateOneAccount() throws Exception {
+        String email = UUID.randomUUID() + "@example.vn";
+        concurrentClaims(email, phone(), " " + email.toUpperCase(Locale.ROOT) + " ", phone());
+        assertThat(database.queryForObject("SELECT count(*) FROM users WHERE lower(btrim(email))=?", Long.class, email)).isEqualTo(1);
+        verify(delivery, times(1)).memberEmail(eq(email), anyString());
     }
 
     @Test
@@ -231,85 +254,76 @@ class EmployerOnboardingHttpTest {
     }
 
     @Test
-    void resendReplacesProofAndExpiredEmailCannotPromote() throws Exception {
-        Signup signup = begin(phone());
-        String first = emailSecrets.get(signup.id());
-        database.update("UPDATE employer_registrations SET email_sent_at=now()-interval '61 seconds' WHERE id=?",
-                signup.id());
-        http.perform(post("/api/employer-registrations/" + signup.id() + "/email/resend")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body(Map.of("continuationToken", signup.continuation())))).andExpect(status().isOk());
-        http.perform(post("/api/employer-registrations/" + signup.id() + "/email/verify")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body(Map.of("continuationToken", signup.continuation(), "emailSecret", first, "password",
-                        PASSWORD))))
-                .andExpect(status().isBadRequest());
-        database.update("UPDATE employer_registrations SET email_expires_at=now()-interval '1 second' WHERE id=?",
-                signup.id());
-        http.perform(post("/api/employer-registrations/" + signup.id() + "/email/verify")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body(Map.of("continuationToken", signup.continuation(), "emailSecret",
-                        emailSecrets.get(signup.id()), "password", PASSWORD))))
-                .andExpect(status().isBadRequest());
-        assertThat(database.queryForObject("SELECT count(*) FROM users WHERE email=?", Long.class, signup.email()))
-                .isZero();
+    void failedEmailSubmissionKeepsTheOfficialAccountAndAllowsRestrictedSignIn() throws Exception {
+        doThrow(new IllegalStateException("provider unavailable")).when(delivery).memberEmail(anyString(), anyString());
+        String email = UUID.randomUUID() + "@example.vn";
+        registration(email, phone()).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.deliveryAccepted").value(false))
+                .andExpect(jsonPath("$.data.emailVerified").value(false))
+                .andExpect(jsonPath("$.data.stage").value("EMAIL_REQUIRED"))
+                .andExpect(jsonPath("$.data.accessToken").doesNotExist())
+                .andExpect(jsonPath("$.data.continuationToken").doesNotExist());
+        String token = login(email);
+        http.perform(get("/api/me/employer-onboarding").header("Authorization", token)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.emailVerified").value(false));
+        http.perform(post("/api/me/employer-onboarding/email/send").header("Authorization", token))
+                .andExpect(status().isTooManyRequests());
+        database.update("UPDATE employer_profiles SET email_sent_at=now()-interval '61 seconds' WHERE user_id=(SELECT id FROM users WHERE email=?)", email);
+        doReturn(true).when(delivery).memberEmail(anyString(), anyString());
+        http.perform(post("/api/me/employer-onboarding/email/send").header("Authorization", token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.deliveryAccepted").value(true));
     }
 
     @Test
-    void candidatePhoneClaimsBlockBothRegistrationAndAnEarlierPendingPromotion() throws Exception {
+    void candidatePhoneClaimsBlockEmployerRegistrationAndEmployerClaimsBlockCandidateUpdates() throws Exception {
         String number = phone();
-        Signup pending = begin(number);
         String candidate = ordinaryAccount(false);
         http.perform(put("/api/v1/candidates/profile").header("Authorization", candidate)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(Map.of("fullName", "Nguyễn An", "phoneNumber", number))))
                 .andExpect(status().isOk());
-        http.perform(post("/api/employer-registrations").contentType(MediaType.APPLICATION_JSON)
-                .content(body(Map.of("fullName", "Nguyễn Bình", "phone", "+84" + number.substring(1),
-                        "companyName", "Company", "gender", "OTHER", "workAddress", "Hà Nội",
-                        "email", UUID.randomUUID() + "@example.vn", "password", PASSWORD, "passwordConfirmation", PASSWORD))))
-                .andExpect(status().isConflict());
-        http.perform(post("/api/employer-registrations/" + pending.id() + "/email/verify")
+        registration(UUID.randomUUID() + "@example.vn", "+84" + number.substring(1)).andExpect(status().isConflict());
+        Signup employer = begin(phone());
+        http.perform(put("/api/v1/candidates/profile").header("Authorization", candidate)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(body(Map.of("continuationToken", pending.continuation(), "emailSecret",
-                        emailSecrets.get(pending.id()), "password", PASSWORD))))
+                .content(body(Map.of("fullName", "Must roll back", "phoneNumber", employer.phone()))))
                 .andExpect(status().isConflict());
-        assertThat(database.queryForObject("SELECT count(*) FROM users WHERE email=?", Long.class, pending.email())).isZero();
-        assertThat(database.queryForObject("SELECT promoted_user_id FROM employer_registrations WHERE id=?", Long.class, pending.id())).isNull();
+        http.perform(get("/api/v1/candidates/profile").header("Authorization", candidate))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.fullName").value("Nguyễn An"));
     }
 
     @Test
-    void competingNormalizedPhonePromotionsHaveOneAccountAndNoPartialProfile() throws Exception {
+    void concurrentRegistrationsWithPhoneAliasesCreateOneAccountAndProfile() throws Exception {
         String number = phone();
-        Signup a = begin(number);
-        Signup b = begin("+84" + number.substring(1));
+        String first = UUID.randomUUID() + "@example.vn";
+        String second = UUID.randomUUID() + "@example.vn";
+        concurrentClaims(first, number, second, "+84" + number.substring(1));
+        assertThat(database.queryForObject("SELECT count(*) FROM users WHERE phone_number=?", Long.class,
+                "+84" + number.substring(1))).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM employer_profiles p JOIN users u ON u.id=p.user_id WHERE u.email IN (?,?)", Long.class,
+                first, second)).isEqualTo(1);
+    }
+
+    void concurrentClaims(String firstEmail, String firstPhone, String secondEmail, String secondPhone) throws Exception {
         try (var pool = Executors.newFixedThreadPool(2)) {
             CountDownLatch start = new CountDownLatch(1);
             List<Future<Integer>> results = new ArrayList<>();
-            for (Signup signup : List.of(a, b)) {
+            for (var claim : List.of(Map.entry(firstEmail, firstPhone), Map.entry(secondEmail, secondPhone))) {
                 results.add(pool.submit(() -> {
                     start.await(10, TimeUnit.SECONDS);
-                    return http.perform(post("/api/employer-registrations/" + signup.id() + "/email/verify")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(body(Map.of("continuationToken", signup.continuation(), "emailSecret",
-                                    emailSecrets.get(signup.id()), "password", PASSWORD))))
-                            .andReturn().getResponse().getStatus();
+                    return registration(claim.getKey(), claim.getValue()).andReturn().getResponse().getStatus();
                 }));
             }
             start.countDown();
             assertThat(List.of(results.get(0).get(30, TimeUnit.SECONDS), results.get(1).get(30, TimeUnit.SECONDS)))
-                    .containsExactlyInAnyOrder(200, 409);
+                    .containsExactlyInAnyOrder(201, 409);
         }
-        assertThat(database.queryForObject("SELECT count(*) FROM users WHERE phone_number=?", Long.class,
-                "+84" + number.substring(1))).isEqualTo(1);
-        assertThat(database.queryForObject("SELECT count(*) FROM employer_profiles p JOIN users u ON u.id=p.user_id WHERE u.email IN (?,?)", Long.class,
-                a.email(), b.email())).isEqualTo(1);
     }
 
     @Test
     void declarationAndPrivateDocumentAreRequiredAndDuplicateMstLeavesNoExtraCompany() throws Exception {
         Signup first = begin(phone());
-        String token = promote(first);
+        String token = confirmEmail(first);
         http.perform(multipart("/api/me/employer-onboarding/documents")
                 .file(new MockMultipartFile("file", "fake.pdf", "application/pdf",
                         "<html>not a PDF</html>".getBytes(StandardCharsets.US_ASCII)))
@@ -327,7 +341,7 @@ class EmployerOnboardingHttpTest {
                 .content(body(Map.of("name", "Company", "taxCode", tax, "legal", legal(doc, "Hà Nội")))))
                 .andExpect(status().isCreated());
         Signup second = begin(phone());
-        String another = promote(second);
+        String another = confirmEmail(second);
         String otherDoc = upload(another);
         http.perform(post("/api/companies/verification-request").header("Authorization", another)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -345,22 +359,27 @@ class EmployerOnboardingHttpTest {
     }
 
     Signup begin(String email, String phone) throws Exception {
-        var response = data(http.perform(post("/api/employer-registrations").contentType(MediaType.APPLICATION_JSON)
-                .content(body(Map.of("fullName", "Nguyễn Ánh Dương", "phone", phone, "companyName", "Công ty Ánh Dương",
-                        "gender", "UNDISCLOSED", "workAddress", "Hồ Chí Minh", "email", email,
-                        "password", PASSWORD, "passwordConfirmation", PASSWORD))))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.emailSecret").doesNotExist()).andReturn());
-        return new Signup(UUID.fromString(response.path("registrationId").asText()),
-                response.path("continuationToken").asText(), email, phone);
+        var response = data(registration(email, phone).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.emailSecret").doesNotExist())
+                .andExpect(jsonPath("$.data.registrationId").doesNotExist())
+                .andExpect(jsonPath("$.data.continuationToken").doesNotExist()).andReturn());
+        return new Signup(response.path("userId").asLong(), email, phone);
     }
 
-    String promote(Signup s) throws Exception {
-        http.perform(
-                post("/api/employer-registrations/" + s.id() + "/email/verify").contentType(MediaType.APPLICATION_JSON)
-                        .content(body(Map.of("continuationToken", s.continuation(), "emailSecret",
-                                emailSecrets.get(s.id()), "password", PASSWORD))))
+    ResultActions registration(String email, String phone) throws Exception {
+        return http.perform(post("/api/employer-registrations").contentType(MediaType.APPLICATION_JSON)
+                .content(body(Map.of("fullName", "Nguyễn Ánh Dương", "phone", phone, "companyName", "Công ty Ánh Dương",
+                        "gender", "UNDISCLOSED", "workAddress", "Hồ Chí Minh", "email", email,
+                        "password", PASSWORD, "passwordConfirmation", PASSWORD))));
+    }
+
+    String confirmEmail(Signup s) throws Exception {
+        String token = login(s.email());
+        http.perform(post("/api/me/employer-onboarding/email/verify").header("Authorization", token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(Map.of("emailSecret", emailSecrets.get(s.email())))))
                 .andExpect(status().isOk());
-        return login(s.email());
+        return token;
     }
 
     String upload(String token) throws Exception {

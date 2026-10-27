@@ -3,7 +3,7 @@
 [ADR 0008](../architecture/decisions/0008-canonical-account-phone.md) and
 GW-SR-REC-03 REQ-REC-19 / Q11, Q15 and Q16 define one declared mobile contact per
 User. The user approved this bounded schema/API implementation on 2026-10-27.
-The larger immediate-account/email-only registration replacement remains separate.
+The subsequent [email-only implementation](employer-onboarding.md) completes immediate-account registration and bound email proof.
 
 ## Storage and API
 
@@ -21,7 +21,7 @@ clears the phone; blank is invalid. Existing Candidate route restrictions for
 employer applicants remain in force. No employer phone-change endpoint is added.
 
 `GET /api/me/employer-onboarding` reads `phone` from User and omits `phoneVerified`.
-After actual email proof, its stage is `LEGAL_REQUIRED` or the existing Company
+After actual email proof, its stage is `COMPANY_ACTION_REQUIRED` or the existing Company
 status; `PHONE_REQUIRED` is removed. Legal preparation, submission/correction and
 enhanced employer operations no longer depend on historical SMS proof. Existing
 email, active User, Company and membership/permission checks remain in place.
@@ -31,14 +31,10 @@ return 410, including absent or malformed bodies, without delivery, enrollment o
 writes. Missing authentication still returns 401. Historical contacts, challenges
 and proof remain stored; they are never presented as proof of the current phone.
 
-Employer registration still uses pending attempts and email promotion in this
-bounded release. Pending attempts do not reserve a phone. Registration checks
-current account contacts; promotion requires and atomically claims a canonical
-User phone, so a competing claim can make promotion fail with 409. It creates no
-partial User/profile. Promotion writes no legacy profile phone. Replacing this
-journey and retiring its pending-email routes belong to the separate email-only
-implementation. Normalized-email indexes and email proof snapshots are not part
-of this migration.
+Employer registration now claims the canonical User phone immediately, including
+for email-unverified accounts. Pending registrations are retained historical data;
+old promotion routes return 410. See the [email-only contract and V84 cutover](employer-onboarding.md)
+for normalized-email uniqueness, email proof snapshots and coordinated client changes.
 
 ## Controlled cutover
 

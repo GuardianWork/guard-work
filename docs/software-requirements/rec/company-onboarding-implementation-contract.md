@@ -1,6 +1,6 @@
 # GW-SR-REC-03 — Implementation Contract and Required Amendment
 
-> Implementation update (2026-10-27): the user approved the bounded ADR 0008 schema/API scope. The canonical User phone, blocking migration/preflight, atomic Candidate edits, employer contact coordination, fixtures, SMS 410 retirement and removal of SMS prerequisites are implemented. See [the canonical-phone contract and cutover](../../backend/canonical-account-phone.md). Immediate-account registration, pending-email route retirement, normalized-email indexing and new email-proof binding remain proposed follow-up work. Tables below preserve the original planning inventory unless explicitly updated.
+> Implementation update (2026-10-27): after the canonical-phone delivery, the user approved the remaining concrete schema/API in plan sections 3–5. Immediate official accounts, bound authenticated email proof, normalized-email uniqueness/preflight, scoped pre-email restrictions, invitation admission checks and pending-route 410 retirement are implemented. See [the current backend contract/cutover](../../backend/employer-onboarding.md). Tables below preserve the original planning inventory; they are not a claim that the implemented scope remains awaiting approval.
 
 
 | Field | Value |

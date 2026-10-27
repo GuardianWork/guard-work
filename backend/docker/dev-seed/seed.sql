@@ -67,9 +67,9 @@ CROSS JOIN companies c
 WHERE d.company_role IS NOT NULL AND c.tax_code = 'GW-DEMO-LOCAL-001'
   AND NOT EXISTS (SELECT 1 FROM company_memberships m WHERE m.user_id = u.id);
 
-INSERT INTO employer_profiles (user_id, applicant, full_name, gender, email_verified_at,
+INSERT INTO employer_profiles (user_id, applicant, full_name, gender, email_verified_at, email_verified_email,
     company_name, work_address)
-SELECT u.id, true, d.last_name || ' ' || d.first_name, 'UNDISCLOSED', now(),
+SELECT u.id, true, d.last_name || ' ' || d.first_name, 'UNDISCLOSED', now(), lower(btrim(u.email)),
     'Công ty TNHH GuardWork Demo', 'Thành phố Hồ Chí Minh, Việt Nam'
 FROM demo_accounts d JOIN users u ON u.username = d.username
 WHERE d.company_role IS NOT NULL

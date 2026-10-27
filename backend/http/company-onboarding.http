@@ -1,52 +1,189 @@
-# Current Company verification journey after shared registration.
-# Run auth.http for signup, sign-in and explicitly requested account-email proof.
-# Use company-setup.http for complete multipart submission and rejected correction.
-# Separate employer signup, phone OTP, provisional saves, standalone uploads and JSON-only
-# Company submission/correction are retired with HTTP 410. No unfinished form is saved.
-# Use company-membership.http for invitations and membership actions.
-# Run only the desired Staff approval OR rejection path against disposable local data.
-
+# Email-only employer onboarding (REC-03 / ADR 0007).
+# Use a disposable local database and fresh email/phone/tax code values.
+# Replace placeholders locally; never commit real tokens, email secrets or documents.
+# No session is created by registration or email confirmation.
 @baseUrl = http://localhost:8080
-@ownerToken = REPLACE_WITH_OWNER_ACCESS_TOKEN
+@applicantEmail = REPLACE_WITH_FRESH_EMAIL
+@applicantPhone = REPLACE_WITH_UNIQUE_VIETNAMESE_MOBILE
+@applicantPassword = LocalTestPass123
+@applicantToken = REPLACE_WITH_APPLICANT_ACCESS_TOKEN
+@emailSecret = REPLACE_WITH_DELIVERED_MEMBER_EMAIL_SECRET
+@profileVersion = 1
+@documentId = REPLACE_WITH_UPLOADED_DOCUMENT_UUID
+@taxCode = REPLACE_WITH_UNIQUE_TAX_CODE
+@companyId = 1
+@companyVersion = 0
 @staffToken = REPLACE_WITH_STAFF_ACCESS_TOKEN
-@companyId = REPLACE_WITH_COMPANY_ID
-@expectedVersion = REPLACE_WITH_CURRENT_COMPANY_VERSION
+@ownerToken = REPLACE_WITH_VERIFIED_COMPANY_OWNER_ACCESS_TOKEN
+@recipientEmail = REPLACE_WITH_INVITED_RECIPIENT_EMAIL
+@recipientToken = REPLACE_WITH_EMAIL_VERIFIED_RECIPIENT_ACCESS_TOKEN
+@invitationSecret = REPLACE_WITH_DELIVERED_INVITATION_SECRET
 
-### Current Company identity and suspension state
-GET {{baseUrl}}/api/companies/me
-Authorization: Bearer {{ownerToken}}
+### 1. Create the official account: 201 even if deliveryAccepted is false.
+# No Company/membership is created. Duplicate official identifiers return safe 409.
+POST {{baseUrl}}/api/employer-registrations
+Content-Type: application/json
 
-### Owner feedback and version
+{
+  "fullName": "Nguyễn Minh An",
+  "phone": "{{applicantPhone}}",
+  "companyName": "Công ty thử nghiệm GuardWork",
+  "gender": "UNDISCLOSED",
+  "workAddress": "Thành phố Hồ Chí Minh, Việt Nam",
+  "email": "{{applicantEmail}}",
+  "password": "{{applicantPassword}}",
+  "passwordConfirmation": "{{applicantPassword}}"
+}
+
+### 2. Explicit sign-in works before email proof; copy data.accessToken.
+POST {{baseUrl}}/api/auth/login
+X-Guardian-Portal: public
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "{{applicantEmail}}",
+  "password": "{{applicantPassword}}"
+}
+
+### 3. Before proof: EMAIL_REQUIRED. After proof/no membership: COMPANY_ACTION_REQUIRED.
+GET {{baseUrl}}/api/me/employer-onboarding
+Authorization: Bearer {{applicantToken}}
+
+### Expected 403 before proof, with no Company/membership effects.
+POST {{baseUrl}}/api/companies/verification-request
+Authorization: Bearer {{applicantToken}}
+Content-Type: application/json
+
+{}
+
+### 4. Resend if needed after the 60-second cooldown; no request body.
+# Delivery failure keeps the account and allows another authenticated resend.
+POST {{baseUrl}}/api/me/employer-onboarding/email/send
+Authorization: Bearer {{applicantToken}}
+
+### 5. Confirm the fragment secret while signed in as the correct account.
+# Single use, 24-hour expiry. No continuation/password/session issuance.
+POST {{baseUrl}}/api/me/employer-onboarding/email/verify
+Authorization: Bearer {{applicantToken}}
+Content-Type: application/json
+
+{
+  "emailSecret": "{{emailSecret}}"
+}
+
+### 6A. Company preparation branch. Read latest version from onboarding state first.
+PUT {{baseUrl}}/api/me/employer-onboarding/company
+Authorization: Bearer {{applicantToken}}
+Content-Type: application/json
+
+{
+  "companyName": "Công ty thử nghiệm GuardWork",
+  "workAddress": "Thành phố Hồ Chí Minh, Việt Nam",
+  "expectedVersion": {{profileVersion}}
+}
+
+### Upload private legal evidence; copy data.documentId.
+POST {{baseUrl}}/api/me/employer-onboarding/documents
+Authorization: Bearer {{applicantToken}}
+Content-Type: multipart/form-data; boundary=GuardWorkDocumentBoundary
+
+--GuardWorkDocumentBoundary
+Content-Disposition: form-data; name="file"; filename="registration.pdf"
+Content-Type: application/pdf
+
+< ./REPLACE_WITH_LEGAL_DOCUMENT.pdf
+--GuardWorkDocumentBoundary--
+
+### Initial complete submission: Company PENDING + ACTIVE OWNER + retained attempt.
+POST {{baseUrl}}/api/companies/verification-request
+Authorization: Bearer {{applicantToken}}
+Content-Type: application/json
+
+{
+  "name": "Công ty thử nghiệm GuardWork",
+  "taxCode": "{{taxCode}}",
+  "legal": {
+    "workAddress": "Thành phố Hồ Chí Minh, Việt Nam",
+    "submitterPosition": "Giám đốc",
+    "representation": "LEGAL_REPRESENTATIVE",
+    "declarationAccepted": true,
+    "documentId": "{{documentId}}"
+  }
+}
+
+### Read Owner feedback/status and current Company version.
 GET {{baseUrl}}/api/companies/me/verification
-Authorization: Bearer {{ownerToken}}
+Authorization: Bearer {{applicantToken}}
 
-### Owner immutable submission/decision history
-GET {{baseUrl}}/api/companies/me/verification/history
-Authorization: Bearer {{ownerToken}}
-
-### Staff history; workspace selection cannot grant this authority
-GET {{baseUrl}}/api/staff/companies/{{companyId}}/verification-history
-Authorization: Bearer {{staffToken}}
-X-Guardian-Portal: staff
-
-### Staff approval of a pending dossier
+### Staff review. Use REJECTED + reason for the correction path, or VERIFIED.
 PUT {{baseUrl}}/api/staff/companies/{{companyId}}/verify
 Authorization: Bearer {{staffToken}}
 X-Guardian-Portal: staff
 Content-Type: application/json
 
 {
-  "status": "VERIFIED",
-  "expectedVersion": {{expectedVersion}}
+  "status": "REJECTED",
+  "rejectionReason": "Giấy phép chưa rõ thông tin, vui lòng cung cấp bản mới.",
+  "expectedVersion": {{companyVersion}}
 }
 
-### Alternative rejection; correct the same Company through company-setup.http afterward
-PUT {{baseUrl}}/api/staff/companies/{{companyId}}/reject
-Authorization: Bearer {{staffToken}}
-X-Guardian-Portal: staff
+### Rejected Owner only: update version/document first. Same Company ID/MST retained.
+PUT {{baseUrl}}/api/companies/me/verification
+Authorization: Bearer {{applicantToken}}
 Content-Type: application/json
 
 {
-  "expectedVersion": {{expectedVersion}},
-  "rejectionReason": "Giấy phép chưa rõ thông tin; vui lòng bổ sung bản hợp lệ."
+  "name": "Công ty thử nghiệm GuardWork",
+  "expectedVersion": {{companyVersion}},
+  "legal": {
+    "workAddress": "Thành phố Hồ Chí Minh, Việt Nam",
+    "submitterPosition": "Giám đốc",
+    "representation": "LEGAL_REPRESENTATIVE",
+    "declarationAccepted": true,
+    "documentId": "{{documentId}}"
+  }
 }
+
+### Owner history retains every document/declaration/decision.
+GET {{baseUrl}}/api/companies/me/verification/history
+Authorization: Bearer {{applicantToken}}
+
+### 6B. Alternative Recruiter branch: an existing eligible Company Owner invites.
+# Recipient registers/signs in/confirms their own email using steps 1–5 first.
+POST {{baseUrl}}/api/companies/me/invitations
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "email": "{{recipientEmail}}"
+}
+
+### Email-verified recipient previews the delivered invitation.
+POST {{baseUrl}}/api/company-invitations/preview
+Authorization: Bearer {{recipientToken}}
+Content-Type: application/json
+
+{
+  "secret": "{{invitationSecret}}"
+}
+
+### Explicit acceptance creates ACTIVE RECRUITER only in the invited Company.
+POST {{baseUrl}}/api/company-invitations/accept
+Authorization: Bearer {{recipientToken}}
+Content-Type: application/json
+
+{
+  "secret": "{{invitationSecret}}",
+  "confirm": true
+}
+
+### Existing Company Admin/Recruiter keeps their role after personal email confirmation.
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{recipientToken}}
+
+### Retired public pending-proof route: always 410, no record lookup or promotion.
+POST {{baseUrl}}/api/employer-registrations/old-attempt/email/verify
+
+### Retired SMS: 410 with normal authentication, no body/proof/delivery side effects.
+POST {{baseUrl}}/api/me/employer-onboarding/phone/send
+Authorization: Bearer {{applicantToken}}

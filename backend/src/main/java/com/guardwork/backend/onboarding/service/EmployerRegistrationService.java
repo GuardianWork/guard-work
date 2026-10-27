@@ -17,20 +17,19 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class EmployerRegistrationService {
-    private final EmployerRegistrationRepository registrations;
     private final EmployerProfileRepository profiles;
     private final UserRepository users;
     private final PasswordEncoder passwords;
     private final OnboardingDelivery delivery;
     private final TransactionTemplate tx;
 
-    public EmployerRegistrationService(EmployerRegistrationRepository registrations, EmployerProfileRepository profiles,
-            UserRepository users, PasswordEncoder passwords, OnboardingDelivery delivery, PlatformTransactionManager manager) {
-        this.registrations = registrations; this.profiles = profiles; this.users = users;
-        this.passwords = passwords; this.delivery = delivery; this.tx = new TransactionTemplate(manager);
+    public EmployerRegistrationService(EmployerProfileRepository profiles, UserRepository users,
+            PasswordEncoder passwords, OnboardingDelivery delivery, PlatformTransactionManager manager) {
+        this.profiles = profiles; this.users = users; this.passwords = passwords;
+        this.delivery = delivery; this.tx = new TransactionTemplate(manager);
     }
 
-    public record Started(UUID registrationId, String continuationToken, boolean deliveryAccepted) {}
+    public record Started(Long userId, boolean emailVerified, String stage, boolean deliveryAccepted) {}
 
     public Started begin(Registration request) {
         if (request == null) throw OnboardingSecrets.invalid("Registration is required");
@@ -45,70 +44,33 @@ public class EmployerRegistrationService {
         String phone = OnboardingSecrets.phone(request.phone());
         String company = OnboardingSecrets.required(request.companyName(), 255);
         String address = OnboardingSecrets.required(request.workAddress(), 1000);
-        String continuation = OnboardingSecrets.token();
         String secret = OnboardingSecrets.token();
-        UUID id = UUID.randomUUID();
-        tx.executeWithoutResult(status -> {
-            if (users.findByEmail(email).isPresent() || users.existsByPhoneNumber(phone))
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "40930 IDENTIFIER_UNAVAILABLE: Registration information is unavailable");
-            if (registrations.countByEmailAndCreatedAtAfter(email, Instant.now().minus(Duration.ofHours(1))) >= 5)
-                throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "42930 VERIFICATION_RATE_LIMIT: Try again later");
-            EmployerRegistration r = new EmployerRegistration();
-            r.setId(id); r.setContinuationHash(OnboardingSecrets.hash(continuation)); r.setEmail(email);
-            r.setPasswordHash(passwords.encode(request.password())); r.setFullName(name); r.setGender(request.gender());
-            r.setPhone(phone); r.setCompanyName(company); r.setWorkAddress(address);
-            r.setEmailSecretHash(OnboardingSecrets.hash(secret)); r.setEmailSentAt(Instant.now());
-            r.setEmailExpiresAt(Instant.now().plus(Duration.ofHours(24))); r.setCreatedAt(Instant.now());
-            registrations.saveAndFlush(r);
-        });
-        // Return continuation even on delivery failure so this exact private attempt can be retried.
-        return new Started(id, continuation, delivery.registrationEmail(email, id, secret));
-    }
-
-    public boolean resend(UUID id, Continuation request) {
-        String secret = OnboardingSecrets.token();
-        String email = tx.execute(status -> {
-            var r = privateAttempt(id, request == null ? null : request.continuationToken());
-            if (r.getPromotedUserId() != null) throw OnboardingSecrets.invalid("Registration was already completed");
-            cooldown(r.getEmailSentAt());
-            r.setEmailSecretHash(OnboardingSecrets.hash(secret)); r.setEmailSentAt(Instant.now());
-            r.setEmailExpiresAt(Instant.now().plus(Duration.ofHours(24)));
-            registrations.saveAndFlush(r);
-            return r.getEmail();
-        });
-        return delivery.registrationEmail(email, id, secret);
-    }
-
-    public Long verify(UUID id, EmailProof proof) {
-        return tx.execute(status -> {
-            var r = privateAttempt(id, proof == null ? null : proof.continuationToken());
-            if (!OnboardingSecrets.matches(proof.emailSecret(), r.getEmailSecretHash())
-                    || proof.password() == null || !passwords.matches(proof.password(), r.getPasswordHash())) throw invalidProof();
-            if (r.getPromotedUserId() != null) return r.getPromotedUserId();
-            if (!Instant.now().isBefore(r.getEmailExpiresAt())) throw invalidProof();
-            if (users.findByEmail(r.getEmail()).isPresent() || users.existsByPhoneNumber(r.getPhone())) throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "40930 IDENTIFIER_UNAVAILABLE: Registration information is unavailable");
+        Long id = tx.execute(status -> {
+            if (users.existsByNormalizedEmail(email) || users.existsByPhoneNumber(phone))
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "40930 IDENTIFIER_UNAVAILABLE: Registration information is unavailable");
             User user = new User();
             user.setUsername("employer_" + UUID.randomUUID().toString().replace("-", ""));
-            int boundary = r.getFullName().offsetByCodePoints(0, Math.min(100, r.getFullName().codePointCount(0, r.getFullName().length())));
-            user.setFirstName(r.getFullName().substring(0, boundary));
-            user.setLastName(r.getFullName().substring(boundary));
-            user.setEmail(r.getEmail()); user.setPassword(r.getPasswordHash()); user.setRole("USER");
-            user.setStatus("ACTIVE"); user.setEmailVerified(true); user.setPhoneNumber(OnboardingSecrets.phone(r.getPhone()));
+            int boundary = name.offsetByCodePoints(0, Math.min(100, name.codePointCount(0, name.length())));
+            user.setFirstName(name.substring(0, boundary)); user.setLastName(name.substring(boundary));
+            user.setEmail(email); user.setPassword(passwords.encode(request.password()));
+            user.setRole("USER"); user.setStatus("ACTIVE"); user.setEmailVerified(false); user.setPhoneNumber(phone);
             users.saveAndFlush(user);
-            EmployerProfile p = new EmployerProfile();
-            p.setUserId(user.getId()); p.setApplicant(true); p.setFullName(r.getFullName()); p.setGender(r.getGender());
-            p.setCompanyName(r.getCompanyName()); p.setWorkAddress(r.getWorkAddress());
-            p.setEmailVerifiedAt(Instant.now()); profiles.saveAndFlush(p);
-            r.setPromotedUserId(user.getId()); registrations.saveAndFlush(r);
+            EmployerProfile profile = new EmployerProfile();
+            profile.setUserId(user.getId()); profile.setApplicant(true); profile.setFullName(name);
+            profile.setGender(request.gender()); profile.setCompanyName(company); profile.setWorkAddress(address);
+            profile.setEmailChallengeEmail(email); profile.setEmailSecretHash(OnboardingSecrets.hash(secret));
+            profile.setEmailSentAt(Instant.now()); profile.setEmailExpiresAt(Instant.now().plus(Duration.ofHours(24)));
+            profiles.saveAndFlush(profile);
             return user.getId();
         });
+        // Provider failure after commit must never undo the account or its identifier reservation.
+        return new Started(id, false, "EMAIL_REQUIRED", submitEmail(delivery, email, secret));
     }
 
-    private EmployerRegistration privateAttempt(UUID id, String continuation) {
-        var r = registrations.findLocked(id).orElseThrow(EmployerRegistrationService::invalidProof);
-        if (!OnboardingSecrets.matches(continuation, r.getContinuationHash())) throw invalidProof();
-        return r;
+    static boolean submitEmail(OnboardingDelivery delivery, String email, String secret) {
+        try { return delivery.memberEmail(email, secret); }
+        catch (RuntimeException unavailable) { return false; }
     }
 
     public static void cooldown(Instant sent) {
@@ -116,5 +78,4 @@ public class EmployerRegistrationService {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "42930 VERIFICATION_RATE_LIMIT: Try again later");
     }
 
-    private static ResponseStatusException invalidProof() { return OnboardingSecrets.invalid("Verification proof is invalid or expired"); }
 }

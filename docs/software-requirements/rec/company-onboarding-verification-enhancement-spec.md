@@ -23,11 +23,11 @@ The user previously approved the 2026-10-18 journey and its concrete implementat
 
 The user subsequently confirmed Q10–Q17: backend-only delivery, a shared canonical account phone, coordinated client changes, persisted accounts on email-delivery failure, retirement of old pending-proof/SMS routes with 410, blocking migration on unresolved phone conflicts, Candidate contact edits against the shared source, and authenticated cross-device email proof without continuation tokens. The [current gap and implementation plan](company-onboarding-email-only-implementation-plan.md) separates these confirmations from the proposed exact schema/API.
 
-This revision supersedes the earlier email-before-account-creation, SMS-before-dossier, verified-phone-only uniqueness, and acceptance-before-email-proof directions. It defines target behavior; the existing code still implements the earlier journey. See the [implementation contract](company-onboarding-implementation-contract.md), [implementation inventory](../../backend/employer-onboarding.md), and [ADR 0007](../../architecture/decisions/0007-email-only-employer-onboarding.md).
+This revision supersedes the earlier email-before-account-creation, SMS-before-dossier, verified-phone-only uniqueness, and acceptance-before-email-proof directions. The user subsequently approved the concrete REC-03 plan sections 3–5; the backend now implements this journey, including authenticated email binding, scoped eligibility and retired pending-proof routes. See the [implementation contract](company-onboarding-implementation-contract.md), [implementation inventory](../../backend/employer-onboarding.md), and [ADR 0007](../../architecture/decisions/0007-email-only-employer-onboarding.md).
 
 In scope: employer registration, restricted workspace, email proof, invitation acceptance prerequisites, new-Company legal submission, Staff moderation, rejection correction, and affected-account transition requirements. The platform role remains USER; Employer Applicant is a journey term, not a new platform or Company role.
 
-Out of scope: implementing these documentation changes; Candidate-to-employer conversion; post-approval Candidate capability expansion; ownership transfer; and selecting new shared authentication, authorization, notification, frontend, or infrastructure architecture. Production retention, dispute handling and rollout details remain subject to review.
+Out of scope: new frontend delivery; Candidate-to-employer conversion; post-approval Candidate capability expansion; ownership transfer; and selecting new shared authentication, authorization, notification, frontend, or infrastructure architecture. Production retention, dispute handling and rollout details remain subject to review.
 
 ## 2. Journey and access
 
@@ -193,7 +193,7 @@ Retain existing private document access and immutable history. Do not erase old 
 | Item | Decision / boundary |
 |---|---|
 | Q6: already-ACTIVE Recruiter becoming a new Company's Owner | — (explicitly deferred by the user). Do not infer mandatory departure, simultaneous memberships, ownership transfer or permission to change existing constraints. |
-| Immediate-account registration and email proof API/schema | The [implementation plan](company-onboarding-email-only-implementation-plan.md) proposes exact registration/state/proof schemas and responses for technical review. Coordinated client changes, old-route retirement and authenticated email proof directions are confirmed. |
+| Immediate-account registration and email proof API/schema | The [implementation plan](company-onboarding-email-only-implementation-plan.md) records the selected registration/state/proof schemas and responses. The user approved sections 3–5; backend implementation and coordinated client/data cutover are documented in the current backend contract. |
 | Global phone data ownership and collisions | One canonical account phone is confirmed. Inventory Candidate/employer values; same-User differing numbers, invalid values and cross-User conflicts block conversion until reviewed correction. No automatic winner or silent contact deletion. Physical migration remains subject to technical review. |
 | Manual phone dispute/recovery | Define responsible support actors, evidence, privacy, audit and allowed outcomes before production; do not claim email ownership proves phone ownership. |
 | Rollout | Remove SMS for enrolled accounts; prepare pending-registration/session compatibility and keep unrelated legacy scope unchanged. |

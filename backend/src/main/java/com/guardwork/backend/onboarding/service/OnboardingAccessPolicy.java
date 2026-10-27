@@ -1,6 +1,11 @@
 package com.guardwork.backend.onboarding.service;
 
-import com.guardwork.backend.auth.service.AccountEmailVerificationService;
+import com.guardwork.backend.company.model.VerificationStatus;
+import com.guardwork.backend.membership.model.CompanyRole;
+import com.guardwork.backend.membership.model.MembershipStatus;
+import com.guardwork.backend.company.repository.CompanyRepository;
+import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
+import com.guardwork.backend.onboarding.repository.*;
 import com.guardwork.backend.user.repository.UserRepository;
 import com.guardwork.backend.user.model.User;
 import java.util.Set;
@@ -52,18 +57,45 @@ public class OnboardingAccessPolicy {
         var companyId = members.findActiveCompanyId(actor);
         boolean enhancedMembership = companyId.isPresent() && attempts.existsByCompanyId(companyId.get());
         if (profile.isEmpty() && !enhancedMembership) return true; // Legacy rollout is explicitly isolated.
-        if (users.findById(actor).filter(u -> "ACTIVE".equals(u.getStatus())).isEmpty()) return false;
-        if (path.startsWith("/api/auth/") || path.startsWith("/api/me/employer-onboarding")
-                || path.equals("/api/companies/me") || path.equals("/api/companies/me/verification")
-                || path.equals("/api/companies/me/verification/history") || path.startsWith("/api/company-verification-documents/")
-                || path.equals("/api/companies/verification-request") || path.matches("/api/companies/[0-9]+/resubmit")
-                || path.startsWith("/api/notifications")) return true;
-        boolean candidateRoute = path.startsWith("/api/v1/candidate");
-        if (candidateRoute) return profile.isEmpty() || !profile.get().isApplicant();
-        // Invitation consumption does not grant employer-operation eligibility by itself.
-        if (path.startsWith("/api/company-invitations/")) return true;
-        if (profile.isEmpty() || profile.get().getEmailVerifiedAt() == null)
-            return false;
-        }
+        var user = users.findById(actor).filter(u -> "ACTIVE".equals(u.getStatus()));
+        if (user.isEmpty()) return false;
+        if (shellOrProof(path, method) || retired(path, method)) return true;
+        if (profile.isEmpty() || !EmailProof.verified(profile.get(), user.get().getEmail())) return false;
+
+        if (path.startsWith("/api/v1/candidate")) return !profile.get().isApplicant();
+        if ("POST".equals(method) && (path.equals("/api/company-invitations/preview")
+                || path.equals("/api/company-invitations/accept") || path.equals("/api/company-invitations/decline"))) return true;
+        if ("GET".equals(method) && (path.equals("/api/companies/me")
+                || path.equals("/api/companies/me/verification") || path.equals("/api/companies/me/verification/history")
+                || path.matches("/api/company-verification-documents/[^/]+")
+                || path.equals("/api/me/notifications"))) return true;
+
+        if ("PATCH".equals(method) && path.matches("/api/me/notifications/[0-9]+/read")) return true;
+        var company = companyId.flatMap(companies::findById);
+        boolean rejectedOwner = company.filter(c -> !c.isBanned() && c.getVerificationStatus() == VerificationStatus.REJECTED)
+                .isPresent() && members.findByUserIdAndStatus(actor, MembershipStatus.ACTIVE)
+                .filter(m -> m.getRole() == CompanyRole.OWNER).isPresent();
+        if ("PUT".equals(method) && path.equals("/api/me/employer-onboarding/company")) return companyId.isEmpty();
+        if ("POST".equals(method) && path.equals("/api/me/employer-onboarding/documents"))
+            return companyId.isEmpty() || rejectedOwner;
+        if ("POST".equals(method) && path.equals("/api/companies/verification-request")) return companyId.isEmpty();
+        if (("PUT".equals(method) && path.equals("/api/companies/me/verification"))
+                || ("PUT".equals(method) && path.matches("/api/companies/[0-9]+/resubmit"))) return rejectedOwner;
+        return company.filter(c -> !c.isBanned() && c.getVerificationStatus() == VerificationStatus.VERIFIED).isPresent();
+    }
+
+    private static boolean shellOrProof(String path, String method) {
+        return ("GET".equals(method) && (path.equals("/api/auth/me") || path.equals("/api/me/employer-onboarding")))
+                || ("PUT".equals(method) && path.equals("/api/auth/change-password"))
+                || ("POST".equals(method) && (path.equals("/api/auth/login") || path.equals("/api/auth/refresh")
+                || path.equals("/api/auth/logout") || path.equals("/api/auth/forgot-password")
+                || path.equals("/api/auth/reset-password") || path.equals("/api/me/employer-onboarding/email/send")
+                || path.equals("/api/me/employer-onboarding/email/verify")));
+    }
+
+    private static boolean retired(String path, String method) {
+        return "POST".equals(method) && (path.equals("/api/me/employer-onboarding/phone/send")
+                || path.equals("/api/me/employer-onboarding/phone/verify")
+                || path.matches("/api/employer-registrations/[^/]+/email/(resend|verify)"));
     }
 }

@@ -278,22 +278,17 @@ Company verification responses for Staff and Owner views expose `processingStatu
 `PENDING` with a null outcome; `VERIFIED` and `REJECTED` map to processing `CHECKED` with the
 corresponding outcome. Eligibility continues to use `verificationStatus`; `CHECKED` alone does
 not mean approval. These are derived fields and require no schema migration.
-The [2026-10-27 email-only onboarding target](../docs/software-requirements/rec/company-onboarding-verification-enhancement-spec.md)
-has been confirmed and is partially implemented: current code still creates official employer
-accounts after email proof. The canonical-phone portion is implemented under ADR 0008:
-User owns the shared unique contact, Candidate updates are atomic, SMS routes return
-410 and SMS prerequisites are removed. See the [contact/cutover contract](../docs/backend/canonical-account-phone.md). Its replacement registration/API/schema
-and existing-data plans are proposed in the [current gap and implementation plan](../docs/software-requirements/rec/company-onboarding-email-only-implementation-plan.md)
-for concrete review before implementation. Follow-up decisions select backend-only delivery,
-a canonical User phone shared with Candidate, coordinated client changes and 410 retirement of
-old pending-proof/SMS routes. There is no source frontend in this checkout; the Maven resource
-declaration and historical UI notes do not imply that a working UI is present. SMS integration is
-no longer a target prerequisite; the implementation limitations below describe current code.
-
-See [employer onboarding](../docs/backend/employer-onboarding.md) for the existing registration/verification
-APIs, frontend, private legal dossiers, delivery configuration, migration, current delivery limitations and
-production-readiness prerequisites. The technical choices were confirmed by the user and recorded
-in [ADR 0005](../docs/architecture/decisions/0005-staged-employer-onboarding.md).
+The [2026-10-27 email-only onboarding contract](../docs/software-requirements/rec/company-onboarding-verification-enhancement-spec.md)
+is implemented for backend/API delivery: employer registration immediately creates
+an email-unverified account with restricted sign-in; correct-account email proof
+unlocks applicable Company preparation or invitation actions. User owns the shared
+unique phone; Candidate contact changes remain atomic. Old pending-proof/SMS routes
+return 410; recruitment retains actual email, VERIFIED Company and current role checks.
+See [employer onboarding](../docs/backend/employer-onboarding.md) for API/client changes,
+email delivery, private dossiers, retained evidence and the required stopped-writer
+email/phone migration preflights. No source frontend exists in this checkout; an
+external client must implement the workspace/confirmation screens. Backend tests
+and provider fakes do not establish real email delivery or browser behavior.
 
 Company, Staff and known application-error advice use order `0`, ahead of the global
 `InternalServerExceptionHandler` at `LOWEST_PRECEDENCE`. Spring selects the first applicable

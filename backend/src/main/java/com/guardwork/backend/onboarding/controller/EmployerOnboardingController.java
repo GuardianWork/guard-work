@@ -5,7 +5,6 @@ import com.guardwork.backend.common.ApiResponse;
 import com.guardwork.backend.onboarding.dto.OnboardingRequests.*;
 import com.guardwork.backend.onboarding.service.*;
 import java.util.Map;
-import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.server.ResponseStatusException;
@@ -14,14 +13,23 @@ import org.springframework.web.bind.annotation.*;
 /** Compatibility tombstones never bind or consume retained onboarding credentials. */
 @RestController
 public class EmployerOnboardingController {
-    @PostMapping({"/api/employer-registrations",
-            "/api/employer-registrations/{id}/email/resend",
-            "/api/employer-registrations/{id}/email/verify",
-            "/api/me/employer-onboarding/email/send",
-            "/api/me/employer-onboarding/email/verify",
-            "/api/me/employer-onboarding/phone/send",
-            "/api/me/employer-onboarding/phone/verify"})
-    public void retiredPost() { throw retired(); }
+    private final EmployerRegistrationService registrations;
+    private final PersonalVerificationService personal;
+
+    public EmployerOnboardingController(EmployerRegistrationService registrations, PersonalVerificationService personal) {
+        this.registrations = registrations; this.personal = personal;
+    }
+
+    @PostMapping("/api/employer-registrations")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<EmployerRegistrationService.Started> register(@RequestBody Registration request) {
+        return new ApiResponse<>(201, "Account created; verify your email", registrations.begin(request));
+    }
+
+    @PostMapping({"/api/employer-registrations/{id}/email/resend", "/api/employer-registrations/{id}/email/verify"})
+    public ApiResponse<Void> retiredRegistration() {
+        throw retired();
+    }
 
     @GetMapping("/api/me/employer-onboarding")
     public ApiResponse<PersonalVerificationService.State> state(@AuthenticationPrincipal UserPrincipal user) {
@@ -41,8 +49,12 @@ public class EmployerOnboardingController {
     @PostMapping({"/api/me/employer-onboarding/phone/send", "/api/me/employer-onboarding/phone/verify"})
     public ApiResponse<Void> retiredPhone() {
         // Normal authentication runs first; do not enroll, inspect proof or write a profile.
-        throw new ResponseStatusException(HttpStatus.GONE,
-                "41030 PHONE_VERIFICATION_RETIRED: Phone verification is no longer available");
+        throw retired();
+    }
+
+    private static ResponseStatusException retired() {
+        return new ResponseStatusException(HttpStatus.GONE,
+                "41030 ONBOARDING_FLOW_RETIRED: This verification flow is no longer available");
     }
 
     @PutMapping("/api/me/employer-onboarding/company")

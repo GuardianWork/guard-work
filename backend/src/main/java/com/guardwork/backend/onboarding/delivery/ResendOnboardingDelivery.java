@@ -23,15 +23,10 @@ public class ResendOnboardingDelivery implements OnboardingDelivery {
                 .followRedirects(HttpClient.Redirect.NEVER).build());
     }
 
-    ResendOnboardingDelivery(ObjectMapper json, String sender, String credential, HttpClient http) {
-        this.json = json; this.sender = sender; this.credential = credential; this.http = http;
-    }
-
     @Override public boolean memberEmail(String recipient, String secret) {
-        return send(recipient, "Mã xác thực email GuardWork",
-                "Mã xác thực email của bạn là: " + secret
-                + "\nNhập mã này trong GuardWork. Mã có hiệu lực trong 10 phút."
-                + "\nKhông chia sẻ mã này với người khác.", null);
+        String url = confirmationUrl();
+        return url != null && send(recipient, "Xác thực email tuyển dụng GuardWork",
+                "Đăng nhập và xác nhận email tại:\n" + url + "#memberEmailSecret=" + secret, null);
     }
 
     @Override public boolean decisionEmail(String recipient, String company, String outcome, String reason, UUID id) {
