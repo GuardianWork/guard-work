@@ -1,5 +1,7 @@
 package com.guardwork.backend.onboarding.service;
 
+import com.guardwork.backend.user.AccountPhone;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -27,5 +29,34 @@ public final class OnboardingSecrets {
     public static boolean matches(String raw, String digest) {
         return raw != null && digest != null && MessageDigest.isEqual(
                 hash(raw).getBytes(StandardCharsets.UTF_8), digest.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static String otpHash(String pepper, Long userId, String phone, String code) {
+        if (pepper == null || pepper.isBlank()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                "50330 VERIFICATION_UNAVAILABLE: Verification is not configured");
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(pepper.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal((userId + ":" + phone + ":" + code).getBytes(StandardCharsets.UTF_8)));
+        } catch (java.security.GeneralSecurityException impossible) { throw new IllegalStateException(impossible); }
+    }
+
+    public static String phone(String value) {
+        try {
+            String phone = AccountPhone.normalize(value);
+            if (phone == null) throw invalid("A Vietnamese mobile number is required");
+            return phone;
+        } catch (IllegalArgumentException invalidPhone) {
+            throw invalid("A Vietnamese mobile number is required");
+        }
+    }
+
+    public static String required(String value, int max) {
+        if (value == null || value.isBlank() || value.trim().length() > max) throw invalid("Required field is invalid");
+        return value.trim();
+    }
+
+    public static ResponseStatusException invalid(String reason) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "40030 INVALID_ONBOARDING: " + reason);
     }
 }

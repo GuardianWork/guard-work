@@ -7,11 +7,11 @@ CREATE TEMP TABLE demo_accounts (
     platform_role TEXT, company_role TEXT, phone TEXT
 ) ON COMMIT DROP;
 INSERT INTO demo_accounts VALUES
-    ('demo_candidate', 'candidate@demo.guardwork.test', 'An', 'Nguyễn Văn', 'USER', NULL, '0900000001'),
-    ('demo_staff', 'staff@demo.guardwork.test', 'Bình', 'Trần Thanh', 'STAFF', NULL, '0900000002'),
-    ('demo_owner', 'owner@demo.guardwork.test', 'Chi', 'Lê Minh', 'USER', 'OWNER', '0900000003'),
-    ('demo_company_admin', 'company-admin@demo.guardwork.test', 'Dũng', 'Phạm Anh', 'USER', 'ADMIN', '0900000004'),
-    ('demo_recruiter', 'recruiter@demo.guardwork.test', 'Hà', 'Võ Thu', 'USER', 'RECRUITER', '0900000005');
+    ('demo_candidate', 'candidate@demo.guardwork.test', 'An', 'Nguyễn Văn', 'USER', NULL, '+84900000001'),
+    ('demo_staff', 'staff@demo.guardwork.test', 'Bình', 'Trần Thanh', 'STAFF', NULL, '+84900000002'),
+    ('demo_owner', 'owner@demo.guardwork.test', 'Chi', 'Lê Minh', 'USER', 'OWNER', '+84900000003'),
+    ('demo_company_admin', 'company-admin@demo.guardwork.test', 'Dũng', 'Phạm Anh', 'USER', 'ADMIN', '+84900000004'),
+    ('demo_recruiter', 'recruiter@demo.guardwork.test', 'Hà', 'Võ Thu', 'USER', 'RECRUITER', '+84900000005');
 
 -- Refuse identifier collisions rather than attach fixture privileges to another user.
 DO $$
@@ -26,15 +26,15 @@ END;
 $$;
 
 -- BCrypt cost 10 for the public local-only password GuardWork123!.
-INSERT INTO users (username, email, first_name, last_name, password, role, status, email_verified)
+INSERT INTO users (username, email, first_name, last_name, password, role, status, email_verified, phone_number)
 SELECT username, email, first_name, last_name,
     '$2a$10$.Sw9NzCJH98UmXsd3ep4punGVyL7FwuBWXWykQDXbDi7wTSj3SK/S',
-    platform_role, 'ACTIVE', true
+    platform_role, 'ACTIVE', true, phone
 FROM demo_accounts
 ON CONFLICT (username) DO NOTHING;
 
-INSERT INTO candidate_profiles (user_id, full_name, phone_number, skills, experience_summary, education_summary, is_public)
-SELECT id, 'Nguyễn Văn An', '0900000001', '["Java", "Spring Boot", "PostgreSQL"]'::jsonb,
+INSERT INTO candidate_profiles (user_id, full_name, skills, experience_summary, education_summary, is_public)
+SELECT id, 'Nguyễn Văn An', '["Java", "Spring Boot", "PostgreSQL"]'::jsonb,
     'Sinh viên thực tập phát triển phần mềm.', 'Sinh viên ngành Công nghệ thông tin.', false
 FROM users WHERE username = 'demo_candidate'
 ON CONFLICT (user_id) DO NOTHING;
@@ -68,8 +68,8 @@ WHERE d.company_role IS NOT NULL AND c.tax_code = 'GW-DEMO-LOCAL-001'
   AND NOT EXISTS (SELECT 1 FROM company_memberships m WHERE m.user_id = u.id);
 
 INSERT INTO employer_profiles (user_id, applicant, full_name, gender, email_verified_at,
-    phone, phone_verified_at, company_name, work_address)
-SELECT u.id, true, d.last_name || ' ' || d.first_name, 'UNDISCLOSED', now(), d.phone, now(),
+    company_name, work_address)
+SELECT u.id, true, d.last_name || ' ' || d.first_name, 'UNDISCLOSED', now(),
     'Công ty TNHH GuardWork Demo', 'Thành phố Hồ Chí Minh, Việt Nam'
 FROM demo_accounts d JOIN users u ON u.username = d.username
 WHERE d.company_role IS NOT NULL

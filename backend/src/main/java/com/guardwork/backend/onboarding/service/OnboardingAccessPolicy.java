@@ -48,10 +48,21 @@ public class OnboardingAccessPolicy {
 
     @Transactional(readOnly = true)
     public boolean permits(Long actor, String path, String method) {
-        try {
-            requireAccess(actor, path, method);
-            return true;
-        } catch (ResponseStatusException denied) {
+        var profile = profiles.findById(actor);
+        var companyId = members.findActiveCompanyId(actor);
+        boolean enhancedMembership = companyId.isPresent() && attempts.existsByCompanyId(companyId.get());
+        if (profile.isEmpty() && !enhancedMembership) return true; // Legacy rollout is explicitly isolated.
+        if (users.findById(actor).filter(u -> "ACTIVE".equals(u.getStatus())).isEmpty()) return false;
+        if (path.startsWith("/api/auth/") || path.startsWith("/api/me/employer-onboarding")
+                || path.equals("/api/companies/me") || path.equals("/api/companies/me/verification")
+                || path.equals("/api/companies/me/verification/history") || path.startsWith("/api/company-verification-documents/")
+                || path.equals("/api/companies/verification-request") || path.matches("/api/companies/[0-9]+/resubmit")
+                || path.startsWith("/api/notifications")) return true;
+        boolean candidateRoute = path.startsWith("/api/v1/candidate");
+        if (candidateRoute) return profile.isEmpty() || !profile.get().isApplicant();
+        // Invitation consumption does not grant employer-operation eligibility by itself.
+        if (path.startsWith("/api/company-invitations/")) return true;
+        if (profile.isEmpty() || profile.get().getEmailVerifiedAt() == null)
             return false;
         }
     }

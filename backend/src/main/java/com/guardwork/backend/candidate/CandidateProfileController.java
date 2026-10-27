@@ -28,8 +28,7 @@ public class CandidateProfileController {
     @ResponseStatus(HttpStatus.OK)
     public ApiResponse<CandidateProfileResponse> getProfile() {
         Long userId = SecurityUtils.getCurrentUserId();
-        CandidateProfile profile = profileService.getOrCreateProfile(userId);
-        return ApiResponse.ok(mapToResponse(profile));
+        return ApiResponse.ok(profileService.getOrCreateProfile(userId));
     }
 
     @PutMapping("/profile")
@@ -38,23 +37,7 @@ public class CandidateProfileController {
             @Valid @RequestBody UpdateCandidateProfileRequest request) {
 
         Long userId = SecurityUtils.getCurrentUserId();
-        CandidateProfile updated = profileService.updateProfile(userId, request);
-        return ApiResponse.ok(mapToResponse(updated));
+        return ApiResponse.ok(profileService.updateProfile(userId, request));
     }
 
-    private CandidateProfileResponse mapToResponse(CandidateProfile profile) {
-        return new CandidateProfileResponse(
-                profile.getId(),
-                profile.getUserId(),
-                profile.getFullName(),
-                profile.getAvatarUrl(),
-                profile.getPhoneNumber(),
-                profile.getSkills(),
-                profile.getExperienceSummary(),
-                profile.getEducationSummary(),
-                profile.isPublic(),
-                profile.getCreatedAt(),
-                profile.getUpdatedAt()
-        );
-    }
 }

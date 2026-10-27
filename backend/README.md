@@ -135,7 +135,8 @@ when calling `GET /api/auth/me` to inspect the platform role and active Company 
 #### Seeded data and reruns
 
 Fixtures include a private Candidate profile, one verified demo Company, three active
-Company memberships, and employer profiles with synthetic email/phone verification.
+Company memberships, and employer profiles with local synthetic email proof. Current phones are canonical User
+contacts; fresh fixtures do not fabricate phone proof.
 These are direct local fixtures, so no OTP or email delivery is needed. They preserve
 the platform/Company role separation in GW-SR-AUTH-01 and GW-SR-REC-02; available
 operations still depend on implemented APIs. The certificate URL is a placeholder;
@@ -278,8 +279,10 @@ Company verification responses for Staff and Owner views expose `processingStatu
 corresponding outcome. Eligibility continues to use `verificationStatus`; `CHECKED` alone does
 not mean approval. These are derived fields and require no schema migration.
 The [2026-10-27 email-only onboarding target](../docs/software-requirements/rec/company-onboarding-verification-enhancement-spec.md)
-has been confirmed but is not implemented: current code still creates official employer
-accounts after email proof and requires phone proof. Its replacement registration/API/schema
+has been confirmed and is partially implemented: current code still creates official employer
+accounts after email proof. The canonical-phone portion is implemented under ADR 0008:
+User owns the shared unique contact, Candidate updates are atomic, SMS routes return
+410 and SMS prerequisites are removed. See the [contact/cutover contract](../docs/backend/canonical-account-phone.md). Its replacement registration/API/schema
 and existing-data plans are proposed in the [current gap and implementation plan](../docs/software-requirements/rec/company-onboarding-email-only-implementation-plan.md)
 for concrete review before implementation. Follow-up decisions select backend-only delivery,
 a canonical User phone shared with Candidate, coordinated client changes and 410 retirement of

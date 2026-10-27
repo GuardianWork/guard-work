@@ -11,5 +11,4 @@ public interface EmployerProfileRepository extends JpaRepository<EmployerProfile
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT r FROM EmployerProfile r WHERE r.userId = :id")
     Optional<EmployerProfile> findLocked(@Param("id") Long id);
-    boolean existsByPhoneAndPhoneVerifiedAtIsNotNull(String phone);
 }

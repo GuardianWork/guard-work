@@ -17,8 +17,7 @@ public record UpdateCandidateProfileRequest(
         @Size(max = 150, message = "Full name must be at most 150 characters")
         String fullName,
 
-        @Pattern(regexp = ValidationConstants.PHONE_REGEX, message = "Phone number must be a valid Vietnamese phone number")
-        @Size(max = 20, message = "Phone number must be at most 20 characters")
+        // Validated and normalized at the shared account-contact service boundary.
         String phoneNumber,
 
         @Pattern(regexp = ValidationConstants.HTTPS_URL_REGEX, message = "Avatar URL must be a valid HTTPS URL")

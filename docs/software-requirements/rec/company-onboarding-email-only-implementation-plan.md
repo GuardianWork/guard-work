@@ -1,5 +1,8 @@
 # [GW-PLAN-REC-03-EMAIL-ONLY] Gap Analysis and Next Implementation Plan
 
+> Implementation update (2026-10-27): the user approved the bounded ADR 0008 schema/API scope. The canonical User phone, blocking migration/preflight, atomic Candidate edits, employer contact coordination, fixtures, SMS 410 retirement and removal of SMS prerequisites are implemented. See [the canonical-phone contract and cutover](../../backend/canonical-account-phone.md). Immediate-account registration, pending-email route retirement, normalized-email indexing and new email-proof binding remain proposed follow-up work. Tables below preserve the original planning inventory unless explicitly updated.
+
+
 | Field | Value |
 |---|---|
 | Plan ID | GW-PLAN-REC-03-EMAIL-ONLY |
