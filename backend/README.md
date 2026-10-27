@@ -277,10 +277,20 @@ Company verification responses for Staff and Owner views expose `processingStatu
 `PENDING` with a null outcome; `VERIFIED` and `REJECTED` map to processing `CHECKED` with the
 corresponding outcome. Eligibility continues to use `verificationStatus`; `CHECKED` alone does
 not mean approval. These are derived fields and require no schema migration.
-See [complete Company setup](../docs/backend/company-setup.md) for atomic multipart dossiers,
-private legal evidence, Staff review and rejected correction, and [retirement and decision delivery](../docs/backend/employer-onboarding.md)
-for mail configuration, retained-data compatibility and recovery. The approved replacement is
-recorded in [ADR 0008](../docs/architecture/decisions/0008-unified-registration-and-company-setup.md).
+The [2026-10-27 email-only onboarding target](../docs/software-requirements/rec/company-onboarding-verification-enhancement-spec.md)
+has been confirmed but is not implemented: current code still creates official employer
+accounts after email proof and requires phone proof. Its replacement registration/API/schema
+and existing-data plans are proposed in the [current gap and implementation plan](../docs/software-requirements/rec/company-onboarding-email-only-implementation-plan.md)
+for concrete review before implementation. Follow-up decisions select backend-only delivery,
+a canonical User phone shared with Candidate, coordinated client changes and 410 retirement of
+old pending-proof/SMS routes. There is no source frontend in this checkout; the Maven resource
+declaration and historical UI notes do not imply that a working UI is present. SMS integration is
+no longer a target prerequisite; the implementation limitations below describe current code.
+
+See [employer onboarding](../docs/backend/employer-onboarding.md) for the existing registration/verification
+APIs, frontend, private legal dossiers, delivery configuration, migration, current delivery limitations and
+production-readiness prerequisites. The technical choices were confirmed by the user and recorded
+in [ADR 0005](../docs/architecture/decisions/0005-staged-employer-onboarding.md).
 
 Company, Staff and known application-error advice use order `0`, ahead of the global
 `InternalServerExceptionHandler` at `LOWEST_PRECEDENCE`. Spring selects the first applicable

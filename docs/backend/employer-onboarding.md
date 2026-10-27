@@ -6,11 +6,17 @@ replace separate employer signup, mandatory phone proof and provisional Company
 setup. Historical approval evidence remains in [ADR 0005](../architecture/decisions/0005-staged-employer-onboarding.md)
 and its linked requirements; it records the earlier contract.
 
-Use [shared registration and requested account-email proof](unified-registration.md),
-[complete Company submission/correction](company-setup.md), and
-[verified-email invitations](verified-email-invitations.md). Candidate and recruiting
-workspaces use one User and the public authentication context; workspace selection
-grants no Company or Staff authority. No frontend source is present in this checkout.
+## Target amendment — 2026-10-27 (not implemented)
+
+The user confirmed [GW-SR-REC-03 v0.2.1](../software-requirements/rec/company-onboarding-verification-enhancement-spec.md): create an official account immediately, permit restricted sign-in before email proof, enforce unique email/declared phone across existing accounts, and remove SMS gates. Email proof must precede Company preparation/submission and Recruiter invitation acceptance. Initial dossier submission still creates PENDING Company and ACTIVE OWNER atomically; invitation acceptance creates ACTIVE RECRUITER for the invited Company. Recruitment still needs an eligible VERIFIED Company and current authorization. Already-enrolled accounts must lose SMS prerequisites; unrelated legacy accounts are not newly enrolled. The already-ACTIVE Recruiter-to-new-Owner case is explicitly undecided.
+
+Follow-up Q10–Q17 confirms backend-only delivery, one shared User phone, coordinated client changes, retained accounts on mail-submission failure, 410 retirement of old pending-proof/SMS routes, blocking data conversion on unresolved phone conflicts, Candidate edits against the shared source and authenticated cross-device email proof. See the [current gap and implementation plan](../software-requirements/rec/company-onboarding-email-only-implementation-plan.md) for source evidence, proposed schema/API and test/release sequence.
+
+Source inventory correction: no source `frontend/` directory exists in this checkout. The Maven resource declaration and historical UI checkpoints below do not demonstrate a currently available UI. Generated `target/` assets are not an authorized source to edit or reconstruct. The next implementation delivers backend contracts/request examples; external UI remains a separate dependency.
+
+**Sections below describe existing backend email/SMS behavior and historical delivery notes, not delivery of the amended target or proof of current frontend source availability.** The pending-registration promotion, SMS routes/configuration and acceptance-before-proof behavior need changes under the [amended implementation contract](../software-requirements/rec/company-onboarding-implementation-contract.md). Its schema/API and existing-data plans require concrete review first. SMS provider integration is no longer a prerequisite for the target; the provider tasks below are historical implementation limitations. Preserve old migrations and proof/evidence history.
+
+## Journey and compatibility
 
 ## Retirement contract
 
