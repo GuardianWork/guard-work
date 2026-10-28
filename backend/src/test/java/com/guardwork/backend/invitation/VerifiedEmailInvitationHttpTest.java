@@ -120,20 +120,22 @@ class VerifiedEmailInvitationHttpTest {
   }
 
   @Test
-  void legacyRecipientsRetainBothHistoricalEmailStatesWithoutPhoneOrDossier() throws Exception {
+  void everyRecipientRequiresEmailProofBeforeFirstAcceptance() throws Exception {
     CompanyFixture company = existingVerifiedCompany();
-    for (boolean historicalEmailVerified : new boolean[] {false, true}) {
-      Account recipient = account();
-      database.update("UPDATE users SET recruiting_email_verification_required=false,email_verified=? WHERE id=?",
-          historicalEmailVerified, recipient.id());
-      String secret = invite(company.owner(), recipient.email());
-      invitation("accept", recipient, secret, true).andExpect(status().isCreated());
-      currentUser(recipient).andExpect(jsonPath("$.data.emailVerified").value(historicalEmailVerified))
-          .andExpect(jsonPath("$.data.recruitingEmailVerificationRequired").value(false))
-          .andExpect(jsonPath("$.data.activeMembership.companyId").value(company.id()));
-    }
-    assertThat(accountSecrets).isEmpty();
-    inbox(company.owner()).andExpect(jsonPath("$.data.totalElements").value(2));
+    Account recipient = account();
+    database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,false,'Existing recipient')", recipient.id());
+    String secret = invite(company.owner(), recipient.email());
+    invitation("accept", recipient, secret, true).andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("40335 EMAIL_VERIFICATION_REQUIRED: Verify your account email before recruiting"));
+    currentUser(recipient).andExpect(jsonPath("$.data.emailVerified").value(false))
+        .andExpect(jsonPath("$.data.recruitingEmailEligible").value(false))
+        .andExpect(jsonPath("$.data.activeMembership").isEmpty());
+    inbox(company.owner()).andExpect(jsonPath("$.data.totalElements").value(0));
+    verifyEmail(recipient);
+    invitation("accept", recipient, secret, true).andExpect(status().isCreated());
+    currentUser(recipient).andExpect(jsonPath("$.data.emailVerified").value(true))
+        .andExpect(jsonPath("$.data.activeMembership.companyId").value(company.id()));
+    inbox(company.owner()).andExpect(jsonPath("$.data.totalElements").value(1));
   }
 
   @Test
@@ -248,7 +250,7 @@ class VerifiedEmailInvitationHttpTest {
   CompanyFixture existingVerifiedCompany() throws Exception {
     Account owner = account();
     // This retained Company is a fixture; recipient registration and mailbox proof use real APIs.
-    database.update("UPDATE users SET recruiting_email_verification_required=false WHERE id=?", owner.id());
+    database.update("UPDATE users SET email_verified=true WHERE id=?", owner.id());
     Long company = new TransactionTemplate(transactions).execute(tx -> {
       Long id = database.queryForObject("INSERT INTO companies(name,tax_code,email,"
           + "registration_certificate_url,verification_status,owner_user_id) VALUES (?,?,?,?,?,?) RETURNING id",

@@ -175,17 +175,18 @@ class AccountEmailVerificationHttpTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.deliveryAccepted").value(true));
     }
 
-    @Test void legacyUsersRetainBothVerificationFlagValuesAndApplicantsRegainCandidateAccess() throws Exception {
+    @Test void emailVerificationControlsRecruitingEligibilityButNotCandidateAccess() throws Exception {
         for (boolean verified : new boolean[]{false, true}) {
             JsonNode login = registerAndLogin();
             long id = login.path("user").path("id").asLong();
-            database.update("UPDATE users SET recruiting_email_verification_required=FALSE,email_verified=? WHERE id=?", verified, id);
+            database.update("UPDATE users SET email_verified=? WHERE id=?", verified, id);
             database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,TRUE,'Existing applicant')", id);
             String authorization = "Bearer " + login.path("accessToken").asText();
             http.perform(get("/api/auth/me").header("Authorization", authorization))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.data.emailVerified").value(verified))
-                    .andExpect(jsonPath("$.data.recruitingEmailVerificationRequired").value(false))
-                    .andExpect(jsonPath("$.data.recruitingEmailEligible").value(true));
+                    .andExpect(jsonPath("$.data.recruitingEmailVerificationRequired").doesNotExist())
+                    .andExpect(jsonPath("$.data.candidateAccessAllowed").doesNotExist())
+                    .andExpect(jsonPath("$.data.recruitingEmailEligible").value(verified));
             http.perform(get("/api/v1/candidates/profile").header("Authorization", authorization))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.data.userId").value(id));
         }
@@ -312,9 +313,9 @@ class AccountEmailVerificationHttpTest {
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
         http.perform(get("/api/auth/me").header("Authorization", "Bearer " + login.path("accessToken").asText()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.emailVerified").value(false))
-                .andExpect(jsonPath("$.data.recruitingEmailVerificationRequired").value(true))
+                .andExpect(jsonPath("$.data.recruitingEmailVerificationRequired").doesNotExist())
                 .andExpect(jsonPath("$.data.recruitingEmailEligible").value(false))
-                .andExpect(jsonPath("$.data.candidateAccessAllowed").value(true));
+                .andExpect(jsonPath("$.data.candidateAccessAllowed").doesNotExist());
         http.perform(get("/api/v1/candidates/profile").header("Authorization", "Bearer " + login.path("accessToken").asText()))
                 .andExpect(status().isOk());
         verifyNoInteractions(delivery);

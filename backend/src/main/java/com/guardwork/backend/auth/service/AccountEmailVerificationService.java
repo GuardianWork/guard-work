@@ -117,7 +117,7 @@ public class AccountEmailVerificationService {
 
     public static boolean isRecruitingEmailEligible(User user) {
         return "ACTIVE".equals(user.getStatus())
-                && (!user.isRecruitingEmailVerificationRequired() || user.isEmailVerified());
+                && user.isEmailVerified();
     }
 
     /** Call with the current persisted User already held by the business transaction's actor lock. */

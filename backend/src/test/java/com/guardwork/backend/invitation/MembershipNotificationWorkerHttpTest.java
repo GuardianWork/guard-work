@@ -129,7 +129,7 @@ class MembershipNotificationWorkerHttpTest {
                             "password",
                             "Password123"))))
         .andExpect(status().isCreated());
-    database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
+    database.update("UPDATE users SET email_verified=TRUE WHERE email=?", email);
     String response =
         http.perform(
                 post("/api/auth/login")

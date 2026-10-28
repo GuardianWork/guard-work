@@ -18,7 +18,7 @@ arbitrary certificate URLs are not inputs. Tax code, Company identity and owners
 remain unchanged. Old JSON-only requests return 410 without mutation; no partial save
 or pending-dossier edit is available.
 
-New Users need account-email proof; legacy Users retain their exemption. Correction
+All Users need verified account email; there is no legacy exemption. Correction
 rechecks current User, Owner and Company under actor/Company/membership locks. Only
 REJECTED becomes PENDING. Stale versions return 409 `40022 CONCURRENT_MODIFICATION`;
 other states return 400 `40012 COMPANY_NOT_REJECTED`. Invalid requests roll back the

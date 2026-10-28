@@ -3,7 +3,7 @@
 # Existing seeded demo_owner / demo_recruiter accounts can be used (see backend/README.md).
 # Otherwise use auth.http for shared registration/proof, company-setup.http for complete submission, and company-membership.http for invitations.
 # Both actors must belong to the same Company. Pending/rejected Companies may draft;
-# New Users need verified account email for private recruiting; legacy Users retain their exemption. Phone proof is not required.
+# All Users need verified account email for private recruiting; no legacy exemption remains. Phone proof is not required.
 # Copy IDs and versions from responses into the variables below. Keep tokens local.
 # Repeating a POST creates another job. Each successful PUT advances BOTH versions;
 # copy data.version and data.workingRevision.version before another save.

@@ -1,9 +1,5 @@
 # Job Publishing and Assignment MVP — Software Requirements Specification
 
-> Unified registration coordination (2026-10-28): the user explicitly approved
-> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
-> UREG-008 and UREG-011 replace JP78-010’s 2026-10-27 personal-email bypass for newly registered Users only. Their private recruiting reads/writes, including job drafts, require current persisted account-email proof. Existing Users remain exempt from this new personal gate. Phone proof remains removed. Company verification for submission/publication, active User/membership, suspension, role/assignment, concurrency and public detail rules remain unchanged. Email state alone never unpublishes an approved job. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
-
 | Field | Value |
 |---|---|
 | Specification ID | GW-SR-JOB-PUBLISHING-MVP |
@@ -14,7 +10,7 @@
 | Date / Last Updated | 2026-10-28 |
 | Owner | Thinh |
 | Named human approver | Thinh (retained from baseline) |
-| Status | Approved — explicit user approval recorded on 2026-10-20 |
+| Status | Approved |
 | Ticket / branch | GW-78 / `GW-78-implement-job-publishing-and-assignment` |
 
 ## 1. Purpose and scope
@@ -60,7 +56,7 @@ Only PUBLISHED and PAUSED jobs undergo deadline expiry. CLOSED remains CLOSED af
 
 | ID | Requirement |
 |---|---|
-| JP78-010 | Authorized eligible members may create incomplete drafts before Company verification. Company suspension blocks private operations. Personal email/phone onboarding does not gate job operations (approved 2026-10-27). Preserve active User/membership, role/assignment and Company verification gates; use the scoped route exceptions in the contract for pre-verification drafts, public detail and own-inbox access. |
+| JP78-010 | Authorized eligible members may create incomplete drafts before Company verification. Company suspension blocks private operations. All private job operations require an active User with verified account email; personal phone proof is not required. Preserve active User/membership, role/assignment and Company verification gates; use the scoped route exceptions in the contract for pre-verification drafts, public detail and own-inbox access. |
 | JP78-011 | Save incomplete drafts within type, enum, length and size limits. Submission requires complete content, a future exact deadline, verified non-suspended Company, eligible submitter and at least one responsible person. Return field-specific validation information through the existing scoped response convention. |
 | JP78-012 | Required content comprises title, description, responsibilities, required/preferred qualifications, experience expectations, employment type, work arrangement, location, benefits, deadline, headcount, application instructions and a compensation range or explicit not-disclosed choice. Application instructions direct Candidates to apply through GuardWork. |
 | JP78-013 | Narrative fields are plain text with line breaks, supporting Vietnamese Unicode. Screening questions are optional, capped at ten, ordered and typed SHORT_TEXT, SINGLE_CHOICE, YES_NO or NUMERIC, each with an explicit required flag. No automated ranking or rejection. Answer collection is out of scope. |
@@ -95,32 +91,12 @@ No new retention duration, indefinite legal retention policy or account-deletion
 
 ## 7. API, schema and verification
 
-The [implementation contract](job-publishing-and-assignment-implementation-contract.md) contains endpoints, payloads, validation bounds, errors, migration structures, concurrency rules and test cases. User confirmation of that concrete contract and the explained concurrency outcomes is recorded on 2026-10-20, followed by explicit approval of the published issue on the same date.
+The [implementation contract](job-publishing-and-assignment-implementation-contract.md) contains endpoints, payloads, validation bounds, errors, migration structures, concurrency rules and test cases.
 
 Use existing feature-first controllers/services/Spring Data JPA, Flyway, PostgreSQL, authentication, envelopes, pagination, audit and notification patterns. No new dependency or platform-wide architecture is proposed. Existing API shapes remain compatible; notification context additions are nullable and additive.
 
-## 8. Decision evidence and approval
+## 8. Implementation and verification
 
-Product decisions Q1–Q27 were confirmed in the GW-78 interview, including corrections at Q6, Q19 and Q21. Q25 permits terminal-state approval without reopening; Q26 confirms scoped onboarding compatibility changes. The user accepted the concrete Q27 contract, requested explanation of concurrency, and then agreed to the explained stale-save, competing-decision and access-revocation outcomes. See the workspace [decision log](../../../../../../.scratch/job-publishing-and-assignment/decisions.md) and root glossary/ADR.
+The backend provides Company job APIs, Platform Staff moderation, public approved detail, and expiry reconciliation. Platform moderation uses current persisted `STAFF` authority and `/api/staff/...` routes; Company `ADMIN` membership grants no moderation authority. The [implementation contract](job-publishing-and-assignment-implementation-contract.md) and [workflow guide](../../backend/job-drafts.md) describe HTTP, service, and PostgreSQL verification boundaries.
 
-On 2026-10-20, after publication of the consolidated tracker issue, the user explicitly instructed: "I approve the issue, write it down". Approved lifecycle status records that human decision; it is not an autonomous agent approval. The accompanying implementation contract is covered by the issue's approval. The user subsequently accepted the six-ticket breakdown and blocking edges on 2026-10-20, retaining the single-migration contract. On 2026-10-21 the user invoked implement-spec for the remaining backend work, treating ticket 01 as complete and naming the existing GW-78 worktree as the integration destination. No implementation, migration, commit or push has been performed as part of this interview.
-
-## Implementation completion — 2026-10-21
-
-The backend scope is implemented on `GW-78-implement-job-publishing-and-assignment`. Ticket 01 was already complete; tickets 02–06 and the final review fix are merged into that branch. The frontend and the committed single job migration were unchanged by the remaining-ticket implementation.
-
-Verification passed: 250 backend tests, 46 final focused HTTP/security/PostgreSQL tests after the eligibility refactor, and Maven packaging. Specification review found no actionable gaps; standards review found no documented-rule violations, and its shared-eligibility duplication finding was addressed. See [backend workflow documentation](../../backend/job-drafts.md) and the backend README for routes and expiry configuration.
-
-## Integration amendment — 2026-10-26
-
-The user explicitly confirmed that Platform `STAFF` replaces the former Platform `ADMIN` terminology and authorized the migration renumbering described in [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md). Moderation reads current persisted `STAFF` authority; Company `ADMIN` remains excluded. Job moderation uses `/api/staff/...`, matching the baseline retirement of `/api/admin/**`; these job routes are new relative to `cc8943ab`. Compare integration behavior and migration ordering against `cc8943ab`.
-
-## Approved onboarding separation — 2026-10-27
-
-After approving a configurable exception, the user explicitly replaced it with removal
-of personal-onboarding enforcement for job publishing and assignment. Known Company
-job routes bypass personal email/phone proof; job services no longer depend on
-OnboardingAccessPolicy. There is no environment flag. This supersedes JP78-010's
-personal-proof clause and section 6's corresponding requirement. Active User/membership,
-Company suspension, role/assignment authorization and VERIFIED Company publication
-gates remain enforced. Other employer routes and the onboarding journey are unchanged.
+Private job operations require verified account email for all Users under [GW-SR-AUTH-03](../auth/unified-registration-and-recruiting-access-spec.md). Phone proof and historical employer profiles do not determine eligibility. Active User/membership, Company suspension, role/assignment authorization, and VERIFIED Company publication gates remain enforced. Candidate access, public detail, and own historical notifications retain their separate access rules.

@@ -183,20 +183,27 @@ class RecruitingAccessHttpTest {
                 .andExpect(status().isOk());
     }
 
-    @Test void legacyUsersKeepBothEmailFlagValuesWithoutPersonalPhonePrerequisites() throws Exception {
-        for (boolean verified : new boolean[]{false, true}) {
-            var owner = account();
-            long company = company(owner, "PENDING");
-            database.update("UPDATE users SET recruiting_email_verification_required=FALSE,email_verified=? WHERE id=?", verified, owner.id());
-            var draft = drafts.create(owner.id(), new JobRequests.Create(Map.of()));
-            http.perform(get("/api/companies/me/jobs/" + draft.id()).header("Authorization", owner.authorization()))
-                    .andExpect(status().isOk());
-            database.update("UPDATE companies SET is_banned=TRUE WHERE id=?", company);
-            http.perform(get("/api/companies/me/jobs/" + draft.id()).header("Authorization", owner.authorization()))
-                    .andExpect(status().isNotFound());
-            http.perform(get("/api/me/notifications").header("Authorization", owner.authorization())).andExpect(status().isOk());
-            http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.authorization())).andExpect(status().isOk());
-        }
+    @Test void everyMemberRequiresVerifiedEmailRegardlessOfHistoricalProfiles() throws Exception {
+        var owner = account();
+        long company = company(owner, "PENDING");
+        database.update("UPDATE users SET email_verified=TRUE WHERE id=?", owner.id());
+        var draft = drafts.create(owner.id(), new JobRequests.Create(Map.of()));
+        database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,false,'Existing member')", owner.id());
+        database.update("UPDATE users SET email_verified=FALSE WHERE id=?", owner.id());
+        http.perform(get("/api/companies/me/jobs/" + draft.id()).header("Authorization", owner.authorization()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("40335 EMAIL_VERIFICATION_REQUIRED: Verify your account email before recruiting"));
+        assertThatThrownBy(() -> drafts.create(owner.id(), new JobRequests.Create(Map.of())))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("EMAIL_VERIFICATION_REQUIRED");
+        http.perform(get("/api/me/notifications").header("Authorization", owner.authorization())).andExpect(status().isOk());
+        http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.authorization())).andExpect(status().isOk());
+        verifyEmail(owner);
+        http.perform(get("/api/companies/me/jobs/" + draft.id()).header("Authorization", owner.authorization()))
+                .andExpect(status().isOk());
+        database.update("UPDATE companies SET is_banned=TRUE WHERE id=?", company);
+        http.perform(get("/api/companies/me/jobs/" + draft.id()).header("Authorization", owner.authorization()))
+                .andExpect(status().isNotFound());
     }
 
     @Test void publishedDetailAndStaffModerationRemainIndependentOfPersonalRecruitingProof() throws Exception {

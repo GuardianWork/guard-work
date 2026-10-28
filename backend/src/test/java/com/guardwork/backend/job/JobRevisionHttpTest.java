@@ -78,7 +78,7 @@ class JobRevisionHttpTest {
       assertThat(history(owner,job).get(1).path("state").asText()).isEqualTo("APPROVED");
 
     }
-    @Test void legacyEligibleMembersCanPrepareAllKnownJobRoutesBeforeCompanyVerification() throws Exception {
+    @Test void verifiedMembersCanPrepareAllKnownJobRoutesBeforeCompanyVerification() throws Exception {
       String owner=account();long company=createdCompany(owner),user=userId(owner);
       database.update("INSERT INTO employer_profiles(user_id,applicant,full_name,email_verified_at,phone,phone_verified_at) VALUES (?,true,'Owner',now(),?,now())",user,"09"+user);
       var draft=create(owner,complete());long job=draft.path("id").asLong(),revision=draft.path("workingRevision").path("id").asLong();
@@ -284,7 +284,7 @@ class JobRevisionHttpTest {
                         .content(mapper.writeValueAsString(Map.of("firstName", "Ánh", "lastName", "Nguyễn", "username", name,
                                 "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
-        database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
+        database.update("UPDATE users SET email_verified=TRUE WHERE email=?", email);
         String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email, "password", "Password123"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

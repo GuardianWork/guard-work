@@ -26,10 +26,10 @@ END;
 $$;
 
 -- BCrypt cost 10 for the public local-only password GuardWork123!.
-INSERT INTO users (username, email, first_name, last_name, password, role, status, email_verified, recruiting_email_verification_required)
+INSERT INTO users (username, email, first_name, last_name, password, role, status, email_verified)
 SELECT username, email, first_name, last_name,
     '$2a$10$.Sw9NzCJH98UmXsd3ep4punGVyL7FwuBWXWykQDXbDi7wTSj3SK/S',
-    platform_role, 'ACTIVE', true, false
+    platform_role, 'ACTIVE', true
 FROM demo_accounts
 ON CONFLICT (username) DO NOTHING;
 

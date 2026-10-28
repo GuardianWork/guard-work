@@ -30,17 +30,16 @@ saves advance both versions. Repeated POSTs create separate jobs: do not blindly
 an unknown creation result.
 
 Pending and rejected Companies may prepare drafts through eligible current members.
-For newly registered Users, verified account email is required for every private job
+For all Users, verified account email is required for every private job
 read, creation, edit, assignment and lifecycle operation. The request guard returns
 403 `40335 EMAIL_VERIFICATION_REQUIRED` before payload processing; business services
 recheck the same prerequisite on the current persisted User under the actor lock.
 Selecting a workspace, omitting a portal header, or calling a service directly grants
-no exception. Existing Users retain their persisted legacy exemption and both existing
-email flag values. No personal phone proof is required. Current User/membership,
+no exception. There is no legacy email exemption; stored verification values remain unchanged. No personal phone proof is required. Current User/membership,
 Company suspension, role/assignment scope and VERIFIED Company submission/resume/approval
 checks remain. Email proof grants no Company or Staff authority and never unpublishes
 approved jobs. See [shared registration](unified-registration.md) for the approved
-cohort migration, requested proof, client prerequisites and coordinated deployment.
+consolidated account-email proof migration, requested proof, client prerequisites and coordinated deployment.
 
 ## Content
 

@@ -1,5 +1,7 @@
 package com.guardwork.backend.auth;
 
+import java.time.Instant;
+
 public record CurrentUserResponse(
         Long id,
         String firstName,
@@ -8,16 +10,14 @@ public record CurrentUserResponse(
         String email,
         String role,
         boolean emailVerified,
-        boolean recruitingEmailVerificationRequired,
         boolean recruitingEmailEligible,
-        boolean candidateAccessAllowed,
         ActiveMembershipDto activeMembership
 ) {
     public record ActiveMembershipDto(
             Long companyId,
             String companyName,
             String companyRole,
-            java.time.Instant joinedAt
+            Instant joinedAt
     ) {
     }
 }

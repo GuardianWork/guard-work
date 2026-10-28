@@ -1,14 +1,13 @@
 package com.guardwork.backend.auth;
 
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Optional;
-import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
-import com.guardwork.backend.membership.model.MembershipStatus;
-import com.guardwork.backend.company.repository.CompanyRepository;
 import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -19,7 +18,11 @@ import com.guardwork.backend.auth.model.PasswordResetToken;
 import com.guardwork.backend.auth.model.RefreshToken;
 import com.guardwork.backend.auth.repository.PasswordResetTokenRepository;
 import com.guardwork.backend.auth.repository.RefreshTokenRepository;
+import com.guardwork.backend.auth.service.AccountEmailVerificationService;
 import com.guardwork.backend.auth.service.JwtService;
+import com.guardwork.backend.company.repository.CompanyRepository;
+import com.guardwork.backend.membership.model.MembershipStatus;
+import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
 
@@ -61,7 +64,7 @@ public class AuthService {
         if (userRepository.findByUsername(request.username()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 USERNAME_OR_EMAIL_EXISTS: username already taken");
         }
-        if (userRepository.findByEmail(request.email().trim().toLowerCase(java.util.Locale.ROOT)).isPresent()) {
+        if (userRepository.findByEmail(request.email().trim().toLowerCase(Locale.ROOT)).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 USERNAME_OR_EMAIL_EXISTS: email already registered");
         }
 
@@ -69,17 +72,16 @@ public class AuthService {
         user.setFirstName(request.firstName().trim());
         user.setLastName(request.lastName().trim());
         user.setUsername(request.username());
-        user.setEmail(request.email().trim().toLowerCase(java.util.Locale.ROOT));
+        user.setEmail(request.email().trim().toLowerCase(Locale.ROOT));
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setRole("USER");
         user.setStatus("ACTIVE");
         user.setEmailVerified(false);
-        user.setRecruitingEmailVerificationRequired(true);
 
         User saved;
         try {
             saved = userRepository.saveAndFlush(user);
-        } catch (org.springframework.dao.DataIntegrityViolationException duplicate) {
+        } catch (DataIntegrityViolationException duplicate) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 USERNAME_OR_EMAIL_EXISTS: Username or email already registered");
         }
         log.debug("event=auth_registration outcome=saved");
@@ -231,9 +233,7 @@ public class AuthService {
                 user.getEmail(),
                 user.getRole(),
                 user.isEmailVerified(),
-                user.isRecruitingEmailVerificationRequired(),
-                com.guardwork.backend.auth.service.AccountEmailVerificationService.isRecruitingEmailEligible(user),
-                "ACTIVE".equals(user.getStatus()),
+                AccountEmailVerificationService.isRecruitingEmailEligible(user),
                 memberships.findByUserIdAndStatus(userId, MembershipStatus.ACTIVE)
                         .map(m -> companies.findById(m.getCompanyId())
                                 .map(c -> new CurrentUserResponse.ActiveMembershipDto(

@@ -246,8 +246,8 @@ Shared registration creates an active unverified User and sends no mail. Users m
 sign in and use Candidate capabilities immediately; they explicitly request and
 confirm email proof before applicable new-User recruiting operations. See
 [shared registration](../docs/backend/unified-registration.md) for endpoints,
-capability fields, mail configuration, the cohort migration and coordinated rollout.
-Existing Users keep their verification flags and legacy exemption. No phone proof
+capability fields, mail configuration, the consolidated account-email proof migration and coordinated rollout.
+All Users follow the same recruiting email gate; stored verification flags are preserved. No phone proof
 or account type is added to shared registration. Continue through
 [complete Company setup](../docs/backend/company-setup.md) or
 [verified-email invitation acceptance](../docs/backend/verified-email-invitations.md).

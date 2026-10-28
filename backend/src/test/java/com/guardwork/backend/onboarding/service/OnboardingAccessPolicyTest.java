@@ -27,13 +27,12 @@ class OnboardingAccessPolicyTest {
         assertFalse(policy.permits(1L, "/api/companies/7", "GET"));
     }
 
-    @Test void verificationAndLegacyExemptionRemoveOnlyTheEmailPrerequisite() {
+    @Test void verificationRemovesTheEmailPrerequisiteAndLosingItRestoresTheGate() {
         user.setEmailVerified(true);
         assertTrue(policy.permits(1L, "/api/companies/me/jobs", "POST"));
         user.setEmailVerified(false);
-        user.setRecruitingEmailVerificationRequired(false);
-        assertTrue(policy.permits(1L, "/api/companies/me/jobs/3", "GET"));
-        assertTrue(policy.permits(1L, "/api/companies/me/invitations", "POST"));
+        assertFalse(policy.permits(1L, "/api/companies/me/jobs/3", "GET"));
+        assertFalse(policy.permits(1L, "/api/companies/me/invitations", "POST"));
     }
 
     @Test void scopedExceptionsDoNotAllowOtherCompanyContentOrCorrection() {

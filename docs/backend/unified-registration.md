@@ -6,10 +6,9 @@ response. It creates an ACTIVE USER with unverified email and sends no mail.
 Sign in with `/api/auth/login`; Candidate and recruiting workspace navigation
 remain in the existing public portal and grant no Company authority.
 
-`GET /api/auth/me` adds `emailVerified`,
-`recruitingEmailVerificationRequired`, `recruitingEmailEligible`, and
-`candidateAccessAllowed`. These describe current persisted state, not cached
-permissions. Existing enrolled applicants regain implemented Candidate access.
+`GET /api/auth/me` exposes `emailVerified` and `recruitingEmailEligible`
+(active and email-verified). These describe current persisted state, not cached
+permissions. Active Users can use Candidate features before email verification.
 
 Authenticated active public Users explicitly call
 `POST /api/me/email-verification/request` without a destination address. Its
@@ -39,29 +38,29 @@ confirmation flow is not a caller of this endpoint. No frontend source exists in
 HTTP examples document the client transition, and browser work belongs to the
 client repository.
 
-Migration `V2026.10.28.84__unified_registration_email_proof.sql` preserves both
-historical email flag values and marks existing Users exempt using the persisted
-`recruiting_email_verification_required=false` cohort. Its database default marks
-later insertions true. Shared registration explicitly sets the marker true and
-email false. The private proof table stores only hash, bound account email,
-issuance/expiry and consumption timestamps. Local demo fixtures explicitly declare
-legacy exemption; their existing credentials are preserved.
+Migration `V2026.10.28.84__unified_registration_email_proof.sql` creates the
+hashed account-email proof table without a cohort column. Baseline upgrades preserve
+existing verification values and account/Company data. Verified Users stay eligible;
+unverified Users must complete proof. Demo fixtures explicitly represent verified
+accounts; their credentials remain unchanged.
 
-Stop all old account/Company writers before applying this migration and deploy
-the replacement backend and clients together. Old code writes automatically
-verified flags; the cohort default alone cannot make a mixed fleet safe. Keep
-additive data on rollback and disable registration, Company submission, invitation
-acceptance and private recruiting until forward repair. Do not reset existing
-accounts, Companies or retained evidence. Account-email changes are outside this
-feature; no existing application writer changes that address.
+Disposable databases with an earlier checksum for migration 84 or the removed migration
+85 require rebuilding before startup. Flyway detects the changed checksum or missing
+migration; do not mask divergent schema history with repair.
+
+Stop old account/Company writers, apply migrations and deploy the replacement backend
+and clients together. Binaries must be compatible with the schema; use forward repair if an older
+binary requires a different schema. Old registration
+writers automatically verify email and must not run in a mixed fleet. Do not reset
+accounts or retained evidence. Account-email changes remain outside this feature.
 
 Private Company job, membership and Owner invitation operations enforce the persisted
-new-User email gate in their business transaction and at the scoped HTTP boundary.
+email gate for every User in their business transaction and at the scoped HTTP boundary.
 The API reports 403 `40335 EMAIL_VERIFICATION_REQUIRED` when proof is missing. Clients
 should show the email prerequisite, allow explicit request/confirmation, then retry the
 intended operation using freshly read versions. Selecting Candidate or recruiting
-workspaces never changes that authority. Legacy Users remain exempt from this new
-personal gate; mandatory phone and old applicant restrictions do not control current
+workspaces never changes that authority. No legacy email exemption remains;
+mandatory phone and old applicant restrictions do not control current
 recruiting or Candidate access.
 
 Active Users retain Candidate features, requested verification, own historical inbox

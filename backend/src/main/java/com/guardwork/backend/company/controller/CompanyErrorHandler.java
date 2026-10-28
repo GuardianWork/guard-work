@@ -1,12 +1,19 @@
 package com.guardwork.backend.company.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import org.springframework.core.annotation.Order;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.server.ResponseStatusException;
+
 import com.guardwork.backend.common.ApiResponse;
 
 /** Scoped AUTH response convention for the protected Company API. */
@@ -19,13 +26,13 @@ public class CompanyErrorHandler {
         return ResponseEntity.status(status).body(new ApiResponse<>(status, error.getReason(), null));
     }
 
-    @ExceptionHandler({org.springframework.web.multipart.support.MissingServletRequestPartException.class,
-            org.springframework.web.HttpMediaTypeNotSupportedException.class})
+    @ExceptionHandler({MissingServletRequestPartException.class,
+            HttpMediaTypeNotSupportedException.class})
     public ResponseEntity<ApiResponse<Void>> multipart(Exception error) {
         return ResponseEntity.badRequest().body(new ApiResponse<>(400, "40001 INVALID_INPUT: Complete dossier and file parts are required", null));
     }
 
-    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResponse<Void>> oversized(Exception error) {
         return ResponseEntity.status(413).body(new ApiResponse<>(413,
                 "41330 DOCUMENT_TOO_LARGE: Maximum document size is 10 MiB", null));
@@ -33,7 +40,7 @@ public class CompanyErrorHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiResponse<Void>> malformed(HttpMessageNotReadableException error,
-            jakarta.servlet.http.HttpServletRequest request) {
+            HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
         boolean dossier = path.equals("/api/companies/verification-request")
                 || path.equals("/api/companies/me/verification") || path.matches("/api/companies/[0-9]+/resubmit");
@@ -41,8 +48,8 @@ public class CompanyErrorHandler {
                 dossier ? "40001 INVALID_INPUT: Invalid dossier" : "40000 BAD_REQUEST: Invalid request body", null));
     }
 
-    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<ApiResponse<Void>> parameter(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException error) {
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> parameter(MethodArgumentTypeMismatchException error) {
         return ResponseEntity.badRequest().body(new ApiResponse<>(400, "40000 BAD_REQUEST: Invalid request parameter", null));
     }
 

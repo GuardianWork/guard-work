@@ -373,7 +373,7 @@ class LegacyOwnershipCommandTest {
                 "firstName", "Ánh", "lastName", "Nguyễn", "username", name, "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
         // These fixtures represent existing legacy Users; new-User mailbox gates have their own HTTP suite.
-        database.update("UPDATE users SET recruiting_email_verification_required=false WHERE username=?", name);
+        database.update("UPDATE users SET email_verified=true WHERE username=?", name);
         if (admin) database.update("UPDATE users SET role='STAFF' WHERE username=?", name);
         String body = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", name, "password", "Password123"))))

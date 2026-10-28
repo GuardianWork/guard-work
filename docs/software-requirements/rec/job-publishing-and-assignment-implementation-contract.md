@@ -1,18 +1,12 @@
 # GW-78 — Job Publishing and Assignment Implementation Contract
 
-> Unified registration coordination (2026-10-28): the user explicitly approved
-> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
-> The 2026-10-27 personal-email bypass is superseded for new Users only: private job reads and mutations require current persisted account-email proof under the approved cohort marker. Preserve legacy exemption without changing stored historical verification flags. Phone proof remains removed. Retain all Company publication, current membership/role/assignment, suspension, concurrency, public-detail and inbox rules; email state alone does not unpublish jobs. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
-
 | Field | Value |
 |---|---|
 | Specification | [GW-SR-JOB-PUBLISHING-MVP](job-publishing-and-assignment-mvp-spec.md) |
-| Status | Approved — explicit user approval recorded on 2026-10-20 |
+| Status | Approved |
 | Owner / named human approver | Thinh (retained from baseline) |
 | Date / Last Updated | 2026-10-28 |
 | Base revision | `50316c8` |
-
-This concrete contract was presented for review at Q27. The user accepted it except for concurrency pending explanation, then agreed to the explained concurrency outcomes. Q26's scoped onboarding changes were also explained and accepted. On 2026-10-20, after publication of the consolidated tracker issue containing these decisions, the user instructed: "I approve the issue, write it down". Approved status records that explicit human decision, not autonomous agent approval. The user accepted the six-ticket breakdown and blocking edges on 2026-10-20, retaining this single-migration contract. The incremental-migration alternative was not adopted. Newly discovered consequential conflicts must be surfaced before changing the agreed behavior.
 
 ## 1. API conventions and access
 
@@ -77,7 +71,7 @@ Question keys persist when deriving unchanged questions; changed/new questions m
 
 ## 4. Proposed database changes
 
-One new Flyway migration `V2026.10.26.83__job_publishing_and_assignments.sql`, ordered after the `cc8943ab` baseline's `.81` and `.82` migrations. On 2026-10-26 the user explicitly approved renumbering the unchanged committed job migration and rebuilding their disposable local database. This is a scoped exception; other committed migrations and retained/shared data remain immutable. See [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md).
+One new Flyway migration `V2026.10.26.83__job_publishing_and_assignments.sql`, ordered after the `cc8943ab` baseline's `.81` and `.82` migrations. Disposable local databases with an earlier migration version require rebuilding. Retain existing shared data and committed migration history. See [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md).
 
 | Storage | Required fields and constraints |
 |---|---|
@@ -100,16 +94,16 @@ Index Company job queues by `(company_id, created_at DESC, id DESC)`; revisions 
 - Notify each user once per committed event. Repeated unchanged assignment/responsibility does not create another event. A retried stale decision fails with 409, and clients reload the current receipt/history rather than resubmitting blindly.
 - Notification intent uses the business transaction; dispatch/retry remains after commit. Event-time recipients are preserved for delivery; opening a target always uses current access. Membership-ended job notifications carry no confidential content and do not replace existing membership notifications.
 
-## 6. Onboarding integration — confirmation recorded at Q26
+## 6. Recruiting access integration
 
-Current `OnboardingAccessPolicy` requires Company VERIFIED for most employer routes, conflicting with agreed pre-verification job preparation. Proposed narrow changes:
+Recruiting access uses current account and Company state at the HTTP and service boundaries:
 
-1. Recognize the exact Company job route family separately: require active membership, eligible User and non-suspended Company; do not require personal email/phone proof or auto-enroll members (approved amendment 2026-10-27). Allow authorized draft preparation/management for PENDING/REJECTED Companies; submit/resume and moderation approval separately require VERIFIED. Do not broaden other employer routes.
+1. Recognize the exact Company job route family separately: require active membership, eligible User and non-suspended Company; require verified account email for every User, without phone proof or automatic employer-profile enrollment. Allow authorized draft preparation/management for PENDING/REJECTED Companies; submit/resume and moderation approval separately require VERIFIED. Do not broaden other employer routes.
 2. Permit exact public GET `/api/jobs/{numericId}` for signed-in restricted applicants as well as anonymous readers. Public projection remains identical and grants no private Company access.
-3. Permit existing own-inbox GET `/api/me/notifications` and PATCH `/api/me/notifications/{numericId}/read` while onboarding is restricted, subject to existing active-User/recipient checks. Current policy allows a different `/api/notifications` prefix, so merely adding job event types would otherwise leave affected recipients blocked.
+3. Permit existing own-inbox GET `/api/me/notifications` and PATCH `/api/me/notifications/{numericId}/read` while onboarding is restricted, subject to active-User/recipient checks.
 4. Do not bypass Company/job service checks because an interceptor allowed a route; recheck eligibility within business transactions. Preserve normal Platform Staff moderation, including own-Company reviews.
 
-These scoped compatibility changes were explained and accepted at Q26. They explicitly extend onboarding compatibility for this feature without changing unrelated route restrictions.
+These rules preserve route-specific permissions and recheck current eligibility in business transactions.
 
 ## 7. Errors and verification
 
@@ -140,22 +134,8 @@ Required HTTP/security/PostgreSQL coverage:
 
 Reuse existing isolated PostgreSQL test setup and controlled Clock/delivery boundaries. Run `./mvnw test` and `./mvnw package` from backend after implementation. No new testing dependency or destructive database operation is proposed. This documentation change itself requires link/consistency checks, not a backend test run.
 
-## Implementation completion — 2026-10-21
+## Implementation and verification
 
-The backend scope is implemented on `GW-78-implement-job-publishing-and-assignment`. Ticket 01 was already complete; tickets 02–06 and the final review fix are merged into that branch. The frontend and the committed single job migration were unchanged by the remaining-ticket implementation.
+The backend provides Company job APIs, Platform Staff moderation at `/api/staff/...`, public approved detail, and expiry reconciliation. Moderation reads current persisted `STAFF` authority; Company `ADMIN` membership grants no moderation authority. Migration 83 follows the `.81` and `.82` baseline migrations; see [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md).
 
-Verification passed: 250 backend tests, 46 final focused HTTP/security/PostgreSQL tests after the eligibility refactor, and Maven packaging. Specification review found no actionable gaps; standards review found no documented-rule violations, and its shared-eligibility duplication finding was addressed. See [backend workflow documentation](../../backend/job-drafts.md) and the backend README for routes and expiry configuration.
-
-## Integration amendment — 2026-10-26
-
-The user explicitly confirmed that Platform `STAFF` replaces the former Platform `ADMIN` terminology and authorized the migration renumbering described in [ADR 0007](../../architecture/decisions/0007-job-integration-migration-and-staff.md). Moderation reads current persisted `STAFF` authority; Company `ADMIN` remains excluded. Job moderation uses `/api/staff/...`, matching the baseline retirement of `/api/admin/**`; these job routes are new relative to `cc8943ab`. Compare integration behavior and migration ordering against `cc8943ab`.
-
-## Approved onboarding separation — 2026-10-27
-
-After approving a configurable exception, the user explicitly replaced it with removal
-of personal-onboarding enforcement for job publishing and assignment. Known Company
-job routes bypass personal email/phone proof; job services no longer depend on
-OnboardingAccessPolicy. There is no environment flag. This supersedes JP78-010's
-personal-proof clause and section 6's corresponding requirement. Active User/membership,
-Company suspension, role/assignment authorization and VERIFIED Company publication
-gates remain enforced. Other employer routes and the onboarding journey are unchanged.
+Private recruiting operations require verified account email for every User under [GW-SR-AUTH-03](../auth/unified-registration-implementation-contract.md). Phone proof and historical employer profiles do not determine eligibility. See the [workflow guide](../../backend/job-drafts.md) and backend README for routes, expiry configuration, and test/package commands.

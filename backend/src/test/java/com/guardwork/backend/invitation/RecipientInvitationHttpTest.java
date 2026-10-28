@@ -165,6 +165,9 @@ class RecipientInvitationHttpTest {
         "UPDATE companies SET verification_status='VERIFIED',is_banned=true WHERE id=?", company);
     secretPost("accept", recipient, secret, true).andExpect(status().isNotFound());
     database.update("UPDATE companies SET is_banned=false WHERE id=?", company);
+    secretPost("accept", recipient, secret, true).andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("40335 EMAIL_VERIFICATION_REQUIRED: Verify your account email before recruiting"));
+    database.update("UPDATE users SET email_verified=true WHERE id=?", userId(recipient));
     secretPost("accept", recipient, secret, true).andExpect(status().isCreated());
   }
 
@@ -689,7 +692,7 @@ class RecipientInvitationHttpTest {
                             "password",
                             "Password123"))))
         .andExpect(status().isCreated());
-    database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
+    database.update("UPDATE users SET email_verified=TRUE WHERE email=?", email);
     String response =
         http.perform(
                 post("/api/auth/login")

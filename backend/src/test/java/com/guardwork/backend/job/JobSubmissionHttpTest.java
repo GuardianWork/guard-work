@@ -237,7 +237,7 @@ class JobSubmissionHttpTest {
                         .content(mapper.writeValueAsString(Map.of("firstName", "Ánh", "lastName", "Nguyễn", "username", name,
                                 "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
-        database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
+        database.update("UPDATE users SET email_verified=TRUE WHERE email=?", email);
         String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email, "password", "Password123"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

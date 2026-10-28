@@ -1,7 +1,4 @@
--- Preserve every existing User's verification flag and eligibility; newly inserted Users opt in.
-ALTER TABLE users ADD COLUMN recruiting_email_verification_required BOOLEAN NOT NULL DEFAULT FALSE;
-ALTER TABLE users ALTER COLUMN recruiting_email_verification_required SET DEFAULT TRUE;
-
+-- Account email proofs; all Users share the same recruiting email prerequisite.
 CREATE TABLE user_email_verification (
     user_id BIGINT PRIMARY KEY REFERENCES users(id),
     email VARCHAR(255) NOT NULL,

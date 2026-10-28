@@ -18,7 +18,7 @@ class JobOnboardingBypassHttpTest {
     @Autowired ObjectMapper mapper;
     @Autowired JdbcTemplate database;
 
-    @Test void legacyMembersIgnoreHistoricalPersonalProfilesAndStillRespectCompanySuspension() throws Exception {
+    @Test void verifiedMembersIgnoreHistoricalPersonalProfilesAndStillRespectCompanySuspension() throws Exception {
         var fixture = new JobDraftHttpTest();
         fixture.context = context;
         fixture.mapper = mapper;
@@ -33,8 +33,8 @@ class JobOnboardingBypassHttpTest {
         }
         for (String actor : new String[] {owner, recruiter}) {
             fixture.http.perform(get("/api/auth/me").header("Authorization", actor))
-                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.emailVerified").value(false))
-                    .andExpect(jsonPath("$.data.recruitingEmailVerificationRequired").value(false));
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.emailVerified").value(true))
+                    .andExpect(jsonPath("$.data.recruitingEmailEligible").value(true));
         }
         var draft = fixture.create(owner, Map.of());
         fixture.http.perform(put(JobDraftHttpTest.JOBS + "/" + draft.path("id").asLong() + "/assignments/" + member)

@@ -145,7 +145,7 @@ class JobDraftHttpTest {
                 .andExpect(jsonPath("$.data.content[0].workingRevision.content.title").value("😀".repeat(200)));
     }
 
-    @Test void legacyPersonalProofFlagsDoNotGateDraftingBeforeCompanyApproval() throws Exception {
+    @Test void verifiedMembersCanDraftWithoutHistoricalPhoneProofBeforeCompanyApproval() throws Exception {
         String owner = account(); long company = createdCompany(owner); long user = userId(owner);
         database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,true,'Owner')", user);
         http.perform(post(JOBS).header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content("{\"content\":{}}"))
@@ -155,7 +155,7 @@ class JobDraftHttpTest {
         database.update("UPDATE companies SET verification_status='REJECTED' WHERE id=?", company);
         create(owner, Map.of());
         String recipient = account(); long member = recruiter(company, recipient);
-        create(recipient, Map.of()); // Legacy membership stays isolated; drafting never auto-enrolls it.
+        create(recipient, Map.of()); // Drafting never creates a historical employer profile.
         assertThat(database.queryForObject("SELECT count(*) FROM employer_profiles WHERE user_id=?", Long.class, userId(recipient))).isZero();
         database.update("UPDATE company_memberships SET role='ADMIN' WHERE id=?", member);
         http.perform(get(JOBS).header("Authorization", recipient)).andExpect(status().isForbidden());
@@ -329,7 +329,7 @@ class JobDraftHttpTest {
                         .content(mapper.writeValueAsString(Map.of("firstName", "Ánh", "lastName", "Nguyễn", "username", name,
                                 "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
-        database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
+        database.update("UPDATE users SET email_verified=TRUE WHERE email=?", email);
         String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email, "password", "Password123"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

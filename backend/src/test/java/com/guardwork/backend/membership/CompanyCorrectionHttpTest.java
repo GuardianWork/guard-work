@@ -335,7 +335,7 @@ class CompanyCorrectionHttpTest {
                                 "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
         if (!role.equals("USER")) database.update("UPDATE users SET role=? WHERE email=?", role, email);
-        database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
+        database.update("UPDATE users SET email_verified=TRUE WHERE email=?", email);
         String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email, "password", "Password123"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

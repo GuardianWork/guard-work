@@ -94,7 +94,7 @@ Content-Type: application/json
   "emailSecret": "{{accountEmailSecret}}"
 }
 
-### Accept the invitation explicitly (new Users require verified account email)
+### Accept the invitation explicitly (all Users require verified account email)
 POST {{baseUrl}}/api/company-invitations/accept
 Authorization: Bearer {{recipientToken}}
 Content-Type: application/json
