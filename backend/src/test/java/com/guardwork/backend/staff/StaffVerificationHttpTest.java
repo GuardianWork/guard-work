@@ -1,5 +1,7 @@
 package com.guardwork.backend.staff;
 
+import static com.guardwork.backend.CompanyDossierFixtures.completeDossier;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guardwork.backend.auth.service.JwtService;
 import java.util.Map;
@@ -111,10 +113,10 @@ class StaffVerificationHttpTest {
     void companyAdminMembershipRemainsAdminAndDoesNotGrantStaffAccess() throws Exception {
         Account owner = account("USER");
         Account member = account("USER");
-        var response = http.perform(post("/api/companies/verification-request").header("Authorization", owner.token())
-                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of(
+        var response = http.perform(completeDossier("POST", "/api/companies/verification-request", json.writeValueAsString(Map.of(
                         "name", "Company role boundary", "taxCode", UUID.randomUUID().toString(),
-                        "email", UUID.randomUUID() + "@company.vn", "registrationCertificateUrl", "https://example.vn/license.pdf"))))
+                        "email", UUID.randomUUID() + "@company.vn", "registrationCertificateUrl", "https://example.vn/license.pdf"))).header("Authorization", owner.token())
+                )
                 .andExpect(status().isCreated()).andReturn();
         long company = json.readTree(response.getResponse().getContentAsString()).path("data").path("id").asLong();
         database.update("INSERT INTO company_memberships(company_id,user_id,role,status,joined_at) VALUES (?,?,'ADMIN','ACTIVE',now())",

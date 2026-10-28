@@ -240,6 +240,21 @@ src/main/java/com/guardwork/backend/
   dependencies or new shared architecture.
 - DB access via Spring Data JPA.
 
+## Shared registration and email verification
+
+Shared registration creates an active unverified User and sends no mail. Users may
+sign in and use Candidate capabilities immediately; they explicitly request and
+confirm email proof before applicable new-User recruiting operations. See
+[shared registration](../docs/backend/unified-registration.md) for endpoints,
+capability fields, mail configuration, the cohort migration and coordinated rollout.
+Existing Users keep their verification flags and legacy exemption. No phone proof
+or account type is added to shared registration. Continue through
+[complete Company setup](../docs/backend/company-setup.md) or
+[verified-email invitation acceptance](../docs/backend/verified-email-invitations.md).
+Separate employer signup, phone OTP, provisional saves and standalone evidence uploads
+are [retired with HTTP 410](../docs/backend/employer-onboarding.md); retained records remain intact.
+No frontend source is bundled in this checkout.
+
 ## API Docs
 
 Swagger UI is exposed via [springdoc-openapi](https://springdoc.org/):
@@ -255,10 +270,10 @@ Company verification responses for Staff and Owner views expose `processingStatu
 `PENDING` with a null outcome; `VERIFIED` and `REJECTED` map to processing `CHECKED` with the
 corresponding outcome. Eligibility continues to use `verificationStatus`; `CHECKED` alone does
 not mean approval. These are derived fields and require no schema migration.
-See [employer onboarding](../docs/backend/employer-onboarding.md) for the new registration/verification
-APIs, frontend, private legal dossiers, delivery configuration, migration, and remaining SMS and
-production-readiness prerequisites. The technical choices were confirmed by the user and recorded
-in [ADR 0005](../docs/architecture/decisions/0005-staged-employer-onboarding.md).
+See [complete Company setup](../docs/backend/company-setup.md) for atomic multipart dossiers,
+private legal evidence, Staff review and rejected correction, and [retirement and decision delivery](../docs/backend/employer-onboarding.md)
+for mail configuration, retained-data compatibility and recovery. The approved replacement is
+recorded in [ADR 0008](../docs/architecture/decisions/0008-unified-registration-and-company-setup.md).
 
 Company, Staff and known application-error advice use order `0`, ahead of the global
 `InternalServerExceptionHandler` at `LOWEST_PRECEDENCE`. Spring selects the first applicable

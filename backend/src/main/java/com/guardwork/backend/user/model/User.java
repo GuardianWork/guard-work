@@ -48,7 +48,10 @@ public class User {
     private String status = "ACTIVE";
 
     @Column(name = "email_verified", nullable = false)
-    private boolean emailVerified = true;
+    private boolean emailVerified = false;
+
+    @Column(name = "recruiting_email_verification_required", nullable = false)
+    private boolean recruitingEmailVerificationRequired = true;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;

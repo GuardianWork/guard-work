@@ -7,6 +7,10 @@ public record CurrentUserResponse(
         String username,
         String email,
         String role,
+        boolean emailVerified,
+        boolean recruitingEmailVerificationRequired,
+        boolean recruitingEmailEligible,
+        boolean candidateAccessAllowed,
         ActiveMembershipDto activeMembership
 ) {
     public record ActiveMembershipDto(

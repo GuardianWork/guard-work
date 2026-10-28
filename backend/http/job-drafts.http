@@ -1,9 +1,9 @@
 # Private Job Posting drafts — run requests selectively in VS Code REST Client or JetBrains HTTP Client.
 # Start the backend with its migrated local database. Obtain access tokens using auth.http.
 # Existing seeded demo_owner / demo_recruiter accounts can be used (see backend/README.md).
-# Otherwise create a Company using company-onboarding.http and join a Recruiter using company-membership.http.
+# Otherwise use auth.http for shared registration/proof, company-setup.http for complete submission, and company-membership.http for invitations.
 # Both actors must belong to the same Company. Pending/rejected Companies may draft;
-# enrolled members still need personal email and phone proof. Legacy accounts are not auto-enrolled.
+# New Users need verified account email for private recruiting; legacy Users retain their exemption. Phone proof is not required.
 # Copy IDs and versions from responses into the variables below. Keep tokens local.
 # Repeating a POST creates another job. Each successful PUT advances BOTH versions;
 # copy data.version and data.workingRevision.version before another save.
@@ -147,7 +147,7 @@ Content-Type: application/json
 
 ### Recruiter's assignment inbox — JOB_ASSIGNED carries jobId and revisionId
 # Copy the JOB_ASSIGNED item's id into notificationId, not its jobId.
-# Own inbox access remains available to active recipients during onboarding restrictions.
+# Own historical inbox access remains available to active recipients after membership loss or without recruiting email proof.
 GET {{baseUrl}}/api/me/notifications?page=0&size=20
 Authorization: Bearer {{recruiterToken}}
 

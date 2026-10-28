@@ -1,5 +1,9 @@
 # Job Publishing and Assignment MVP — Software Requirements Specification
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> UREG-008 and UREG-011 replace JP78-010’s 2026-10-27 personal-email bypass for newly registered Users only. Their private recruiting reads/writes, including job drafts, require current persisted account-email proof. Existing Users remain exempt from this new personal gate. Phone proof remains removed. Company verification for submission/publication, active User/membership, suspension, role/assignment, concurrency and public detail rules remain unchanged. Email state alone never unpublishes an approved job. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 | Field | Value |
 |---|---|
 | Specification ID | GW-SR-JOB-PUBLISHING-MVP |
@@ -7,7 +11,7 @@
 | Module | Job Publishing and Assignments |
 | File | `job-publishing-and-assignment-mvp-spec.md` |
 | Version | 0.1.0 |
-| Date / Last Updated | 2026-10-27 |
+| Date / Last Updated | 2026-10-28 |
 | Owner | Thinh |
 | Named human approver | Thinh (retained from baseline) |
 | Status | Approved — explicit user approval recorded on 2026-10-20 |

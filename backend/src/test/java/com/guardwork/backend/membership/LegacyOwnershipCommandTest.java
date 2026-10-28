@@ -157,7 +157,10 @@ class LegacyOwnershipCommandTest {
         String fresh = UUID.randomUUID().toString();
         command.review(reviewer.token(), approved(fresh, company, applicant.id(), true));
         command.assign(operator.token(), fresh);
-        http.perform(get("/api/companies/me").header("Authorization", "Bearer "+applicant.token())).andExpect(status().isNotFound());
+        http.perform(get("/api/companies/me").header("Authorization", "Bearer "+applicant.token()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.companySuspended").value(true));
+        http.perform(get("/api/companies/me/invitations").header("Authorization", "Bearer "+applicant.token()))
+                .andExpect(status().isNotFound());
         database.update("UPDATE companies SET is_banned=false WHERE id=?", company);
         http.perform(get("/api/companies/me/verification").header("Authorization", "Bearer "+applicant.token()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.verificationStatus").value("REJECTED"))
@@ -369,6 +372,8 @@ class LegacyOwnershipCommandTest {
         http.perform(post("/api/auth/register").contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(
                 "firstName", "Ánh", "lastName", "Nguyễn", "username", name, "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
+        // These fixtures represent existing legacy Users; new-User mailbox gates have their own HTTP suite.
+        database.update("UPDATE users SET recruiting_email_verification_required=false WHERE username=?", name);
         if (admin) database.update("UPDATE users SET role='STAFF' WHERE username=?", name);
         String body = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", name, "password", "Password123"))))

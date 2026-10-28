@@ -1,5 +1,6 @@
 package com.guardwork.backend.invitation.service;
 
+import com.guardwork.backend.auth.service.AccountEmailVerificationService;
 import com.guardwork.backend.company.model.*;
 import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.invitation.dto.*;
@@ -9,6 +10,7 @@ import com.guardwork.backend.membership.model.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.membership.service.*;
 import com.guardwork.backend.notification.service.*;
+import com.guardwork.backend.user.model.User;
 import jakarta.validation.Validator;
 import java.time.Clock;
 import java.time.Instant;
@@ -89,6 +91,7 @@ public class RecipientInvitationService {
               }
               requirePending(i);
               requireEligible(c);
+              AccountEmailVerificationService.requireRecruitingEmailEligible(locked.user());
               requireConfirmation(request);
               if (memberships.findByUserIdAndStatus(actor, MembershipStatus.ACTIVE).isPresent())
                 throw new ResponseStatusException(
@@ -175,7 +178,7 @@ public class RecipientInvitationService {
     if (!company.getId().equals(invitation.getCompanyId())
         || !InvitationSecrets.matches(secret, invitation.getSecretHash())
         || !email.equals(invitation.getRecipientEmailNormalized())) throw unavailable();
-    return new Locked(company, invitation);
+    return new Locked(user, company, invitation);
   }
 
   private void requirePending(CompanyInvitation i) {
@@ -206,7 +209,7 @@ public class RecipientInvitationService {
         HttpStatus.NOT_FOUND, "40410 INVITATION_UNAVAILABLE: Invitation unavailable");
   }
 
-  private record Locked(Company company, CompanyInvitation invitation) {}
+  private record Locked(User user, Company company, CompanyInvitation invitation) {}
 
   public record Acceptance(InvitationAcceptanceResponse receipt, boolean created, UUID eventId) {}
 }

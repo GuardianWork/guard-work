@@ -22,3 +22,7 @@ Build the scoped onboarding and review interface in dependency-free HTML/CSS/Jav
 No SMS provider was selected. The external SMS seam fails closed when no real adapter is installed; tests use an isolated fake. Never expose an OTP in production responses/logs or call undelivered proof verified.
 
 References: [product specification](../../software-requirements/rec/company-onboarding-verification-enhancement-spec.md), [implementation contract](../../software-requirements/rec/company-onboarding-implementation-contract.md).
+
+## Scoped supersession — 2026-10-28
+
+The user explicitly approved [ADR 0008](0008-unified-registration-and-company-setup.md) and the [unified registration implementation contract](../../software-requirements/auth/unified-registration-implementation-contract.md) with “Approve”. Shared active-User registration and requested account-email proof for new Users replace separate pending employer promotion, mandatory phone proof, Candidate restrictions and provisional Company saves. Complete multipart Company submission/correction persists evidence only on submission. Existing accounts remain exempt from new personal email gates. Private evidence, immutable Company review/declaration history and decision delivery remain; the earlier approval record above is preserved. Legacy routes retire under the replacement’s explicit compatibility/deployment contract, without data reset or automatic promotion.

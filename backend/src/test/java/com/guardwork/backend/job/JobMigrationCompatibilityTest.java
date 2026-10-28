@@ -36,10 +36,15 @@ class JobMigrationCompatibilityTest {
           + ".user_notifications(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) "
           + "VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Baseline',now())", event, user, company);
       var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load();
-      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+      // The integration includes the job migration83 and additive account-email migration84.
+      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
       upgrade.validate();
       assertThat(database.queryForObject("SELECT role FROM " + schema + ".users WHERE username='baseline_staff'", String.class))
           .isEqualTo("STAFF");
+      assertThat(database.queryForObject("SELECT recruiting_email_verification_required FROM " + schema
+          + ".users WHERE username='baseline_staff'", Boolean.class)).isFalse();
+      assertThat(database.queryForObject("SELECT email_verified FROM " + schema
+          + ".users WHERE username='baseline_staff'", Boolean.class)).isTrue();
       assertThat(database.queryForObject("SELECT count(*) FROM " + schema + ".job_postings", Long.class)).isZero();
       assertThat(database.queryForObject("SELECT count(*) FROM " + schema
           + ".notification_outbox WHERE event_id=? AND job_id IS NULL AND revision_id IS NULL", Long.class, event)).isEqualTo(1);

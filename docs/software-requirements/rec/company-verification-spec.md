@@ -1,5 +1,9 @@
 # Company Verification & Business License Inspection — Software Requirements Specification
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> Complete initial multipart dossier submission requires active authenticated email-eligible User state and atomically creates the private evidence, PENDING Company and first Owner. No unfinished dossier or standalone pre-upload is persisted. Separate Company email and mandatory phone proof are removed. Pending dossiers are immutable; rejected correction retains Company identity, tax code and prior evidence. Staff review and decision delivery remain separate from personal proof. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 > Staff terminology synchronization (2026-10-24): at the user's request, Platform
 > actor names, role examples and verification routes now reflect the approved
 > [GW-81 Staff adoption](../../feat/staff/spec.md#43-gw-81-runtime-adoption-and-compatibility).
@@ -18,7 +22,7 @@
 | **File** | `company-verification-spec.md` |
 | **Version** | 0.2.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-24 |
+| **Last Updated** | 2026-10-28 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |

@@ -1,11 +1,15 @@
 # GW-78 — Job Publishing and Assignment Implementation Contract
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> The 2026-10-27 personal-email bypass is superseded for new Users only: private job reads and mutations require current persisted account-email proof under the approved cohort marker. Preserve legacy exemption without changing stored historical verification flags. Phone proof remains removed. Retain all Company publication, current membership/role/assignment, suspension, concurrency, public-detail and inbox rules; email state alone does not unpublish jobs. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 | Field | Value |
 |---|---|
 | Specification | [GW-SR-JOB-PUBLISHING-MVP](job-publishing-and-assignment-mvp-spec.md) |
 | Status | Approved — explicit user approval recorded on 2026-10-20 |
 | Owner / named human approver | Thinh (retained from baseline) |
-| Date / Last Updated | 2026-10-27 |
+| Date / Last Updated | 2026-10-28 |
 | Base revision | `50316c8` |
 
 This concrete contract was presented for review at Q27. The user accepted it except for concurrency pending explanation, then agreed to the explained concurrency outcomes. Q26's scoped onboarding changes were also explained and accepted. On 2026-10-20, after publication of the consolidated tracker issue containing these decisions, the user instructed: "I approve the issue, write it down". Approved status records that explicit human decision, not autonomous agent approval. The user accepted the six-ticket breakdown and blocking edges on 2026-10-20, retaining this single-migration contract. The incremental-migration alternative was not adopted. Newly discovered consequential conflicts must be surfaced before changing the agreed behavior.

@@ -1,5 +1,7 @@
 package com.guardwork.backend.job;
 
+import static com.guardwork.backend.CompanyDossierFixtures.completeDossier;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
@@ -223,8 +225,7 @@ class JobSubmissionHttpTest {
     }
 
     long createdCompany(String token) throws Exception {
-        String body = http.perform(post("/api/companies/verification-request").header("Authorization", token)
-                        .contentType(MediaType.APPLICATION_JSON).content(company(UUID.randomUUID().toString())))
+        String body = http.perform(completeDossier("POST", "/api/companies/verification-request", company(UUID.randomUUID().toString())).header("Authorization", token))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return mapper.readTree(body).path("data").path("id").asLong();
     }
@@ -236,6 +237,7 @@ class JobSubmissionHttpTest {
                         .content(mapper.writeValueAsString(Map.of("firstName", "Ánh", "lastName", "Nguyễn", "username", name,
                                 "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
+        database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
         String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email, "password", "Password123"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

@@ -1,5 +1,9 @@
 # Authentication, Identity & Access Control — Software Requirements Specification
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> Shared registration now creates an active email-unverified User without sending mail. Candidate access is independent of recruiting email proof and obsolete applicant restrictions. New Users require genuine requested account-email proof for private recruiting; a persisted cohort marker preserves all existing accounts without reinterpreting historical flags. Public/Staff portal separation and Company-scoped authority remain unchanged. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 > Portal routing coordination (2026-10-24): the user supplied and authorized the
 > public/Staff proxy implementation contract in this session. See
 > [GW-SR-AUTH-02](portal-routing-contract.md) for header context, role enforcement,
@@ -18,7 +22,7 @@
 | **File** | `authentication-authorization-spec.md` |
 | **Version** | 1.0.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-24 |
+| **Last Updated** | 2026-10-28 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |

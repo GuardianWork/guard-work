@@ -1,5 +1,9 @@
 # [GW-SR-REC-03] Company Onboarding and Verification Enhancement
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> Separate employer registration, restricted Candidate access, mandatory phone proof and provisional Company updates are superseded by shared active-User registration, explicit requested account-email proof for new Users and complete atomic multipart dossier submission. Legacy routes and JSON dossier contracts retire with documented 410 responses after replacement callers migrate. Existing Users remain exempt from new email proof; incomplete employer registrations are neither promoted nor deleted. Company review, private documents, declarations, immutable attempts and decision delivery remain. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 | Field | Value |
 |---|---|
 | **Specification ID** | GW-SR-REC-03 |
@@ -8,7 +12,7 @@
 | **File** | `company-onboarding-verification-enhancement-spec.md` |
 | **Version** | 0.1.1 |
 | **Date** | 2026-10-18 |
-| **Last Updated** | 2026-10-24 |
+| **Last Updated** | 2026-10-28 |
 | **Owner** | VyTrg (proposed, following the existing Company Verification ownership) |
 | **Approver** | VyTrg (proposed human reviewer; formal approval pending) |
 | **Status** | Draft |

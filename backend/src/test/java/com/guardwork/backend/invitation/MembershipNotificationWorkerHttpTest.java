@@ -1,5 +1,7 @@
 package com.guardwork.backend.invitation;
 
+import static com.guardwork.backend.CompanyDossierFixtures.completeDossier;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -92,10 +94,10 @@ class MembershipNotificationWorkerHttpTest {
   long createdCompany(String token) throws Exception {
     String body =
         http.perform(
-                post("/api/companies/verification-request")
+                completeDossier("POST", "/api/companies/verification-request", company(UUID.randomUUID().toString()))
                     .header("Authorization", token)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(company(UUID.randomUUID().toString())))
+
+                    )
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -127,6 +129,7 @@ class MembershipNotificationWorkerHttpTest {
                             "password",
                             "Password123"))))
         .andExpect(status().isCreated());
+    database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
     String response =
         http.perform(
                 post("/api/auth/login")

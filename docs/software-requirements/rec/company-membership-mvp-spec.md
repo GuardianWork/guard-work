@@ -1,5 +1,9 @@
 # [GW-SR-REC-02] Company onboarding, ownership, and Recruiter access
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> Company setup follows shared registration and complete atomic multipart dossier submission; new Users need actual account-email proof before initial Company submission or first invitation acceptance. Invitations still require matching normalized account email, explicit acceptance and existing secret/state/expiry/Company checks. One active membership, current authority and immediate revocation remain unchanged. Legacy Users retain their email exemption; phone proof and applicant Candidate restrictions are retired. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 > Employer onboarding coordination (2026-10-18): the user approved [GW-SR-REC-03](company-onboarding-verification-enhancement-spec.md) and confirmed its implementation contract. Its new-applicant path supersedes automatic email proof, unrestricted Candidate capability, separate Company-email input and mutable-only dossier handling for enrolled employer applicants. Ordinary Candidate registration and legacy Company compatibility remain scoped as documented; CHECKED is derived from existing Company eligibility states. SMS integration, production retention and legacy rollout remain unresolved. See [implementation details](../../backend/employer-onboarding.md).
 
 | Field | Value |
@@ -11,7 +15,7 @@
 | **File** | `company-membership-mvp-spec.md` |
 | **Version** | 0.3.1 |
 | **Date** | 2026-10-08 |
-| **Last Updated** | 2026-10-24 |
+| **Last Updated** | 2026-10-28 |
 | **Owner** | Thinh |
 | **Approver** | Thinh |
 | **Lifecycle** | Draft |

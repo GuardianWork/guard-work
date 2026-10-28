@@ -53,6 +53,7 @@ public class AuthService {
         this.companies = companies;
     }
 
+    @Transactional
     public UserDto register(RegisterUserRequest request) {
         log.debug("event=auth_registration outcome=started");
         validateRegistration(request);
@@ -60,7 +61,7 @@ public class AuthService {
         if (userRepository.findByUsername(request.username()).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 USERNAME_OR_EMAIL_EXISTS: username already taken");
         }
-        if (userRepository.findByEmail(request.email().toLowerCase().trim()).isPresent()) {
+        if (userRepository.findByEmail(request.email().trim().toLowerCase(java.util.Locale.ROOT)).isPresent()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 USERNAME_OR_EMAIL_EXISTS: email already registered");
         }
 
@@ -68,13 +69,19 @@ public class AuthService {
         user.setFirstName(request.firstName().trim());
         user.setLastName(request.lastName().trim());
         user.setUsername(request.username());
-        user.setEmail(request.email().toLowerCase().trim());
+        user.setEmail(request.email().trim().toLowerCase(java.util.Locale.ROOT));
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setRole("USER");
         user.setStatus("ACTIVE");
-        user.setEmailVerified(true);
+        user.setEmailVerified(false);
+        user.setRecruitingEmailVerificationRequired(true);
 
-        User saved = userRepository.save(user);
+        User saved;
+        try {
+            saved = userRepository.saveAndFlush(user);
+        } catch (org.springframework.dao.DataIntegrityViolationException duplicate) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 USERNAME_OR_EMAIL_EXISTS: Username or email already registered");
+        }
         log.debug("event=auth_registration outcome=saved");
         return UserDto.from(saved);
     }
@@ -213,6 +220,9 @@ public class AuthService {
     public CurrentUserResponse getCurrentUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40401 USER_NOT_FOUND: User not found"));
+        if (!"ACTIVE".equals(user.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
+        }
         return new CurrentUserResponse(
                 user.getId(),
                 user.getFirstName(),
@@ -220,6 +230,10 @@ public class AuthService {
                 user.getUsername(),
                 user.getEmail(),
                 user.getRole(),
+                user.isEmailVerified(),
+                user.isRecruitingEmailVerificationRequired(),
+                com.guardwork.backend.auth.service.AccountEmailVerificationService.isRecruitingEmailEligible(user),
+                "ACTIVE".equals(user.getStatus()),
                 memberships.findByUserIdAndStatus(userId, MembershipStatus.ACTIVE)
                         .map(m -> companies.findById(m.getCompanyId())
                                 .map(c -> new CurrentUserResponse.ActiveMembershipDto(
@@ -299,19 +313,19 @@ public class AuthService {
 
     private void validateRegistration(RegisterUserRequest request) {
         if (request == null) {
-            throw badRequest("request body is required");
+            throw badRequest("40001 INVALID_INPUT: Request body is required");
         }
-        if (blank(request.firstName())) {
-            throw badRequest("first name is required");
+        if (blank(request.firstName()) || request.firstName().trim().length() > 100) {
+            throw badRequest("40001 INVALID_INPUT: First name must be 1-100 characters");
         }
-        if (blank(request.lastName())) {
-            throw badRequest("last name is required");
+        if (blank(request.lastName()) || request.lastName().trim().length() > 100) {
+            throw badRequest("40001 INVALID_INPUT: Last name must be 1-100 characters");
         }
         if (blank(request.username()) || !USERNAME_PATTERN.matcher(request.username()).matches()) {
-            throw badRequest("username must be 3-50 characters (letters, digits, underscore)");
+            throw badRequest("40001 INVALID_INPUT: Username must be 3-50 characters (letters, digits, underscore)");
         }
-        if (blank(request.email()) || !EMAIL_PATTERN.matcher(request.email()).matches()) {
-            throw badRequest("valid email is required");
+        if (blank(request.email()) || request.email().trim().length() > 255 || !EMAIL_PATTERN.matcher(request.email().trim()).matches()) {
+            throw badRequest("40001 INVALID_INPUT: A valid email up to 255 characters is required");
         }
         if (blank(request.password()) || !PASSWORD_PATTERN.matcher(request.password()).matches()) {
             throw badRequest("40002 WEAK_PASSWORD: password must be 8-128 characters with at least one uppercase letter, one lowercase letter, and one digit");

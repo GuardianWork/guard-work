@@ -1,109 +1,52 @@
-# GuardWork Company onboarding and verification
-# Run against a disposable local database at http://localhost:8080.
-# Run requests selectively; use fresh values for repeat registration runs.
-# Use a fresh username/email/tax code for each registration run.
-# Registration creates a USER account. Verification requests require an existing platform STAFF token.
-# Copy accessToken and IDs/versions from the response into the variables below when prompted.
+# Current Company verification journey after shared registration.
+# Run auth.http for signup, sign-in and explicitly requested account-email proof.
+# Use company-setup.http for complete multipart submission and rejected correction.
+# Separate employer signup, phone OTP, provisional saves, standalone uploads and JSON-only
+# Company submission/correction are retired with HTTP 410. No unfinished form is saved.
+# Use company-membership.http for invitations and membership actions.
+# Run only the desired Staff approval OR rejection path against disposable local data.
 
 @baseUrl = http://localhost:8080
-@ownerToken=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJnd19vd25lcl90ZXN0XzAxIiwiZW1haWwiOiJndy1vd25lci10ZXN0QGV4YW1wbGUudGVzdCIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzkyNTE1Mzk2LCJleHAiOjE3OTI1MTYyOTZ9.983dKv5LswIUD20Ax5HIAKdwFGUmm2GYid7qX6vCZeQ
-@adminToken=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIzIiwidXNlcm5hbWUiOiJkZW1vX2FkbWluIiwiZW1haWwiOiJhZG1pbkBkZW1vLmd1YXJkd29yay50ZXN0Iiwicm9sZSI6IkFETUlOIiwiaWF0IjoxNzkyNTE1NTczLCJleHAiOjE3OTI1MTY0NzN9.rfDH689eTdK9KLwKbkBMCRj_BkTQsvvyTYpLu38A4_E
-@ownerUsername = gw_owner_test_01
-@ownerEmail = gw-owner-test@example.test
-@ownerPassword = LocalTestPass123
-@companyId = 1
-@companyVersion = 2
-@uniqueTaxCode = REPLACE_WITH_UNIQUE_TAX_CODE
+@ownerToken = REPLACE_WITH_OWNER_ACCESS_TOKEN
+@staffToken = REPLACE_WITH_STAFF_ACCESS_TOKEN
+@companyId = REPLACE_WITH_COMPANY_ID
+@expectedVersion = REPLACE_WITH_CURRENT_COMPANY_VERSION
 
-### Register a disposable Owner account
-POST {{baseUrl}}/api/auth/register
-Content-Type: application/json
-
-{
-  "firstName": "Minh",
-  "lastName": "Nguyễn",
-  "username": "{{ownerUsername}}",
-  "email": "{{ownerEmail}}",
-  "password": "{{ownerPassword}}"
-}
-
-### Log in as Owner; copy data.accessToken into @ownerToken
-POST {{baseUrl}}/api/auth/login
-Content-Type: application/json
-
-{
-  "usernameOrEmail": "{{ownerEmail}}",
-  "password": "{{ownerPassword}}"
-}
-
-### Confirm the account has no active Company yet
-GET {{baseUrl}}/api/auth/me
-Authorization: Bearer {{ownerToken}}
-
-### Create a Company and its first Owner membership
-POST {{baseUrl}}/api/companies/verification-request
-Authorization: Bearer {{ownerToken}}
-Content-Type: application/json
-
-{
-  "name": "Công ty thử nghiệm GuardWork",
-  "taxCode": "{{uniqueTaxCode}}",
-  "email": "gw-company-test@example.test",
-  "registrationCertificateUrl": "https://example.test/registration-certificate.pdf"
-}
-
-### Read the current Owner context
-GET {{baseUrl}}/api/auth/me
-Authorization: Bearer {{ownerToken}}
-
-### Read the current Company identity
+### Current Company identity and suspension state
 GET {{baseUrl}}/api/companies/me
 Authorization: Bearer {{ownerToken}}
 
-### Read verification state and copy companyId/version from data
+### Owner feedback and version
 GET {{baseUrl}}/api/companies/me/verification
 Authorization: Bearer {{ownerToken}}
 
-### List pending companies as an existing platform Administrator
-GET {{baseUrl}}/api/admin/companies/verifications?status=PENDING&page=0&size=20
-Authorization: Bearer {{adminToken}}
-
-### Optional rejection path: reject a pending Company instead of approving it
-### Use this path before approval, with the current Company version.
-PUT {{baseUrl}}/api/admin/companies/{{companyId}}/reject
-Authorization: Bearer {{adminToken}}
-Content-Type: application/json
-
-{
-  "status": "REJECTED",
-  "rejectionReason": "Please provide a current registration certificate.",
-  "expectedVersion": {{companyVersion}}
-}
-
-### Optional rejection path: resubmit corrected details as the Owner
-### Set @companyVersion to the version returned by the rejection response first.
-PUT {{baseUrl}}/api/companies/me/verification
+### Owner immutable submission/decision history
+GET {{baseUrl}}/api/companies/me/verification/history
 Authorization: Bearer {{ownerToken}}
-Content-Type: application/json
 
-{
-  "name": "Công ty thử nghiệm GuardWork",
-  "email": "gw-company-test@example.test",
-  "registrationCertificateUrl": "https://example.test/updated-registration-certificate.pdf",
-  "expectedVersion": {{companyVersion}}
-}
+### Staff history; workspace selection cannot grant this authority
+GET {{baseUrl}}/api/staff/companies/{{companyId}}/verification-history
+Authorization: Bearer {{staffToken}}
+X-Guardian-Portal: staff
 
-### Approve the pending Company (use the ID and current numeric version)
-### If you tested rejection/resubmission, update @companyVersion from the resubmission response.
-PUT {{baseUrl}}/api/admin/companies/{{companyId}}/verify
-Authorization: Bearer {{adminToken}}
+### Staff approval of a pending dossier
+PUT {{baseUrl}}/api/staff/companies/{{companyId}}/verify
+Authorization: Bearer {{staffToken}}
+X-Guardian-Portal: staff
 Content-Type: application/json
 
 {
   "status": "VERIFIED",
-  "expectedVersion": {{companyVersion}}
+  "expectedVersion": {{expectedVersion}}
 }
 
-### Confirm the Company is verified as Owner
-GET {{baseUrl}}/api/companies/me/verification
-Authorization: Bearer {{ownerToken}}
+### Alternative rejection; correct the same Company through company-setup.http afterward
+PUT {{baseUrl}}/api/staff/companies/{{companyId}}/reject
+Authorization: Bearer {{staffToken}}
+X-Guardian-Portal: staff
+Content-Type: application/json
+
+{
+  "expectedVersion": {{expectedVersion}},
+  "rejectionReason": "Giấy phép chưa rõ thông tin; vui lòng bổ sung bản hợp lệ."
+}

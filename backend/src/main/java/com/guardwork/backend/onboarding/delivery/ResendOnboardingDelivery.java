@@ -15,34 +15,27 @@ public class ResendOnboardingDelivery implements OnboardingDelivery {
     private final String credential;
     private final String baseUrl;
     private final Set<String> allowedOrigins;
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
-            .followRedirects(HttpClient.Redirect.NEVER).build();
+    private final HttpClient http;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ResendOnboardingDelivery(ObjectMapper json,
             @Value("${ONBOARDING_EMAIL_FROM:}") String sender,
             @Value("${ONBOARDING_EMAIL_CREDENTIAL:}") String credential,
             @Value("${ONBOARDING_CONFIRMATION_URL:}") String baseUrl,
             @Value("${ONBOARDING_ALLOWED_ORIGINS:}") String origins) {
-        this.json = json; this.sender = sender; this.credential = credential; this.baseUrl = baseUrl;
-        this.allowedOrigins = new HashSet<>(Arrays.asList(origins.split(",")));
+        this(json, sender, credential, baseUrl, origins, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
+                .followRedirects(HttpClient.Redirect.NEVER).build());
     }
 
-    @Override public boolean registrationEmail(String recipient, UUID id, String secret) {
-        String url = confirmationUrl();
-        return url != null && send(recipient, "Xác thực email tài khoản GuardWork",
-                "Mở liên kết để xác nhận đăng ký. Liên kết có hiệu lực trong 24 giờ.\n"
-                + url + "#registration=" + id + "&emailSecret=" + secret, null);
+    ResendOnboardingDelivery(ObjectMapper json, String sender, String credential, String baseUrl, String origins, HttpClient http) {
+        this.json = json; this.sender = sender; this.credential = credential; this.baseUrl = baseUrl; this.http = http;
+        this.allowedOrigins = new HashSet<>(Arrays.asList(origins.split(",")));
     }
 
     @Override public boolean memberEmail(String recipient, String secret) {
         String url = confirmationUrl();
         return url != null && send(recipient, "Xác thực email tuyển dụng GuardWork",
-                "Đăng nhập và xác nhận email tại:\n" + url + "#memberEmailSecret=" + secret, null);
-    }
-
-    @Override public boolean sms(String phone, String code) {
-        // No provider has been selected. Never substitute console output or accept undelivered proof.
-        return false;
+                "Đăng nhập và xác nhận email tại:\n" + url + "#emailSecret=" + secret, null);
     }
 
     @Override public boolean decisionEmail(String recipient, String company, String outcome, String reason, UUID id) {

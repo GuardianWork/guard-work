@@ -29,11 +29,18 @@ A save replaces the entire content object; omitted fields are removed. Even iden
 saves advance both versions. Repeated POSTs create separate jobs: do not blindly retry
 an unknown creation result.
 
-Pending and rejected Companies may prepare drafts. Job publishing and assignment do
-not require personal email/phone onboarding. Exact known job routes bypass that gate;
-job services enforce active User/membership, Company suspension, role/assignment scope
-and Company verification for submission/resume/approval. Other employer routes retain
-their onboarding restrictions. No environment flag or migration is required.
+Pending and rejected Companies may prepare drafts through eligible current members.
+For newly registered Users, verified account email is required for every private job
+read, creation, edit, assignment and lifecycle operation. The request guard returns
+403 `40335 EMAIL_VERIFICATION_REQUIRED` before payload processing; business services
+recheck the same prerequisite on the current persisted User under the actor lock.
+Selecting a workspace, omitting a portal header, or calling a service directly grants
+no exception. Existing Users retain their persisted legacy exemption and both existing
+email flag values. No personal phone proof is required. Current User/membership,
+Company suspension, role/assignment scope and VERIFIED Company submission/resume/approval
+checks remain. Email proof grants no Company or Staff authority and never unpublishes
+approved jobs. See [shared registration](unified-registration.md) for the approved
+cohort migration, requested proof, client prerequisites and coordinated deployment.
 
 ## Content
 
@@ -90,8 +97,9 @@ responses add nullable `jobId` and `revisionId`; existing membership events rema
 The migration also permits the subsequent slices' JOB_UNASSIGNED,
 JOB_REVISION_APPROVED, JOB_REVISION_REJECTED and JOB_NEEDS_REASSIGNMENT events.
 Historical notification context cannot be rewritten. Active recipients may GET their own
-`/api/me/notifications` and PATCH `/api/me/notifications/{id}/read` despite onboarding
-restrictions; notification access grants no private job access.
+`/api/me/notifications` and PATCH `/api/me/notifications/{id}/read` after losing Company
+membership or without new recruiting email proof. Notification access grants no private
+job access; following its job link rechecks current Company and assignment authority.
 
 Manual request examples are in [job-drafts.http](../../backend/http/job-drafts.http)
 and [job-drafts-errors.http](../../backend/http/job-drafts-errors.http). Use the existing
@@ -190,10 +198,11 @@ first ensures that approval of a future extension never reopens an expired job. 
 moderation audit and recoverable notification effects apply to each distinct attempt.
 No schema migration or frontend work is added by this slice.
 
-Personally verified enrolled members of pending/rejected Companies may use the exact
-known Company-job route/method family, including preview/history, assignment administration,
-and draft derivation. Submission/resume retain service-level Company verification checks.
-Unsupported paths/methods and unrelated employer routes receive no new onboarding bypass.
+Email-eligible current members of pending/rejected Companies may use the Company-job
+routes permitted by their role and assignment, including preview/history and draft
+derivation. Owner-only assignment administration remains Owner-only. Submission/resume
+retain service-level Company verification checks. The prerequisite grants no additional
+route, role or Company access.
 Focused verification: `./mvnw -Dtest=JobRevisionHttpTest test`.
 
 ## Job lifecycle and terminal revisions

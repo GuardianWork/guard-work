@@ -19,9 +19,26 @@ public class CompanyErrorHandler {
         return ResponseEntity.status(status).body(new ApiResponse<>(status, error.getReason(), null));
     }
 
+    @ExceptionHandler({org.springframework.web.multipart.support.MissingServletRequestPartException.class,
+            org.springframework.web.HttpMediaTypeNotSupportedException.class})
+    public ResponseEntity<ApiResponse<Void>> multipart(Exception error) {
+        return ResponseEntity.badRequest().body(new ApiResponse<>(400, "40001 INVALID_INPUT: Complete dossier and file parts are required", null));
+    }
+
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> oversized(Exception error) {
+        return ResponseEntity.status(413).body(new ApiResponse<>(413,
+                "41330 DOCUMENT_TOO_LARGE: Maximum document size is 10 MiB", null));
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<ApiResponse<Void>> malformed(HttpMessageNotReadableException error) {
-        return ResponseEntity.badRequest().body(new ApiResponse<>(400, "40000 BAD_REQUEST: Invalid request body", null));
+    public ResponseEntity<ApiResponse<Void>> malformed(HttpMessageNotReadableException error,
+            jakarta.servlet.http.HttpServletRequest request) {
+        String path = request.getRequestURI().substring(request.getContextPath().length());
+        boolean dossier = path.equals("/api/companies/verification-request")
+                || path.equals("/api/companies/me/verification") || path.matches("/api/companies/[0-9]+/resubmit");
+        return ResponseEntity.badRequest().body(new ApiResponse<>(400,
+                dossier ? "40001 INVALID_INPUT: Invalid dossier" : "40000 BAD_REQUEST: Invalid request body", null));
     }
 
     @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)

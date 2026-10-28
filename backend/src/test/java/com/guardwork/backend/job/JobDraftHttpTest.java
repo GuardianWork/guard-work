@@ -1,5 +1,7 @@
 package com.guardwork.backend.job;
 
+import static com.guardwork.backend.CompanyDossierFixtures.completeDossier;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guardwork.backend.notification.service.NotificationDispatcher;
@@ -143,7 +145,7 @@ class JobDraftHttpTest {
                 .andExpect(jsonPath("$.data.content[0].workingRevision.content.title").value("😀".repeat(200)));
     }
 
-    @Test void personalProofIsIndependentOfDraftingBeforeCompanyApproval() throws Exception {
+    @Test void legacyPersonalProofFlagsDoNotGateDraftingBeforeCompanyApproval() throws Exception {
         String owner = account(); long company = createdCompany(owner); long user = userId(owner);
         database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,true,'Owner')", user);
         http.perform(post(JOBS).header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content("{\"content\":{}}"))
@@ -158,7 +160,7 @@ class JobDraftHttpTest {
         database.update("UPDATE company_memberships SET role='ADMIN' WHERE id=?", member);
         http.perform(get(JOBS).header("Authorization", recipient)).andExpect(status().isForbidden());
         database.update("UPDATE companies SET is_banned=true WHERE id=?", company);
-        http.perform(get(JOBS).header("Authorization", owner)).andExpect(status().isForbidden());
+        http.perform(get(JOBS).header("Authorization", owner)).andExpect(status().isNotFound());
         database.update("UPDATE companies SET is_banned=false WHERE id=?", company);
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", user);
         http.perform(post(JOBS).header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content("{\"content\":{}}"))
@@ -315,8 +317,7 @@ class JobDraftHttpTest {
     }
 
     long createdCompany(String token) throws Exception {
-        String body = http.perform(post("/api/companies/verification-request").header("Authorization", token)
-                        .contentType(MediaType.APPLICATION_JSON).content(company(UUID.randomUUID().toString())))
+        String body = http.perform(completeDossier("POST", "/api/companies/verification-request", company(UUID.randomUUID().toString())).header("Authorization", token))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return mapper.readTree(body).path("data").path("id").asLong();
     }
@@ -328,6 +329,7 @@ class JobDraftHttpTest {
                         .content(mapper.writeValueAsString(Map.of("firstName", "Ánh", "lastName", "Nguyễn", "username", name,
                                 "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
+        database.update("UPDATE users SET recruiting_email_verification_required=FALSE WHERE email=?", email);
         String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email, "password", "Password123"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
