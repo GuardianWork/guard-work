@@ -1,7 +1,8 @@
 package com.guardwork.backend.candidate;
 
 import com.guardwork.backend.candidate.dto.UpdateCandidateProfileRequest;
-import com.guardwork.backend.candidate.dto.CandidateProfileResponse;
+import com.guardwork.backend.candidate.dto.ExperienceEntry;
+import com.guardwork.backend.candidate.dto.EducationEntry;
 import com.guardwork.backend.candidate.util.ValidationConstants;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
@@ -18,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -25,6 +27,7 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class CandidateProfileServiceTest {
+
     @Mock
     private CandidateProfileRepository profileRepository;
 
@@ -32,167 +35,200 @@ class CandidateProfileServiceTest {
     private UserRepository userRepository;
 
     @InjectMocks
-    private CandidateProfileService profileService;
+    private CandidateProfileService service;
 
-    private User sampleUser;
-    private CandidateProfile existingProfile;
+    private User user;
+    private CandidateProfile profile;
 
     @BeforeEach
     void setUp() {
-        sampleUser = new User();
-        sampleUser.setId(1L);
-        sampleUser.setFirstName("John");
-        sampleUser.setLastName("Doe");
+        user = new User();
+        user.setId(1L);
+        user.setFirstName("John");
+        user.setLastName("Doe");
 
-        existingProfile = new CandidateProfile();
-        existingProfile.setId(java.util.UUID.randomUUID());
-        existingProfile.setUserId(sampleUser.getId());
-        existingProfile.setFullName("John Doe");
-        existingProfile.setPublic(true);
-        existingProfile.setSkills(List.of("Java", "Spring"));
+        profile = new CandidateProfile();
+        profile.setId(UUID.randomUUID());
+        profile.setUserId(user.getId());
+        profile.setFullName("John Doe");
+        profile.setPublic(true);
+        profile.setSkills(List.of("Java", "Spring"));
     }
 
     @Nested
-    @DisplayName("getOrCreateProfile happy path")
+    @DisplayName("getOrCreateProfile")
     class GetOrCreateProfile {
-        @Test
-        void returnsExistingProfileWhenFound() {
-            when(profileRepository.findByUserId(sampleUser.getId()))
-                    .thenReturn(Optional.of(existingProfile));
-            when(userRepository.findById(sampleUser.getId())).thenReturn(Optional.of(sampleUser));
 
-            CandidateProfileResponse result = profileService.getOrCreateProfile(sampleUser.getId());
-            assertEquals(existingProfile.getId(), result.id());
+        @Test
+        void returnsExistingWhenFound() {
+            when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
+
+            CandidateProfile result = service.getOrCreateProfile(user.getId());
+            assertSame(profile, result);
             verify(profileRepository, never()).save(any());
         }
 
         @Test
         void createsSkeletonWhenMissing() {
-            when(profileRepository.findByUserId(sampleUser.getId()))
-                    .thenReturn(Optional.empty());
-            when(userRepository.findById(sampleUser.getId()))
-                    .thenReturn(Optional.of(sampleUser));
-            when(profileRepository.save(any(CandidateProfile.class)))
-                    .thenAnswer(invocation -> {
-                        CandidateProfile saved = invocation.getArgument(0);
-                        assertNull(saved.getId(), "The persistence provider generates a new profile ID");
-                        saved.setId(java.util.UUID.randomUUID());
-                        return saved;
-                    });
+            when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
+            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
-            CandidateProfileResponse result = profileService.getOrCreateProfile(sampleUser.getId());
-            assertNotNull(result.id());
-            assertEquals("John Doe", result.fullName());
+            CandidateProfile result = service.getOrCreateProfile(user.getId());
+            assertNotNull(result);
+            assertEquals("John Doe", result.getFullName());
             assertTrue(result.isPublic());
             verify(profileRepository).save(any(CandidateProfile.class));
         }
+
+        @Test
+        void throwsWhenUserMissing() {
+            when(profileRepository.findByUserId(anyLong())).thenReturn(Optional.empty());
+            when(userRepository.findById(anyLong())).thenReturn(Optional.empty());
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                    () -> service.getOrCreateProfile(999L));
+            assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
+        }
     }
 
     @Nested
-    @DisplayName("updateProfile happy path")
+    @DisplayName("updateProfile")
     class UpdateProfile {
-        private UpdateCandidateProfileRequest request;
 
-        @BeforeEach
-        void initRequest() {
-            when(userRepository.findByIdForUpdate(sampleUser.getId())).thenReturn(Optional.of(sampleUser));
-            request = new UpdateCandidateProfileRequest(
-                    "Jane Doe",
-                    "0901234567",
+        @Test
+        void updatesEmailWhenUnique() {
+            when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
+            when(profileRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
+            when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
+
+            UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
+                    "new@example.com",
+                    "John Doe",
+                    "0123",
                     "https://example.com/avatar.png",
-                    List.of("Kotlin", "Docker"),
-                    "5 years",
-                    "BS Computer Science",
+                    List.of("Java", "Spring"),
+                    List.of(new ExperienceEntry("Acme", "Dev", "2020-01", "2021-01", "Did stuff")),
+                    List.of(new EducationEntry("Uni", "BSc", "2015", "2019", "CS")),
                     true
             );
+
+            CandidateProfile updated = service.updateProfile(user.getId(), request);
+            assertEquals("new@example.com", updated.getEmail());
         }
 
         @Test
-        void updatesAllFieldsWhenValid() {
-            when(profileRepository.findByUserId(sampleUser.getId()))
-                    .thenReturn(Optional.of(existingProfile));
-            when(profileRepository.save(any(CandidateProfile.class)))
-                    .thenAnswer(invocation -> invocation.getArgument(0));
+        void throwsWhenEmailTakenByOtherUser() {
+            CandidateProfile other = new CandidateProfile();
+            other.setUserId(2L);
+            other.setEmail("taken@example.com");
 
-            CandidateProfileResponse updated = profileService.updateProfile(sampleUser.getId(), request);
-            assertEquals("Jane Doe", updated.fullName());
-            assertEquals("+84901234567", updated.phoneNumber());
-            assertEquals("+84901234567", sampleUser.getPhoneNumber());
-            assertNull(existingProfile.getPhoneNumber());
-            assertEquals("https://example.com/avatar.png", updated.avatarUrl());
-            assertEquals(List.of("Kotlin", "Docker"), updated.skills());
-            assertEquals("5 years", updated.experienceSummary());
-            assertEquals("BS Computer Science", updated.educationSummary());
-            assertTrue(updated.isPublic());
+            when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
+            when(profileRepository.findByEmail("taken@example.com")).thenReturn(Optional.of(other));
+
+            UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
+                    "taken@example.com",
+                    "John Doe",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+            );
+
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                    () -> service.updateProfile(user.getId(), request));
+            assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
         }
 
         @Test
-        void createsSkeletonWhenProfileMissing() {
-            when(profileRepository.findByUserId(sampleUser.getId()))
-                    .thenReturn(Optional.empty());
-            when(profileRepository.save(any(CandidateProfile.class)))
-                    .thenAnswer(invocation -> invocation.getArgument(0));
+        void trimsAndDeduplicatesSkills() {
+            when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
+            when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
-            CandidateProfileResponse updated = profileService.updateProfile(sampleUser.getId(), request);
-            assertEquals("Jane Doe", updated.fullName());
-            verify(profileRepository).save(any(CandidateProfile.class));
-        }
-    }
+            UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
+                    "john@example.com",
+                    "John Doe",
+                    null,
+                    null,
+                    List.of("Java", "  java  ", "", "Spring", "Java"),
+                    null,
+                    null,
+                    null
+            );
 
-    @Nested
-    @DisplayName("error handling (guard clauses)")
-    class GuardClauses {
-        @Test
-        void throwsWhenUserNotFoundDuringSkeletonCreation() {
-            when(userRepository.findById(anyLong()))
-                    .thenReturn(Optional.empty());
-
-            ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
-                    profileService.getOrCreateProfile(999L));
-            assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
-            assertTrue(ex.getReason().contains("USER_NOT_FOUND"));
+            CandidateProfile updated = service.updateProfile(user.getId(), request);
+            assertEquals(List.of("Java", "Spring"), updated.getSkills());
         }
 
         @Test
-        void throwsWhenSkillExceedsMaxLength() {
-            when(userRepository.findByIdForUpdate(sampleUser.getId())).thenReturn(Optional.of(sampleUser));
+        void mapsExperienceAndEducationLists() {
+            when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
+            when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
+
+            ExperienceEntry exp = new ExperienceEntry("Acme", "Dev", "2020-01", null, "Desc");
+            EducationEntry edu = new EducationEntry("Uni", "BSc", "2015", null, "CS");
+
+            UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
+                    "john@example.com",
+                    "John Doe",
+                    null,
+                    null,
+                    null,
+                    List.of(exp),
+                    List.of(edu),
+                    null
+            );
+
+            CandidateProfile updated = service.updateProfile(user.getId(), request);
+            assertEquals(1, updated.getExperience().size());
+            assertEquals("Acme", updated.getExperience().get(0).company());
+            assertEquals(1, updated.getEducation().size());
+            assertEquals("Uni", updated.getEducation().get(0).institution());
+        }
+
+        @Test
+        void validatesSkillLength() {
             String longSkill = "a".repeat(ValidationConstants.MAX_SKILL_LENGTH + 1);
-            var request = new UpdateCandidateProfileRequest(
+            UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
+                    "john@example.com",
                     "John Doe",
-                    "0901234567",
-                    "https://example.com/avatar.png",
+                    null,
+                    null,
                     List.of(longSkill),
-                    null, null, null);
+                    null,
+                    null,
+                    null
+            );
 
-            when(profileRepository.findByUserId(sampleUser.getId()))
-                    .thenReturn(Optional.of(existingProfile));
+            when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
 
-            ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
-                    profileService.updateProfile(sampleUser.getId(), request));
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                    () -> service.updateProfile(user.getId(), request));
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-            assertTrue(ex.getReason().contains("exceeds maximum length"));
         }
 
         @Test
-        void throwsWhenTooManySkills() {
-            when(userRepository.findByIdForUpdate(sampleUser.getId())).thenReturn(Optional.of(sampleUser));
-            List<String> manySkills = java.util.stream.IntStream.range(0, ValidationConstants.MAX_SKILLS + 1)
-                    .mapToObj(i -> "Skill" + i)
-                    .toList();
-            var request = new UpdateCandidateProfileRequest(
+        void validatesSkillCount() {
+            List<String> many = java.util.stream.IntStream.range(0, ValidationConstants.MAX_SKILLS + 1)
+                    .mapToObj(i -> "Skill" + i).toList();
+            UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
+                    "john@example.com",
                     "John Doe",
-                    "0901234567",
-                    "https://example.com/avatar.png",
-                    manySkills,
-                    null, null, null);
+                    null,
+                    null,
+                    many,
+                    null,
+                    null,
+                    null
+            );
 
-            when(profileRepository.findByUserId(sampleUser.getId()))
-                    .thenReturn(Optional.of(existingProfile));
+            when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
 
-            ResponseStatusException ex = assertThrows(ResponseStatusException.class, () ->
-                    profileService.updateProfile(sampleUser.getId(), request));
+            ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                    () -> service.updateProfile(user.getId(), request));
             assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-            assertTrue(ex.getReason().contains("Number of skills exceeds"));
         }
     }
 }

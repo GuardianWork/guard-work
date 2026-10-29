@@ -5,7 +5,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.guardwork.backend.candidate.dto.EducationEntry;
+import com.guardwork.backend.candidate.dto.ExperienceEntry;
 import com.guardwork.backend.candidate.util.SkillsJsonConverter;
+import com.guardwork.backend.candidate.util.ExperienceJsonConverter;
+import com.guardwork.backend.candidate.util.EducationJsonConverter;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
@@ -36,6 +40,9 @@ public class CandidateProfile {
     @Column(name = "user_id", nullable = false, unique = true)
     private Long userId;
 
+    @Column(name = "email", nullable = false, length = 255, unique = true)
+    private String email;
+
     @Column(name = "full_name", nullable = false, length = 150)
     private String fullName;
 
@@ -51,11 +58,15 @@ public class CandidateProfile {
     @Column(name = "skills", columnDefinition = "jsonb", nullable = false)
     private List<String> skills = new ArrayList<>();
 
-    @Column(name = "experience_summary", columnDefinition = "TEXT")
-    private String experienceSummary;
+    @Convert(converter = ExperienceJsonConverter.class)
+    @org.hibernate.annotations.ColumnTransformer(write = "?::jsonb")
+    @Column(name = "experience", columnDefinition = "jsonb")
+    private List<ExperienceEntry> experience = new ArrayList<>();
 
-    @Column(name = "education_summary", columnDefinition = "TEXT")
-    private String educationSummary;
+    @Convert(converter = EducationJsonConverter.class)
+    @org.hibernate.annotations.ColumnTransformer(write = "?::jsonb")
+    @Column(name = "education", columnDefinition = "jsonb")
+    private List<EducationEntry> education = new ArrayList<>();
 
     @Column(name = "is_public", nullable = false)
     private boolean isPublic = true;
@@ -76,6 +87,12 @@ public class CandidateProfile {
         }
         if (skills == null) {
             skills = new ArrayList<>();
+        }
+        if (experience == null) {
+            experience = new ArrayList<>();
+        }
+        if (education == null) {
+            education = new ArrayList<>();
         }
     }
 

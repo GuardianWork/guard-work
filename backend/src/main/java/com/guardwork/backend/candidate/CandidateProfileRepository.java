@@ -13,4 +13,9 @@ public interface CandidateProfileRepository extends JpaRepository<CandidateProfi
      * Find a candidate profile by the associated user id.
      */
     Optional<CandidateProfile> findByUserId(Long userId);
+
+    /**
+     * Find a candidate profile by email.
+     */
+    Optional<CandidateProfile> findByEmail(String email);
 }

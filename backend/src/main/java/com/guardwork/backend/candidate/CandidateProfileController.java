@@ -1,6 +1,8 @@
 package com.guardwork.backend.candidate;
 
 import com.guardwork.backend.candidate.dto.CandidateProfileResponse;
+import com.guardwork.backend.candidate.dto.ExperienceEntry;
+import com.guardwork.backend.candidate.dto.EducationEntry;
 import com.guardwork.backend.common.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -28,7 +30,8 @@ public class CandidateProfileController {
     @ResponseStatus(HttpStatus.OK)
     public ApiResponse<CandidateProfileResponse> getProfile() {
         Long userId = SecurityUtils.getCurrentUserId();
-        return ApiResponse.ok(profileService.getOrCreateProfile(userId));
+        CandidateProfile profile = profileService.getOrCreateProfile(userId);
+        return ApiResponse.ok(mapToResponse(profile));
     }
 
     @PutMapping("/profile")
@@ -37,7 +40,24 @@ public class CandidateProfileController {
             @Valid @RequestBody UpdateCandidateProfileRequest request) {
 
         Long userId = SecurityUtils.getCurrentUserId();
-        return ApiResponse.ok(profileService.updateProfile(userId, request));
+        CandidateProfile updated = profileService.updateProfile(userId, request);
+        return ApiResponse.ok(mapToResponse(updated));
     }
 
+    private CandidateProfileResponse mapToResponse(CandidateProfile profile) {
+        return new CandidateProfileResponse(
+                profile.getId(),
+                profile.getUserId(),
+                profile.getEmail(),
+                profile.getFullName(),
+                profile.getAvatarUrl(),
+                profile.getPhoneNumber(),
+                profile.getSkills(),
+                profile.getExperience(),
+                profile.getEducation(),
+                profile.isPublic(),
+                profile.getCreatedAt(),
+                profile.getUpdatedAt()
+        );
+    }
 }
