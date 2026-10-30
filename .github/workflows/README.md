@@ -17,11 +17,9 @@ that rejects `backend_db` remain unchanged.
 ### How to use
 - **Push**: Pushes to `dev` and `feat/**` run CI. Feature branch pushes also require
   the latest `origin/dev` commit to be in their history.
-- **Draft Pull Request**: Open a draft targeting `main` or `dev` to run CI before review.
-  Push fixes to the same branch and wait until checks pass for its latest commit.
-- **Ready for review**: After all required checks pass on the latest commit and the
-  agent posts the CI handoff comment, the agent marks the PR ready. Agents do not merge.
-  Follow `docs/agent-guides/pull-request-workflow.md`.
+- **Pull Request**: Open a normal PR targeting `main` or `dev`; CI runs automatically.
+  If a check fails, inspect the logs, fix the issue, and wait for the next run to pass.
+  Agents do not merge. Follow `docs/agent-guides/pull-request-workflow.md`.
 
 ---
 

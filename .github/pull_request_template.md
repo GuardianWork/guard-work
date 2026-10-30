@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- Use /pr to choose a concise diff, call tree, or diagram that explains the change. -->
+<!-- A concise summary, diff, or diagram is useful but optional. -->
 
 ## Evidence
 
@@ -12,9 +12,3 @@
 **Door:** <!-- One-way or two-way. Explain migrations or rollback concerns when relevant. -->
 
 **Blast Radius:** <!-- One word, followed by a brief explanation if needed. -->
-
-## Readiness
-
-- [ ] CI is green for the latest PR commit.
-- [ ] The PR description reflects the final diff and verification results.
-- [ ] Required CI handoff comment has been posted.

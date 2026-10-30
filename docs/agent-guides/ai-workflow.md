@@ -22,9 +22,9 @@ is authorized to bypass the repository's approval boundaries.
    preserve changes already present.
 2. Before implementation, ask the user for explicit approval to create or switch to
    a task branch based on `dev`. Wait for the answer; do not edit implementation
-   files or switch branches before approval. After approval, create a separate task
-   branch based on `dev` and never implement directly on `dev`. If existing work
-   could be affected, ask how to preserve it.
+   files or switch branches before approval. After approval, fetch `origin/dev` and
+   create the task branch from it or rebase the approved task branch onto it. Never
+   implement directly on `dev`. If existing work could be affected, ask how to preserve it.
 3. Read every applicable context pointer before editing. Backend tasks require
    `backend/AGENTS.md` and `backend/README.md`; product/API/schema changes also
    require `docs/agent-guides/requirements.md` and the applicable approved spec.
@@ -33,15 +33,11 @@ is authorized to bypass the repository's approval boundaries.
    persistence, APIs, or architecture before implementation.
 5. Make a narrow change. Obtain human approval at the boundaries listed in the root
    guide; do not interpret a tool's permission prompt as product or architecture approval.
-6. Before every push, fetch `origin/dev` and rebase the task branch onto the latest
-   `origin/dev`. Resolve conflicts and rerun applicable checks before pushing. Get
-   explicit approval before force-with-lease if rebase rewrites published commits.
-7. Run checks required by the applicable subsystem guide and task. Report checks
+6. Run checks required by the applicable subsystem guide and task. Report checks
    that were not run and why; do not claim unrun verification passed.
-8. Report behavior changed, files/subsystems affected, checks and results, assumptions,
+7. Report behavior changed, files/subsystems affected, checks and results, assumptions,
    risks/follow-ups, and user-visible/API/security/privacy/data implications.
-9. For PR work, follow the [draft-first PR workflow](pull-request-workflow.md). Use
-   `/pr` when available; otherwise use the tracked GitHub PR template.
+8. For PR work, follow the normal [PR and CI workflow](pull-request-workflow.md).
 
 ## Safety and collaboration
 
