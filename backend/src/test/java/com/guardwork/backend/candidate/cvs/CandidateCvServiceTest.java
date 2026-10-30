@@ -295,6 +295,114 @@ class CandidateCvServiceTest {
     }
 
     @Nested
+    @DisplayName("copyForApplication")
+    class CopyForApplication {
+
+        private CandidateCv ownedCv(String contentType, String publicId) {
+            CandidateCv cv = new CandidateCv();
+            cv.setId(UUID.randomUUID());
+            cv.setCandidateId(candidateId);
+            cv.setFileName("My CV.pdf");
+            cv.setFileSize(2_048L);
+            cv.setContentType(contentType);
+            cv.setPublicId(publicId);
+            return cv;
+        }
+
+        @Test
+        void copiesOwnedCvIntoAnIndependentApplicationObject() {
+            CandidateCv cv = ownedCv(PDF, folder() + "source.pdf");
+            UUID applicationId = UUID.randomUUID();
+            when(cvRepository.findByIdAndCandidateId(cv.getId(), candidateId)).thenReturn(Optional.of(cv));
+            when(storage.find(cv.getPublicId()))
+                    .thenReturn(Optional.of(asset(cv.getPublicId(), "pdf", PDF, 2_048L, "image")));
+            when(storage.copy(eq(cv.getPublicId()), anyString(), eq("image"), eq("pdf")))
+                    .thenAnswer(invocation -> asset(invocation.getArgument(1), "pdf", PDF, 2_048L, "image"));
+
+            CandidateCvService.CandidateCvSnapshot snapshot = service.copyForApplication(
+                    candidateId, cv.getId(), applicationId);
+
+            assertEquals(cv.getId(), snapshot.sourceCvId());
+            assertEquals("CLOUDINARY", snapshot.storageProvider());
+            assertEquals("My CV.pdf", snapshot.fileName());
+            assertEquals(PDF, snapshot.contentType());
+            assertEquals(2_048L, snapshot.fileSize());
+            assertTrue(snapshot.storageKey().startsWith("applications/" + applicationId + "/cv/"));
+            assertTrue(snapshot.storageKey().endsWith(".pdf"));
+        }
+
+        @Test
+        void hidesCvOwnedByAnotherCandidate() {
+            UUID cvId = UUID.randomUUID();
+            when(cvRepository.findByIdAndCandidateId(cvId, candidateId)).thenReturn(Optional.empty());
+
+            AppException failure = assertThrows(AppException.class,
+                    () -> service.copyForApplication(candidateId, cvId, UUID.randomUUID()));
+
+            assertEquals(ErrorCode.CV_NOT_FOUND, failure.getErrorCode());
+            verifyNoInteractions(storage);
+        }
+
+        @Test
+        void rejectsMissingSourceAsset() {
+            CandidateCv cv = ownedCv(PDF, folder() + "source.pdf");
+            when(cvRepository.findByIdAndCandidateId(cv.getId(), candidateId)).thenReturn(Optional.of(cv));
+            when(storage.find(cv.getPublicId())).thenReturn(Optional.empty());
+
+            AppException failure = assertThrows(AppException.class,
+                    () -> service.copyForApplication(candidateId, cv.getId(), UUID.randomUUID()));
+
+            assertEquals(ErrorCode.CV_NOT_FOUND, failure.getErrorCode());
+            verify(storage, never()).copy(anyString(), anyString(), anyString(), anyString());
+        }
+
+        @Test
+        void rejectsUnsupportedContentType() {
+            CandidateCv cv = ownedCv("application/zip", folder() + "source.zip");
+            when(cvRepository.findByIdAndCandidateId(cv.getId(), candidateId)).thenReturn(Optional.of(cv));
+
+            AppException failure = assertThrows(AppException.class,
+                    () -> service.copyForApplication(candidateId, cv.getId(), UUID.randomUUID()));
+
+            assertEquals(ErrorCode.INVALID_CV_FILE_FORMAT, failure.getErrorCode());
+            verifyNoInteractions(storage);
+        }
+
+        @Test
+        void cleansUpInvalidCopy() {
+            CandidateCv cv = ownedCv(PDF, folder() + "source.pdf");
+            when(cvRepository.findByIdAndCandidateId(cv.getId(), candidateId)).thenReturn(Optional.of(cv));
+            when(storage.find(cv.getPublicId()))
+                    .thenReturn(Optional.of(asset(cv.getPublicId(), "pdf", PDF, 2_048L, "image")));
+            when(storage.copy(eq(cv.getPublicId()), anyString(), eq("image"), eq("pdf")))
+                    .thenAnswer(invocation -> asset(invocation.getArgument(1), "exe", null, 1_000L, "raw"));
+
+            AppException failure = assertThrows(AppException.class,
+                    () -> service.copyForApplication(candidateId, cv.getId(), UUID.randomUUID()));
+
+            assertEquals(ErrorCode.INVALID_CV_FILE_FORMAT, failure.getErrorCode());
+            verify(storage).delete(anyString(), eq("raw"));
+        }
+
+        @Test
+        void discardSnapshotDeletesTheCopiedObjectAndIgnoresCleanupFailure() {
+            CandidateCvService.CandidateCvSnapshot snapshot = new CandidateCvService.CandidateCvSnapshot(
+                    UUID.randomUUID(), "applications/id/cv/copy.docx", "CLOUDINARY", "cv.docx", DOCX, 1_000L, "raw");
+
+            service.discardSnapshot(snapshot);
+            verify(storage).delete("applications/id/cv/copy.docx", "raw");
+
+            doThrow(new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE))
+                    .when(storage).delete("applications/id/cv/copy.docx", "raw");
+            service.discardSnapshot(snapshot);
+            verify(storage, times(2)).delete("applications/id/cv/copy.docx", "raw");
+
+            service.discardSnapshot(null);
+            verifyNoMoreInteractions(storage);
+        }
+    }
+
+    @Nested
     @DisplayName("generateDownloadUrl")
     class GenerateDownloadUrl {
 

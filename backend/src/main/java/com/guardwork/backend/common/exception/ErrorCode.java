@@ -35,18 +35,23 @@ public enum ErrorCode {
     // --- FORBIDDEN (403) ---
     FORBIDDEN(40300, "You do not have permission to access this resource.", HttpStatus.FORBIDDEN),
     USER_NOT_VERIFIED(40301, "Your account is not verified.", HttpStatus.FORBIDDEN),
+    ACCOUNT_SUSPENDED(40304, "Your account is suspended. Please contact support for assistance.", HttpStatus.FORBIDDEN),
 
     // --- NOT FOUND (404) ---
     RESOURCE_NOT_FOUND(40400, "No endpoint found for this request", HttpStatus.NOT_FOUND),
     USER_NOT_FOUND(40401, "The user you are looking for could not be found.", HttpStatus.NOT_FOUND),
     VERIFICATION_TOKEN_NOT_FOUND(40404, "The verification token is invalid or has expired.", HttpStatus.NOT_FOUND),
     CV_NOT_FOUND(40405, "The CV could not be found.", HttpStatus.NOT_FOUND),
+    JOB_NOT_FOUND(40478, "The job posting could not be found.", HttpStatus.NOT_FOUND),
 
     // --- CONFLICT (409) ---
     DUPLICATE_CV(40902, "This CV has already been registered.", HttpStatus.CONFLICT),
+    APPLICATION_ALREADY_SUBMITTED(40903, "You have already applied to this job.", HttpStatus.CONFLICT),
+    JOB_NOT_ACCEPTING_APPLICATIONS(40904, "This job posting is no longer accepting applications.", HttpStatus.CONFLICT),
 
     // --- SERVICE UNAVAILABLE (503) ---
     CV_STORAGE_UNAVAILABLE(50300, "CV storage is temporarily unavailable. Please try again later.", HttpStatus.SERVICE_UNAVAILABLE),
+    APPLICATION_CV_COPY_FAILED(50301, "The CV could not be attached to your application. Please try again later.", HttpStatus.SERVICE_UNAVAILABLE),
 
     // --- TOO MANY REQUESTS (429) ---
     TOO_MANY_REQUESTS(42900, "Too many requests. Please wait %s seconds before trying again.", HttpStatus.TOO_MANY_REQUESTS);

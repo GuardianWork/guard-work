@@ -211,6 +211,32 @@ public class JobPublicationService {
     entities.refresh(revision);
   }
 
+  public record ApplicationContext(Long jobId, Long companyId, String companyName,
+      Long submittedRevisionId, String title, Instant deadline, boolean available, String reason) {}
+
+  /**
+   * Locks Company then job, reconciles expiry and returns the approved content needed by the
+   * application workflow. The lock order matches JobExpiryService and the publication service.
+   */
+  public ApplicationContext applicationContext(Long id) {
+    if(id==null || id<=0) throw JobDraftService.notFound();
+    var hint=jobs.findById(id).orElseThrow(JobDraftService::notFound);
+    var company=companies.findByIdForUpdate(hint.getCompanyId()).orElseThrow(JobDraftService::notFound);
+    if(company.isBanned())throw JobDraftService.notFound();
+    var job=jobs.lock(id,company.getId()).orElseThrow(JobDraftService::notFound);
+    entities.refresh(job);
+    if(job.getPublishedRevisionId()==null)throw JobDraftService.notFound();
+    var revision=revisions.findById(job.getPublishedRevisionId())
+        .filter(r->"APPROVED".equals(r.getState())).orElseThrow(JobDraftService::notFound);
+    expiry.reconcile(job);
+    var decoded=content.decode(revision.getContent());
+    String title=decoded.get("title")==null?null:decoded.get("title").toString();
+    String reason=!"PUBLISHED".equals(job.getStatus())?job.getStatus()
+        :company.getVerificationStatus()!=VerificationStatus.VERIFIED?"COMPANY_NOT_VERIFIED":null;
+    return new ApplicationContext(id,company.getId(),company.getName(),job.getPublishedRevisionId(),
+        title,job.getApprovedDeadline(),reason==null,reason);
+  }
+
   public PublicDetail publicDetail(Long id) {
     if (id == null || id <= 0) throw JobDraftService.notFound();
     var hint = jobs.findById(id).orElseThrow(JobDraftService::notFound);

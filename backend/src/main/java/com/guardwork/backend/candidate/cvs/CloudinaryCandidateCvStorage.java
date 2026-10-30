@@ -86,6 +86,29 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
     }
 
     @Override
+    public StoredCvAsset copy(String sourcePublicId, String targetPublicId, String resourceType, String format) {
+        Cloudinary cloudinary = requireCloudinary();
+        try {
+            String sourceUrl = cloudinary.privateDownload(sourcePublicId, format, Map.of(
+                    "resource_type", resourceType,
+                    "type", "upload",
+                    "expires_at", Instant.now().plus(Duration.ofMinutes(5)).getEpochSecond()
+            ));
+            Map<String, Object> options = new LinkedHashMap<>();
+            options.put("public_id", targetPublicId);
+            options.put("resource_type", resourceType);
+            options.put("type", "upload");
+            options.put("overwrite", false);
+            options.put("invalidate", true);
+            Map<?, ?> response = cloudinary.uploader().upload(sourceUrl, options);
+            return toStoredAsset(response, resourceType);
+        } catch (Exception storageFailure) {
+            log.warn("event=cv_snapshot_copy outcome=failed resource_type={}", resourceType);
+            throw new AppException(ErrorCode.APPLICATION_CV_COPY_FAILED);
+        }
+    }
+
+    @Override
     public String createDownloadUrl(String publicId, String resourceType, String format, Duration ttl) {
         Cloudinary cloudinary = requireCloudinary();
         Map<String, Object> options = new HashMap<>();
@@ -108,7 +131,7 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
         return cloudinary;
     }
 
-    private StoredCvAsset toStoredAsset(ApiResponse response, String attemptedResourceType) {
+    private StoredCvAsset toStoredAsset(Map<?, ?> response, String attemptedResourceType) {
         String publicId = stringValue(response.get("public_id"));
         String format = stringValue(response.get("format"));
         String resourceType = stringValue(response.get("resource_type"));

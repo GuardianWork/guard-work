@@ -141,6 +141,81 @@ public class CandidateCvService {
         }
     }
 
+    /**
+     * Copies an owned CV into an application-specific immutable object. The source CV row is not
+     * changed; the returned snapshot is stored by the application workflow.
+     */
+    @Transactional
+    public CandidateCvSnapshot copyForApplication(UUID candidateId, UUID cvId, UUID applicationId) {
+        CandidateCv cv = cvRepository.findByIdAndCandidateId(cvId, candidateId)
+                .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
+
+        String format = CONTENT_TYPE_TO_FORMAT.get(cv.getContentType());
+        if (format == null) {
+            throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
+        }
+        String resourceType = FORMAT_TO_RESOURCE_TYPE.get(format);
+
+        // Re-read the object so a CV deleted between prefill and submit cannot be attached.
+        CandidateCvStorage.StoredCvAsset source = storage.find(cv.getPublicId())
+                .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
+        validateAsset(source);
+
+        String targetPublicId = applicationFolder(applicationId) + UUID.randomUUID() + "." + format;
+        CandidateCvStorage.StoredCvAsset copy = storage.copy(
+                cv.getPublicId(), targetPublicId, resourceType, format);
+        String copiedResourceType = copy.resourceType() == null ? resourceType : copy.resourceType();
+        try {
+            validateAsset(copy);
+        } catch (RuntimeException failure) {
+            discardSnapshot(new CandidateCvSnapshot(
+                    cv.getId(), copy.publicId(), "CLOUDINARY", cv.getFileName(),
+                    copy.contentType(), copy.bytes(), copiedResourceType));
+            throw failure;
+        }
+        return new CandidateCvSnapshot(
+                cv.getId(),
+                copy.publicId(),
+                "CLOUDINARY",
+                cv.getFileName(),
+                copy.contentType(),
+                copy.bytes(),
+                copiedResourceType
+        );
+    }
+
+    /**
+     * Best-effort removal of a snapshot object when the application transaction did not commit.
+     */
+    public void discardSnapshot(CandidateCvSnapshot snapshot) {
+        if (snapshot == null || snapshot.storageKey() == null) {
+            return;
+        }
+        String resourceType = snapshot.resourceType();
+        if (resourceType == null && snapshot.contentType() != null) {
+            String format = CONTENT_TYPE_TO_FORMAT.get(snapshot.contentType());
+            resourceType = format == null ? null : FORMAT_TO_RESOURCE_TYPE.get(format);
+        }
+        if (resourceType == null) {
+            return;
+        }
+        try {
+            storage.delete(snapshot.storageKey(), resourceType);
+        } catch (RuntimeException cleanupFailure) {
+            log.warn("event=application_cv_snapshot_cleanup outcome=failed");
+        }
+    }
+
+    public record CandidateCvSnapshot(
+            UUID sourceCvId,
+            String storageKey,
+            String storageProvider,
+            String fileName,
+            String contentType,
+            long fileSize,
+            String resourceType
+    ) {}
+
     @Transactional
     public List<CandidateCvResponse> listCvs(Long userId, UUID requestedCandidateId) {
         UUID candidateId = currentCandidateId(userId);
@@ -211,6 +286,10 @@ public class CandidateCvService {
 
     private static String candidateFolder(UUID candidateId) {
         return "candidates/" + candidateId + "/cvs/";
+    }
+
+    private static String applicationFolder(UUID applicationId) {
+        return "applications/" + applicationId + "/cv/";
     }
 
     private void cleanupQuietly(CandidateCvStorage.StoredCvAsset asset) {

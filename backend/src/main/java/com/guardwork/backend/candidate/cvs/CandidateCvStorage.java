@@ -22,6 +22,12 @@ public interface CandidateCvStorage {
 
     void delete(String publicId, String resourceType);
 
+    /**
+     * Copies an existing CV object to a new storage key. The target is an independent object so
+     * deleting the candidate's library CV later cannot affect an application snapshot.
+     */
+    StoredCvAsset copy(String sourcePublicId, String targetPublicId, String resourceType, String format);
+
     String createDownloadUrl(String publicId, String resourceType, String format, Duration ttl);
 
     record UploadSignature(
