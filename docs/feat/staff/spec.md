@@ -5,16 +5,16 @@
 | Specification ID | GW-SR-ADM |
 | Project | GuardWork |
 | File | `docs/feat/staff/spec.md` |
-| Version | 1.4.0 — adopt Staff role and verification API namespace |
+| Version | 1.5.0 — add scoped personal activity-history draft |
 | Status | Draft |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-10-24 |
-| Product source | Retained UC-11–21 in [usecase.md](usecase.md), scoped by GW-81 |
+| Last updated | 2026-10-30 |
+| Product source | Retained UC-11–21 from GW-81; session-confirmed personal-history addition UC-22 |
 
 ## 1. Purpose and scope
 
-This draft covers account management, Company verification dossier review, receipt and inspection of user reports, and Job Posting moderation. UC-11–20 retain their existing detailed requirements; UC-21 retains its draft use-case description and awaits detailed contract alignment. System monitoring, background-task operations, and platform-wide RBAC design are excluded from this Staff documentation set. GW-81 includes the user-approved runtime rename of the Platform role and implemented verification API namespace. Committed migrations remain immutable; other feature behavior is unchanged.
+This draft covers account management, Company verification dossier review, receipt and inspection of user reports, and Job Posting moderation. UC-11–20 retain their existing detailed requirements; UC-21 retains its draft use-case description and awaits detailed contract alignment. UC-22 adds a scoped personal activity-history draft with product decisions confirmed on 2026-10-30; its API proposal awaits review. System monitoring, background-task operations, and platform-wide RBAC design are excluded from this Staff documentation set. GW-81 includes the user-approved runtime rename of the Platform role and implemented verification API namespace. Committed migrations remain immutable; other feature behavior is unchanged.
 
 The actor is Platform Staff with Platform role `STAFF`. Platform authority remains distinct from Company Workspace membership (`OWNER`, `ADMIN`, `RECRUITER`). The user approved runtime adoption of `STAFF` and `/api/staff/**` on 2026-10-24. Section 4.3 records that scoped contract amendment and compatibility impact; it does not approve the remaining Draft capabilities. Login is a prerequisite. Viewing a job is navigation context for hiding, history, and restoration; standalone job viewing and job closure are not separate features here.
 
@@ -31,6 +31,7 @@ The actor is Platform Staff with Platform role `STAFF`. Platform authority remai
 | UC-19 | Ban account | ADM-BAN | P0 |
 | UC-20 | Unban account | ADM-BAN | P0 |
 | UC-21 | Republish hidden Job Posting | ADM-JOB / use-case draft only | Not assigned |
+| UC-22 | View own activity history | ADM-ACT / GW-SR-ADM-03 | Not assigned |
 
 Audit recording remains a prerequisite for state-changing actions. Priorities are retained planning context, not new delivery commitments or implementation claims.
 
@@ -151,7 +152,25 @@ Preconditions: banning requires an existing active target; unbanning requires a 
 | ADM-AUD-03 | Existing append-only audit protections shall remain intact. This documentation change shall not weaken or change committed audit persistence guards. |
 | ADM-AUD-05 | Audit or review responses shall not bypass the common privacy restrictions. |
 
-Former `ADM-AUD-04` audit-log search is outside this selected inventory. Audit recording is retained; a standalone audit-search screen/API is not added by this scope.
+Former `ADM-AUD-04` general audit-log search remains retired and outside scope.
+The separately scoped UC-22 below uses new ADM-ACT identifiers for the caller's own
+history only; it does not restore cross-Staff audit search.
+
+### 3.7 UC-22 — View Own Activity History
+
+The requesting human confirmed a read-only personal reconciliation view on
+2026-10-30. [GW-SR-ADM-03](../../software-requirements/adm/personal-activity-history-spec.md)
+owns ADM-ACT-01–13 and the complete acceptance criteria. Its
+[API proposal](../../software-requirements/adm/personal-activity-history-implementation-contract.md)
+is Draft and requires technical review before implementation.
+
+The actor may see only their own committed account-management, Job Posting
+management, and Company-verification changes, including retained historical audit.
+Display only safe recorded time/action/target/state/reason fields. Missing facts
+remain unavailable. Support Vietnam-date, group, action, and exact target-code
+filters; default to 30 local calendar dates including today, newest first, with
+20-row pages. Permit no edit/delete/hide/export/raw-JSON or target navigation.
+Existing reviewer attribution in authorized target histories remains unchanged.
 
 ## 4. Contracts and implementation status
 
@@ -216,7 +235,7 @@ Verification uses the existing isolated PostgreSQL setup: `docker compose -f doc
 | Login | Remains an authentication prerequisite; excluded as a use case here. |
 | Standalone job view and closure | Not included in UC-11–21. Contextual job viewing remains necessary for hiding/history/restoration. |
 | Report adjudication | Review locks, warning/ban/takedown sanction selection, resolution/rejection, and resolution concurrency are outside UC-11–12. Do not implement them as side effects of opening details. Wider approved product obligations are not removed by this selected scope. |
-| Audit-log search | Outside the selected inventory; immutable audit recording remains required. |
+| Audit-log search | General/cross-Staff search remains excluded. UC-22 adds only own-history reads/search under the dedicated Draft contract; immutable audit recording remains required. |
 | Platform/Company authority | Approved authentication separates Platform role from Company membership. Staff documentation preserves this boundary and does not define a platform-wide role hierarchy. |
 | Verification reference | `company_verification.md` includes broader registry/domain/forensics checks, authorization-letter rules, badges, and ranking claims. They are not acceptance requirements introduced by this revision; approved onboarding/verification contracts govern implementation. |
 | Job restoration (UC-21) | Retained in the use-case draft only. Reconcile administrative `SUSPENDED` with independent Platform Removal in the Job Publishing Draft, publication eligibility, concurrent decisions, and visibility recovery before implementation. No new API or schema is selected. |
@@ -241,6 +260,7 @@ These boundaries are explicit gaps, not permission to bypass the stated outcomes
 | UC-18 | Authorized target information and eligible actions display; private credentials/messages are excluded; missing/inaccessible targets and retrieval failures are handled. |
 | UC-19 | Active user/non-banned Company can be banned with valid reason/duration; self-ban and already-banned targets are refused; Company restrictions cascade; required revocation failure cannot report success. |
 | UC-20 | Active ban and reason are required; applicable access returns, old sessions remain invalid, new sign-in is required; Company verification/roles/posting publication are not automatically changed. |
+| UC-22 | Own actor scope is enforced for rows and counts; only successful in-scope activities appear; safe historical projection, Vietnam-date filters, 20-row paging, and missing-data/empty/error states apply; no mutation/export/target navigation is offered. |
 
 UC-21 verification scenarios remain pending detailed specification alignment; its draft flow does not establish an approved implementation contract.
 
