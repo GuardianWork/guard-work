@@ -110,6 +110,7 @@ or email:
 | Company owner | `demo_owner` | `owner@demo.guardwork.test` | `USER` | `OWNER` |
 | Company administrator | `demo_company_admin` | `company-admin@demo.guardwork.test` | `USER` | `ADMIN` |
 | Recruiter | `demo_recruiter` | `recruiter@demo.guardwork.test` | `USER` | `RECRUITER` |
+| Email-unverified employer | `demo_employer_unverified` | `employer-unverified@demo.guardwork.test` | `USER` | None |
 
 ```bash
 curl http://localhost:8080/api/auth/login \
@@ -132,10 +133,20 @@ that request field. A successful response is HTTP 200 with `data.accessToken` an
 `data.refreshToken`. Use the access token as `Authorization: Bearer <accessToken>`
 when calling `GET /api/auth/me` to inspect the platform role and active Company membership.
 
+The fresh `demo_employer_unverified` fixture is ACTIVE with `email_verified=false`,
+an applicant profile without actual email proof, and no Company/membership. It can
+sign in on the public portal and read onboarding state (`EMAIL_REQUIRED`), while
+Company actions, uploads, invitations, notifications and Candidate/recruitment APIs
+remain restricted. Use it to inspect the frontend's locked state. The `.test` mailbox
+does not receive real confirmation mail; use a controlled real mailbox/new registration
+for the complete email journey. Seed reruns never reset this account if it is later
+changed or verified.
+
 #### Seeded data and reruns
 
 Fixtures include a private Candidate profile, one verified demo Company, three active
-Company memberships, and employer profiles with local synthetic email proof. Current phones are canonical User
+Company memberships, and verified employer profiles with local synthetic email proof, plus one email-unverified
+applicant without Company membership. Current phones are canonical User
 contacts; fresh fixtures do not fabricate phone proof.
 These are direct local fixtures, so no OTP or email delivery is needed. They preserve
 the platform/Company role separation in GW-SR-AUTH-01 and GW-SR-REC-02; available
