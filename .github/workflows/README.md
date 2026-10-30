@@ -16,7 +16,10 @@ that rejects `backend_db` remain unchanged.
 
 ### How to use
 - **Push**: Any code push to the `dev` branch.
-- **Pull Request**: Any pull request targeting the `main` or `dev` branches.
+- **Draft Pull Request**: Open a draft targeting `main` or `dev` to run CI before review.
+  Push fixes to the same branch and wait until checks pass for its latest commit.
+- **Ready for review**: The user marks the PR ready after checking the green CI result.
+  Agents keep PRs in draft and follow `docs/agent-guides/pull-request-workflow.md`.
 
 ---
 
