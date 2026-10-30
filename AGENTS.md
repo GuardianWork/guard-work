@@ -20,6 +20,8 @@ Surface conflicts. A user instruction does not silently rewrite an approved requ
 
 ## Context pointers
 
+- **AI workflow:** [`docs/agent-guides/ai-workflow.md`](docs/agent-guides/ai-workflow.md) is the provider-neutral workflow for every AI agent. This `AGENTS.md` is the canonical project policy.
+- **Pull requests and CI:** Follow [`docs/agent-guides/pull-request-workflow.md`](docs/agent-guides/pull-request-workflow.md) for normal PR creation and CI failure handling.
 - **Requirements:** Read [`docs/agent-guides/requirements.md`](docs/agent-guides/requirements.md) before adding or changing a feature, user-visible behavior, business rule, API, schema, or software-requirements document.
 - **Backend:** Read [`backend/AGENTS.md`](backend/AGENTS.md) before changing anything under `backend/`; it supplies the backend architecture, database, and verification rules.
 
@@ -28,11 +30,17 @@ Surface conflicts. A user instruction does not silently rewrite an approved requ
 ### Before editing
 
 1. Load every triggered context document above and the applicable subsystem documentation.
-2. Inspect the nearby implementation, tests, and working tree. Identify overlap with teammate changes.
-3. Define a task-focused scope and identify affected contracts, data, security boundaries, and documentation.
-4. Resolve or surface ambiguity that affects user-visible behavior, authorization, privacy, persistence, API contracts, dependencies, or architecture. Make only local, reversible assumptions and disclose them.
+2. Inspect the current branch and working tree without changing them. Before any implementation, ask the user for explicit permission to create or switch to a task branch based on `dev`; wait for their answer. Do not edit implementation files or change branches before approval.
+3. After approval, preserve existing work, fetch the latest `origin/dev`, and create a separate task branch from it or rebase the approved task branch onto it before implementation. Never implement directly on `dev`. If uncommitted work would be affected, stop and ask how to preserve it.
+4. Inspect the nearby implementation, tests, and working tree. Identify overlap with teammate changes.
+5. Define a task-focused scope and identify affected contracts, data, security boundaries, and documentation.
+6. Resolve or surface ambiguity that affects user-visible behavior, authorization, privacy, persistence, API contracts, dependencies, or architecture. Make only local, reversible assumptions and disclose them.
 
-Begin implementation only when the intended behavior and applicable constraints are unambiguous.
+Begin implementation only after the branch approval above and when the intended behavior and applicable constraints are unambiguous.
+
+Use this required question before implementation:
+
+> May I create or switch to a task branch based on `dev` and rebase it onto the latest `origin/dev` before implementing? I am currently on `<branch>` and the working tree is `<clean/has changes>`.
 
 ### While editing
 
@@ -53,6 +61,8 @@ Obtain explicit human approval before:
 - committing or pushing Git changes.
 
 Agents may choose reversible implementation details and make small verified refactors inside the approved scope. After dependency approval, use the subsystem package manager, justify the choice, update build metadata, and verify tests and packaging. Record approved, consequential, hard-to-reverse choices as lightweight ADRs under `docs/architecture/decisions/`, creating the directory when the first ADR is needed.
+
+For PR work, the user must explicitly authorize remote push/PR actions unless that authorization is already present in the task. Create a normal PR when authorized. Check CI on the latest head commit and fix failures before handing the PR back. If CI reports the task branch behind `dev`, rebase on the latest `origin/dev` before pushing the fix. Get explicit approval before using `--force-with-lease` to rewrite published history. Do not merge the PR. The `/pr` skill and PR template may be used to prepare a clear description, but are not workflow gates.
 
 ## Completion and handoff
 
