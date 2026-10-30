@@ -62,7 +62,9 @@ Obtain explicit human approval before:
 
 Agents may choose reversible implementation details and make small verified refactors inside the approved scope. After dependency approval, use the subsystem package manager, justify the choice, update build metadata, and verify tests and packaging. Record approved, consequential, hard-to-reverse choices as lightweight ADRs under `docs/architecture/decisions/`, creating the directory when the first ADR is needed.
 
-For PR work, the user must explicitly authorize remote push/PR actions unless that authorization is already present in the task. Once authorized, agents follow the draft-first PR workflow: open a Draft PR, keep it in draft while CI failures are fixed, prepare its description with `/pr`, and post the required CI handoff comment. Agents must not mark a PR ready or merge it; the user owns that final transition.
+Before every push, fetch `origin/dev` and rebase the task branch onto the latest `origin/dev`. Resolve any conflicts and rerun the applicable checks before pushing. If rebasing a branch that already exists remotely would require rewriting its published history, stop and get explicit approval before using `--force-with-lease`.
+
+For PR work, the user must explicitly authorize remote push/PR actions unless that authorization is already present in the task. Once authorized, agents follow the draft-first PR workflow: open a Draft PR, keep it in draft while CI failures are fixed, prepare its description with `/pr`, and post the required CI handoff comment. Once every required check is green for the latest head commit, agents mark the PR ready for review. Agents must not merge it.
 
 ## Completion and handoff
 

@@ -33,11 +33,14 @@ is authorized to bypass the repository's approval boundaries.
    persistence, APIs, or architecture before implementation.
 5. Make a narrow change. Obtain human approval at the boundaries listed in the root
    guide; do not interpret a tool's permission prompt as product or architecture approval.
-6. Run checks required by the applicable subsystem guide and task. Report checks
+6. Before every push, fetch `origin/dev` and rebase the task branch onto the latest
+   `origin/dev`. Resolve conflicts and rerun applicable checks before pushing. Get
+   explicit approval before force-with-lease if rebase rewrites published commits.
+7. Run checks required by the applicable subsystem guide and task. Report checks
    that were not run and why; do not claim unrun verification passed.
-7. Report behavior changed, files/subsystems affected, checks and results, assumptions,
+8. Report behavior changed, files/subsystems affected, checks and results, assumptions,
    risks/follow-ups, and user-visible/API/security/privacy/data implications.
-8. For PR work, follow the [draft-first PR workflow](pull-request-workflow.md). Use
+9. For PR work, follow the [draft-first PR workflow](pull-request-workflow.md). Use
    `/pr` when available; otherwise use the tracked GitHub PR template.
 
 ## Safety and collaboration

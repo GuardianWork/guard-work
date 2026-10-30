@@ -15,11 +15,13 @@ GitHub Actions discards the service after the job. Local test configuration and 
 that rejects `backend_db` remain unchanged.
 
 ### How to use
-- **Push**: Any code push to the `dev` branch.
+- **Push**: Pushes to `dev` and `feat/**` run CI. Feature branch pushes also require
+  the latest `origin/dev` commit to be in their history.
 - **Draft Pull Request**: Open a draft targeting `main` or `dev` to run CI before review.
   Push fixes to the same branch and wait until checks pass for its latest commit.
-- **Ready for review**: The user marks the PR ready after checking the green CI result.
-  Agents keep PRs in draft and follow `docs/agent-guides/pull-request-workflow.md`.
+- **Ready for review**: After all required checks pass on the latest commit and the
+  agent posts the CI handoff comment, the agent marks the PR ready. Agents do not merge.
+  Follow `docs/agent-guides/pull-request-workflow.md`.
 
 ---
 
