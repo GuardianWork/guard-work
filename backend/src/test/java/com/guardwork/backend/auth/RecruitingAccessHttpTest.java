@@ -212,9 +212,9 @@ class RecruitingAccessHttpTest {
         verifyEmail(owner);
         var staff = staffAccount();
         var content = new java.util.LinkedHashMap<String, Object>();
-        for (String field : List.of("title", "description", "responsibilities", "requiredQualifications", "preferredQualifications",
-                "experienceExpectations", "benefits", "location")) content.put(field, "Nội dung");
-        content.put("applicationInstructions", "Apply through GuardWork");
+        content.put("title", "Nội dung");
+        content.put("description", "Dòng một\nDòng hai");
+        content.put("location", "Hồ Chí Minh");
         content.put("employmentType", "FULL_TIME");
         content.put("workArrangement", "ONSITE");
         content.put("headcount", 2);

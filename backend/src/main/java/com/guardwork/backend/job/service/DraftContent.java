@@ -23,13 +23,7 @@ public class DraftContent {
       Map.ofEntries(
           Map.entry("title", 200),
           Map.entry("description", 10000),
-          Map.entry("responsibilities", 10000),
-          Map.entry("requiredQualifications", 5000),
-          Map.entry("preferredQualifications", 5000),
-          Map.entry("experienceExpectations", 5000),
-          Map.entry("benefits", 5000),
-          Map.entry("location", 1000),
-          Map.entry("applicationInstructions", 2000));
+          Map.entry("location", 1000));
   private final ObjectMapper json;
 
   public DraftContent(ObjectMapper json) {
@@ -103,18 +97,10 @@ public class DraftContent {
         List.of(
             "title",
             "description",
-            "responsibilities",
-            "requiredQualifications",
-            "preferredQualifications",
-            "experienceExpectations",
-            "benefits",
             "location",
-            "applicationInstructions",
             "employmentType",
             "workArrangement",
-            "deadline",
-            "headcount",
-            "compensation"))
+            "deadline"))
       if (!present(c, f) || c.get(f).isTextual() && c.get(f).textValue().isBlank())
         issues.add(new ValidationIssue("content." + f, "REQUIRED"));
     if (present(c, "deadline") && !Instant.parse(c.get("deadline").textValue()).isAfter(now))

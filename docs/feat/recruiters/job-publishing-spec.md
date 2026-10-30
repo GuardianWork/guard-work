@@ -71,8 +71,8 @@ An approved revision is immutable. Editing candidate-facing content creates anot
 |---|---|
 | GW-JP-010 | An authorized Company Member may create and save an incomplete revision as a draft. |
 | GW-JP-011 | Submission shall require complete candidate-facing content, a future deadline, permitted screening questions, a verified non-suspended Company, and at least one assigned Recruiter. |
-| GW-JP-012 | Required candidate-facing content shall include title, description, responsibilities, required and preferred qualifications, experience expectations, employment type, work arrangement, location, benefits, deadline, hiring headcount, and application instructions. |
-| GW-JP-013 | A revision shall explicitly provide a valid compensation range with currency and pay period or select Compensation not disclosed. |
+| GW-JP-012 | Required candidate-facing content shall include title, a complete description, employment type, work arrangement, location/remote eligible area and future deadline. Separate narrative fields are not required. Headcount and compensation are optional. |
+| GW-JP-013 | Compensation may be omitted. When supplied, it shall explicitly provide a valid disclosed range with currency and pay period or select Compensation not disclosed. |
 | GW-JP-014 | A valid compensation range shall have a minimum less than or equal to its maximum and shall not use misleading placeholders. |
 | GW-JP-015 | Screening questions may be short-text, single-choice, yes/no, or numeric and may be required. |
 | GW-JP-016 | Screening answers shall not automatically reject, rank, select, or hire Candidates in the baseline. |
@@ -90,7 +90,7 @@ An approved revision is immutable. Editing candidate-facing content creates anot
 | GW-JP-022 | A moderation rejection shall preserve the reviewed revision, decision, reason, reviewer, and time. |
 | GW-JP-023 | Resubmission after rejection shall create a new review attempt without overwriting prior history. |
 | GW-JP-024 | A published Job Posting shall continue showing its Published Revision while a material edit is pending review. |
-| GW-JP-025 | Material edits shall include title, description, responsibilities, qualifications, compensation, benefits, employment type, work arrangement, location, deadline, headcount, screening questions, and candidate-facing application instructions. |
+| GW-JP-025 | Material edits update the title, complete description, employment type, work arrangement, location/eligible work area and deadline. Optional headcount, compensation and screening questions may also change. |
 | GW-JP-026 | Job Assignments, internal notes, and internal labels shall not change the Published Revision or require content moderation. |
 | GW-JP-027 | Platform Removal shall make the Job Posting unavailable to Candidates, stop new Applications, preserve evidence, notify authorized Company Members, and expose an appeal route when the enforcement policy permits. |
 
@@ -179,3 +179,8 @@ An approved revision is immutable. Editing candidate-facing content creates anot
 - GW-SR-APPLICATION-PIPELINE
 - Shared API, authentication, notification, enforcement, appeal, and audit specifications
 - Physical schema, indexes, and revision-storage design
+
+
+### GW-89 content amendment
+
+The user-approved GW-89 scope supersedes the prior GW-JP-012, GW-JP-013 and GW-JP-025 content-field rules: one complete description replaces separate narrative fields; required inputs are title, description, employment type, work arrangement, location, and future deadline. Headcount and compensation are optional. See the current [Job Publishing and Assignment requirements](../../software-requirements/rec/job-publishing-and-assignment-mvp-spec.md) and [GW-89 specification](../../software-requirements/rec/job-submission-simplification-spec.md).
