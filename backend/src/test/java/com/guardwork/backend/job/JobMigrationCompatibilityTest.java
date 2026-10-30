@@ -59,9 +59,9 @@ class JobMigrationCompatibilityTest {
           + ".user_notifications(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) "
           + "VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Baseline',now())", event, user, company);
       var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).target("2026.10.30.85").load();
-      // Pin the pre-enforcement milestone: jobs, phone, employer-email binding,
-      // unified proof storage and the code attempt budget.
-      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(5);
+      // Pin the pre-enforcement milestone: jobs, unified account-email proof
+      // storage and the code attempt budget.
+      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(3);
       upgrade.validate();
       assertThat(database.queryForObject("SELECT role FROM " + schema + ".users WHERE username='baseline_staff'", String.class))
           .isEqualTo("STAFF");

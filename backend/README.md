@@ -309,6 +309,13 @@ docker compose -f docker-compose.test.yml up -d --wait  # start test database on
 ./mvnw package         # build
 ```
 
+After switching branches, use `./mvnw clean test` or `./mvnw clean package` so
+removed test classes and migration resources cannot remain in `target/` and alter
+verification. If an isolated test database already applied migrations from another
+branch, use a separately named isolated test database via
+`BACKEND_TEST_DATABASE_URL`; do not repair migration history or reset a shared
+or development database to hide a build mismatch.
+
 ### Job publication and expiry
 
 Platform Staff members decide pending submitted revisions with
