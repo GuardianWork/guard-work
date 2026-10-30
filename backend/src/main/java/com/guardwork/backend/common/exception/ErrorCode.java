@@ -19,7 +19,6 @@ public enum ErrorCode {
     SAME_PASSWORD(40013, "Your new password cannot be the same as your old password.", HttpStatus.BAD_REQUEST),
     ACCOUNT_BLOCKED(40014, "Your account has been blocked. Please contact support for assistance.", HttpStatus.BAD_REQUEST),
     INVALID_EMAIL_FORMAT(40015, "The email address you entered is not valid.", HttpStatus.BAD_REQUEST),
-    USER_NOT_FOUND(40016, "The user you are looking for could not be found.", HttpStatus.BAD_REQUEST),
     INVALID_OTP(40018, "The OTP code is invalid or has expired.", HttpStatus.BAD_REQUEST),
 
 
@@ -34,6 +33,7 @@ public enum ErrorCode {
 
     // --- NOT FOUND (404) ---
     RESOURCE_NOT_FOUND(40400, "No endpoint found for this request", HttpStatus.NOT_FOUND),
+    USER_NOT_FOUND(40401, "The user you are looking for could not be found.", HttpStatus.NOT_FOUND),
     VERIFICATION_TOKEN_NOT_FOUND(40404, "The verification token is invalid or has expired.", HttpStatus.NOT_FOUND),
 
     // --- TOO MANY REQUESTS (429) ---

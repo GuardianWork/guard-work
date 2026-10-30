@@ -20,6 +20,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -40,7 +41,11 @@ public class CandidateProfile {
     @Column(name = "user_id", nullable = false, unique = true)
     private Long userId;
 
-    @Column(name = "email", nullable = false, length = 255, unique = true)
+    /**
+     * Derived from the owning account and never persisted on the profile.
+     * Keeping a single source of truth avoids the profile and login email drifting apart.
+     */
+    @Transient
     private String email;
 
     @Column(name = "full_name", nullable = false, length = 150)
