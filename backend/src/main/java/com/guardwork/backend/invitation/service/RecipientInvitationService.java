@@ -2,9 +2,6 @@ package com.guardwork.backend.invitation.service;
 
 import com.guardwork.backend.auth.service.AccountEmailVerificationService;
 import com.guardwork.backend.company.model.*;
-import com.guardwork.backend.onboarding.repository.EmployerProfileRepository;
-import com.guardwork.backend.onboarding.service.EmailProof;
-import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.invitation.dto.*;
 import com.guardwork.backend.invitation.model.*;
@@ -28,7 +25,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class RecipientInvitationService {
   private final CompanyAccessService access;
-  private final EmployerProfileRepository profiles;
   private final CompanyRepository companies;
   private final CompanyInvitationRepository invitations;
   private final CompanyMembershipRepository memberships;
@@ -41,7 +37,6 @@ public class RecipientInvitationService {
 
   public RecipientInvitationService(
       CompanyAccessService access,
-      EmployerProfileRepository profiles,
       CompanyRepository companies,
       CompanyInvitationRepository invitations,
       CompanyMembershipRepository memberships,
@@ -52,7 +47,6 @@ public class RecipientInvitationService {
       PlatformTransactionManager manager,
       Validator validator) {
     this.access = access;
-    this.profiles = profiles;
     this.companies = companies;
     this.invitations = invitations;
     this.memberships = memberships;
@@ -95,12 +89,6 @@ public class RecipientInvitationService {
                         .orElseThrow(RecipientInvitationService::unavailable);
                 return new Acceptance(receipt(i, c, membership), false, null);
               }
-              // Check only enrolled accounts; do not enroll ordinary legacy recipients.
-              profiles.findById(actor).ifPresent(profile -> {
-                if (!EmailProof.verified(profile, locked.user().getEmail()))
-                  throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                      "40330 PERSONAL_VERIFICATION_REQUIRED: Verify your email first");
-              });
               requirePending(i);
               requireEligible(c);
               AccountEmailVerificationService.requireRecruitingEmailEligible(locked.user());
@@ -190,7 +178,7 @@ public class RecipientInvitationService {
     if (!company.getId().equals(invitation.getCompanyId())
         || !InvitationSecrets.matches(secret, invitation.getSecretHash())
         || !email.equals(invitation.getRecipientEmailNormalized())) throw unavailable();
-    return new Locked(company, invitation, user);
+    return new Locked(user, company, invitation);
   }
 
   private void requirePending(CompanyInvitation i) {
@@ -221,7 +209,7 @@ public class RecipientInvitationService {
         HttpStatus.NOT_FOUND, "40410 INVITATION_UNAVAILABLE: Invitation unavailable");
   }
 
-  private record Locked(Company company, CompanyInvitation invitation, User user) {}
+  private record Locked(User user, Company company, CompanyInvitation invitation) {}
 
   public record Acceptance(InvitationAcceptanceResponse receipt, boolean created, UUID eventId) {}
 }

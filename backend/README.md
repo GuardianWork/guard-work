@@ -110,7 +110,7 @@ or email:
 | Company owner | `demo_owner` | `owner@demo.guardwork.test` | `USER` | `OWNER` |
 | Company administrator | `demo_company_admin` | `company-admin@demo.guardwork.test` | `USER` | `ADMIN` |
 | Recruiter | `demo_recruiter` | `recruiter@demo.guardwork.test` | `USER` | `RECRUITER` |
-| Email-unverified employer | `demo_employer_unverified` | `employer-unverified@demo.guardwork.test` | `USER` | None |
+| Email-unverified User | `demo_employer_unverified` | `employer-unverified@demo.guardwork.test` | `USER` | None |
 
 ```bash
 curl http://localhost:8080/api/auth/login \
@@ -133,21 +133,12 @@ that request field. A successful response is HTTP 200 with `data.accessToken` an
 `data.refreshToken`. Use the access token as `Authorization: Bearer <accessToken>`
 when calling `GET /api/auth/me` to inspect the platform role and active Company membership.
 
-The fresh `demo_employer_unverified` fixture is ACTIVE with `email_verified=false`,
-an applicant profile without actual email proof, and no Company/membership. It can
-sign in on the public portal and read onboarding state (`EMAIL_REQUIRED`), while
-Company actions, uploads, invitations, notifications and Candidate/recruitment APIs
-remain restricted. Use it to inspect the frontend's locked state. The `.test` mailbox
-does not receive real confirmation mail; use a controlled real mailbox/new registration
-for the complete email journey. Seed reruns never reset this account if it is later
-changed or verified.
-
 #### Seeded data and reruns
 
 Fixtures include a private Candidate profile, one verified demo Company, three active
-Company memberships, and verified employer profiles with local synthetic email proof, plus one email-unverified
-applicant without Company membership. Current phones are canonical User
-contacts; fresh fixtures do not fabricate phone proof.
+Company memberships, and employer profiles with synthetic email proof, plus one
+email-unverified User. Current phones are canonical User contacts; fresh fixtures
+do not fabricate phone proof.
 These are direct local fixtures, so no OTP or email delivery is needed. They preserve
 the platform/Company role separation in GW-SR-AUTH-01 and GW-SR-REC-02; available
 operations still depend on implemented APIs. The certificate URL is a placeholder;
@@ -289,17 +280,10 @@ Company verification responses for Staff and Owner views expose `processingStatu
 `PENDING` with a null outcome; `VERIFIED` and `REJECTED` map to processing `CHECKED` with the
 corresponding outcome. Eligibility continues to use `verificationStatus`; `CHECKED` alone does
 not mean approval. These are derived fields and require no schema migration.
-The [2026-10-27 email-only onboarding contract](../docs/software-requirements/rec/company-onboarding-verification-enhancement-spec.md)
-is implemented for backend/API delivery: employer registration immediately creates
-an email-unverified account with restricted sign-in; correct-account email proof
-unlocks applicable Company preparation or invitation actions. User owns the shared
-unique phone; Candidate contact changes remain atomic. Old pending-proof/SMS routes
-return 410; recruitment retains actual email, VERIFIED Company and current role checks.
-See [employer onboarding](../docs/backend/employer-onboarding.md) for API/client changes,
-email delivery, private dossiers, retained evidence and the required stopped-writer
-email/phone migration preflights. No source frontend exists in this checkout; an
-external client must implement the workspace/confirmation screens. Backend tests
-and provider fakes do not establish real email delivery or browser behavior.
+See [complete Company setup](../docs/backend/company-setup.md) for atomic multipart dossiers,
+private legal evidence, Staff review and rejected correction, and [retirement and decision delivery](../docs/backend/employer-onboarding.md)
+for mail configuration, retained-data compatibility and recovery. The approved replacement is
+recorded in [ADR 0008](../docs/architecture/decisions/0008-unified-registration-and-company-setup.md).
 
 Company, Staff and known application-error advice use order `0`, ahead of the global
 `InternalServerExceptionHandler` at `LOWEST_PRECEDENCE`. Spring selects the first applicable
@@ -350,3 +334,40 @@ job independently. Set `jobs.expiry.worker-enabled=false` to disable scheduling;
 `JobExpiryService.expireDue()` is the bounded operational recovery entry point.
 Tests disable scheduling and control the Clock explicitly. No schema migration or
 new dependency accompanies moderation, public details, or expiry.
+
+### GW-85 rebase compatibility and canonical phone cutover
+
+GW-85 retains one nullable, unique normalized `users.phone_number`; Candidate
+profile GET/PUT reads and changes that source atomically. Historical Candidate and
+employer phone/proof columns remain retained. Duplicate contacts return 409 and
+invalid Vietnamese mobile numbers return 400. Existing phone-less accounts remain valid.
+
+The newer approved AUTH-03 flow takes precedence over the earlier employer-only
+journey: shared registration sends no mail, Candidate access requires no email proof,
+account verification uses explicitly requested six-digit codes, and retired employer
+onboarding endpoints return 410. Retained employer profiles grant no additional
+restrictions or authority. Complete multipart Company submission and invitation
+acceptance use current account verification and existing Company permissions.
+
+The additional `demo_employer_unverified` fixture can sign in, use Candidate features
+and explicitly request account verification; private recruiting actions require proof.
+Its `.test` mailbox cannot receive real mail. Seed reruns preserve changed accounts.
+
+The committed GW-85 migrations `V2026.10.27.83` and `V2026.10.27.84` predate
+`dev` migrations `V2026.10.28.84` and `V2026.10.30.85`. Preserve their files and
+checksums. For an existing database already migrated on `dev`, stop account/contact
+writers, back up the database and run the read-only SQL reports in
+`sql/canonical-account-phone-preflight.sql` and `sql/employer-email-proof-preflight.sql`.
+Resolve invalid contacts, differing same-User contacts, cross-User phone collisions
+and normalized-email collisions through reviewed correction; never choose a silent
+winner or reset the database. With clean preflights, perform one controlled startup:
+
+```bash
+SPRING_FLYWAY_OUT_OF_ORDER=true ./mvnw spring-boot:run
+```
+
+Verify both GW-85 migrations completed successfully, then restart with the default
+`SPRING_FLYWAY_OUT_OF_ORDER=false`. Fresh databases migrate in normal order and
+need no override. This upgrade adds the canonical phone and retained historical
+email snapshots; shared account-email proof remains in `user_email_verification`.
+No retained onboarding secret can create an account or grant recruiting access.

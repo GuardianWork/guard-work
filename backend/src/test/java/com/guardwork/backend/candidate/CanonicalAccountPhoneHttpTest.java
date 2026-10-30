@@ -49,8 +49,7 @@ class CanonicalAccountPhoneHttpTest {
         http.perform(get(PATH).header("Authorization", account.token())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.phoneNumber").value(OnboardingSecrets.phone(newPhone)));
         http.perform(get("/api/me/employer-onboarding").header("Authorization", account.token()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.phone").value(OnboardingSecrets.phone(newPhone)))
-                .andExpect(jsonPath("$.data.phoneVerified").doesNotExist());
+                .andExpect(status().isGone());
         assertThat(database.queryForObject("SELECT phone_number FROM candidate_profiles WHERE user_id=?", String.class, account.id())).isEqualTo(oldPhone);
         assertThat(database.queryForMap("SELECT phone,phone_verified_at FROM employer_profiles WHERE user_id=?", account.id())).isEqualTo(history);
         putProfile(account, "Cleared", null).andExpect(status().isOk()).andExpect(jsonPath("$.data.phoneNumber").isEmpty());
@@ -105,14 +104,18 @@ class CanonicalAccountPhoneHttpTest {
     }
 
     @Test
-    void authenticationAndApplicantAuthorizationRemainRequired() throws Exception {
+    void authenticationAndSuspensionRemainRequiredWithoutAnApplicantGate() throws Exception {
         http.perform(get(PATH)).andExpect(status().isUnauthorized());
         http.perform(put(PATH).contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
         Account employer = account();
         database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,true,'Applicant')", employer.id());
+        String number = phone();
+        putProfile(employer, "Allowed", number).andExpect(status().isOk());
+        database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", employer.id());
         putProfile(employer, "Blocked", phone()).andExpect(status().isForbidden());
-        assertThat(database.queryForObject("SELECT phone_number FROM users WHERE id=?", String.class, employer.id())).isNull();
+        assertThat(database.queryForObject("SELECT phone_number FROM users WHERE id=?", String.class, employer.id()))
+                .isEqualTo(OnboardingSecrets.phone(number));
     }
 
     ResultActions putProfile(Account account, String name, String phone) throws Exception {

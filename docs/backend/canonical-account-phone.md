@@ -1,3 +1,10 @@
+> Current behavior: AUTH-03 supersedes the employer-only registration and proof
+> endpoints described below. Use shared registration and account-email codes; old
+> employer endpoints return 410. Candidate GET/PUT continues to use the canonical
+> phone. Follow [the backend cutover instructions](../../backend/README.md#gw-85-rebase-compatibility-and-canonical-phone-cutover)
+> when upgrading a database already migrated on dev. The original migration and
+> data-preservation rules below remain applicable.
+
 # Canonical account phone
 
 [ADR 0008](../architecture/decisions/0008-canonical-account-phone.md) and

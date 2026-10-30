@@ -128,43 +128,12 @@ public class LegalDossierService {
         var user = access.requireActiveUser(actor);
         var d = documents.findById(id).orElseThrow(LegalDossierService::notFound);
         if ("STAFF".equals(user.getRole())) return d;
-        if (profiles.findById(actor).isPresent()) personal.requirePersonal(actor);
         var linked = attempts.findByDocumentId(id);
         if (linked.isEmpty() && actor.equals(d.getUploaderId())) return d;
-        var current = access.findCurrentCompanyAccess(actor);
-        if (current != null && attempts.existsByCompanyId(current.company().getId())) personal.requirePersonal(actor);
+        var current = access.findCurrentCompanyAccessForStatus(actor);
         if (current == null || !"OWNER".equals(current.membership().getRole().name())
                 || linked.stream().noneMatch(a -> a.getCompanyId().equals(current.company().getId()))) throw notFound();
         return d;
-    }
-
-    @Transactional
-    public Company register(Long actor, CompanyRegistrationRequest request) {
-        // Old clients remain on the approved legacy journey until a separate rollout/migration.
-        if (profiles.findById(actor).isEmpty()) return companyService.registerCompany(actor, request);
-        personal.requirePersonal(actor);
-        if (request == null) throw OnboardingSecrets.invalid("Dossier is required");
-        LegalDetails legal = validateLegal(actor, request.legal());
-        String email = access.requireActiveUser(actor).getEmail();
-        Company company = companyService.registerCompanyFromVerifiedApplicant(actor, new CompanyRegistrationRequest(
-                request.name(), request.taxCode(), email, documentPath(legal.documentId())));
-        recordAttempt(actor, company, legal);
-        return company;
-    }
-
-    @Transactional
-    public Company correct(Long actor, Long companyId, CompanyResubmissionRequest request) {
-        Company current = companyId == null ? access.requireOwner(actor).company() : access.requireOwnerOf(actor, companyId);
-        // Only un-enrolled legacy Owners retain the URL-only correction contract.
-        if (!attempts.existsByCompanyId(current.getId()) && profiles.findById(actor).isEmpty())
-            return companyService.resubmitCompany(actor, current.getId(), request);
-        personal.requirePersonal(actor);
-        if (request == null) throw OnboardingSecrets.invalid("Dossier is required");
-        LegalDetails legal = validateLegal(actor, request.legal());
-        Company corrected = companyService.resubmitCompany(actor, current.getId(), new CompanyResubmissionRequest(
-                OnboardingSecrets.required(request.name(), 255), null, documentPath(legal.documentId()), request.expectedVersion()));
-        recordAttempt(actor, corrected, legal);
-        return corrected;
     }
 
     @Transactional
@@ -173,9 +142,7 @@ public class LegalDossierService {
         Long id;
         if ("STAFF".equals(user.getRole()) && companyId != null) {
             id = companies.findById(companyId).orElseThrow(LegalDossierService::notFound).getId();
-        } else id = companyId == null ? access.requireOwner(actor).company().getId() : access.requireOwnerOf(actor, companyId).getId();
-        if (!"STAFF".equals(user.getRole()) && (profiles.findById(actor).isPresent() || attempts.existsByCompanyId(id)))
-            personal.requirePersonal(actor);
+        } else id = companyId == null ? access.requireOwnerForStatus(actor).company().getId() : access.requireOwnerOfForStatus(actor, companyId).getId();
         return attempts.findByCompanyIdOrderBySubmittedAtAsc(id).stream().map(AttemptInfo::from).toList();
     }
 
