@@ -17,6 +17,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JobMigrationCompatibilityTest {
   @Autowired DataSource dataSource;
 
+  @Test void codeMigrationInvalidatesOldAccountLinksWithoutChangingVerifiedFlags() {
+    String schema = "email_upgrade_" + UUID.randomUUID().toString().replace("-", "");
+    var database = new JdbcTemplate(dataSource);
+    try {
+      Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+          .target("2026.10.28.84").load().migrate();
+      long user = database.queryForObject("INSERT INTO " + schema
+          + ".users(first_name,last_name,username,email,password,role,email_verified) "
+          + "VALUES ('Email','User','email_user','email@example.vn','fixture','USER',false) RETURNING id", Long.class);
+      database.update("INSERT INTO " + schema
+          + ".user_email_verification(user_id,email,secret_hash,issued_at,expires_at) "
+          + "VALUES (?,'email@example.vn',repeat('a',64),now(),now()+interval '24 hours')", user);
+      var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load();
+      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+      assertThat(database.queryForObject("SELECT secret_hash IS NULL AND consumed_at IS NOT NULL "
+          + "AND failed_attempts=0 FROM " + schema + ".user_email_verification WHERE user_id=?", Boolean.class, user)).isTrue();
+      assertThat(database.queryForObject("SELECT email_verified FROM " + schema + ".users WHERE id=?", Boolean.class, user)).isFalse();
+      upgrade.validate();
+    } finally {
+      database.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    }
+  }
+
   @Test void upgradesCc8943abSchemaWithoutOutOfOrderAndPreservesExistingData() {
     String schema = "job_upgrade_" + UUID.randomUUID().toString().replace("-", "");
     var database = new JdbcTemplate(dataSource);
@@ -36,8 +59,8 @@ class JobMigrationCompatibilityTest {
           + ".user_notifications(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) "
           + "VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Baseline',now())", event, user, company);
       var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load();
-      // Upgrade jobs and the consolidated account-email proof migration.
-      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
+      // Upgrade jobs, account-email proof storage and the code attempt budget.
+      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(3);
       upgrade.validate();
       assertThat(database.queryForObject("SELECT role FROM " + schema + ".users WHERE username='baseline_staff'", String.class))
           .isEqualTo("STAFF");

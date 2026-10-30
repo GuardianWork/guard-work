@@ -59,7 +59,7 @@ class AccountEmailVerificationHttpTest {
                 .andReturn().getResponse().getContentAsString();
         var secret = org.mockito.ArgumentCaptor.forClass(String.class);
         verify(delivery).memberEmail(eq(login.path("user").path("email").asText()), secret.capture());
-        assertThat(secret.getValue()).matches("[A-Za-z0-9_-]{43}");
+        assertThat(secret.getValue()).matches("[0-9]{6}");
         assertThat(response).doesNotContain(secret.getValue());
     }
 
@@ -125,7 +125,7 @@ class AccountEmailVerificationHttpTest {
         http.perform(post("/api/me/email-verification/confirm")
                 .header("Authorization", "Bearer " + wrongAccount.path("accessToken").asText())
                 .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
-        clock.now = clock.now.plusSeconds(86400);
+        clock.now = clock.now.plusSeconds(600);
         http.perform(post("/api/me/email-verification/confirm")
                 .header("Authorization", "Bearer " + recipient.path("accessToken").asText())
                 .contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
@@ -262,6 +262,83 @@ class AccountEmailVerificationHttpTest {
             return response.getStatus();
         })).containsExactlyInAnyOrder(201, 409);
         verifyNoInteractions(delivery);
+    }
+
+    @Test void fiveFailedGuessesInvalidateCodeAndResendResetsBudget() throws Exception {
+        JsonNode login = registerAndLogin();
+        String authorization = "Bearer " + login.path("accessToken").asText();
+        long id = login.path("user").path("id").asLong();
+        http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
+                .andExpect(status().isOk());
+        var codes = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(delivery).memberEmail(anyString(), codes.capture());
+        String code = codes.getValue();
+        String wrong = "000000".equals(code) ? "000001" : "000000";
+        for (int i = 0; i < 5; i++) {
+            http.perform(post("/api/me/email-verification/confirm").header("Authorization", authorization)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(json.writeValueAsString(Map.of("emailSecret", wrong))))
+                    .andExpect(status().isBadRequest());
+        }
+        assertThat(database.queryForObject("SELECT failed_attempts FROM user_email_verification WHERE user_id=?",
+                Integer.class, id)).isEqualTo(5);
+        http.perform(post("/api/me/email-verification/confirm").header("Authorization", authorization)
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("emailSecret", code))))
+                .andExpect(status().isBadRequest());
+        clock.now = clock.now.plusSeconds(60);
+        clearInvocations(delivery);
+        http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
+                .andExpect(status().isOk());
+        verify(delivery).memberEmail(anyString(), codes.capture());
+        http.perform(post("/api/me/email-verification/confirm").header("Authorization", authorization)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json.writeValueAsString(Map.of("emailSecret", codes.getValue()))))
+                .andExpect(status().isOk());
+    }
+
+    @Test void malformedCodeConsumesAGuessButCorrectCodeStillWorksBeforeLimit() throws Exception {
+        JsonNode login = registerAndLogin();
+        String authorization = "Bearer " + login.path("accessToken").asText();
+        http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
+                .andExpect(status().isOk());
+        var code = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(delivery).memberEmail(anyString(), code.capture());
+        for (String malformed : new String[]{"12345", "1234567", "abcdef", "１２３４５６"}) {
+            http.perform(post("/api/me/email-verification/confirm").header("Authorization", authorization)
+                    .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("emailSecret", malformed))))
+                    .andExpect(status().isBadRequest());
+        }
+        http.perform(post("/api/me/email-verification/confirm").header("Authorization", authorization)
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(Map.of("emailSecret", code.getValue()))))
+                .andExpect(status().isOk());
+    }
+
+    @Test void leadingZeroCodeWorksJustBeforeExpiry() throws Exception {
+        JsonNode login = registerAndLogin();
+        String authorization = "Bearer " + login.path("accessToken").asText();
+        long id = login.path("user").path("id").asLong();
+        http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
+                .andExpect(status().isOk());
+        database.update("UPDATE user_email_verification SET secret_hash=? WHERE user_id=?",
+                com.guardwork.backend.onboarding.service.OnboardingSecrets.hash("012345"), id);
+        clock.now = clock.now.plusSeconds(599);
+        http.perform(post("/api/me/email-verification/confirm").header("Authorization", authorization)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"emailSecret\":\"012345\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test void concurrentWrongGuessesDoNotLoseAttempts() throws Exception {
+        JsonNode login = registerAndLogin();
+        String authorization = "Bearer " + login.path("accessToken").asText();
+        long id = login.path("user").path("id").asLong();
+        http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
+                .andExpect(status().isOk());
+        assertThat(race(() -> http.perform(post("/api/me/email-verification/confirm")
+                .header("Authorization", authorization).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"emailSecret\":\"invalid\"}"))
+                .andReturn().getResponse().getStatus())).containsExactly(400, 400);
+        assertThat(database.queryForObject("SELECT failed_attempts FROM user_email_verification WHERE user_id=?",
+                Integer.class, id)).isEqualTo(2);
     }
 
     private java.util.List<Integer> race(java.util.concurrent.Callable<Integer> action) throws Exception {

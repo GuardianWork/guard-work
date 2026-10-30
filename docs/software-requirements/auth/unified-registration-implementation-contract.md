@@ -5,7 +5,7 @@
 | Contract ID | GW-SR-AUTH-03-CONTRACT |
 | Parent specification | [GW-SR-AUTH-03](unified-registration-and-recruiting-access-spec.md) |
 | Status | Approved |
-| Last updated | 2026-10-28 |
+| Last updated | 2026-10-30 |
 | Human owner / approver | User |
 | Scope | Shared registration, account-email proof, Company setup, and recruiting access |
 
@@ -52,12 +52,13 @@ Both return 200 envelopes. Already-verified request returns `alreadyVerified:tru
 
 Email lifecycle:
 
-- Generate a cryptographically random 256-bit URL-safe secret. Persist only SHA-256 hash, actor, normalized account email, issuance and expiry instants. Do not persist the plaintext token or expose it in API responses/logs.
-- Link lifetime is 24 hours from committed issuance; `now >= expiresAt` is expired. Use the existing controllable Clock. Successful confirmation consumes the secret and sets `users.email_verified=true` atomically under the User guard lock. A second confirmation returns 400 `40030 INVALID_EMAIL_PROOF`; concurrent confirmations have exactly one success.
+- Generate a cryptographically random six-digit ASCII code, including leading zeroes. Persist only its SHA-256 hash, actor, normalized account email, issuance/expiry instants and failed-attempt count. Never store plaintext codes or expose them in API responses/logs. Keep `emailSecret` as the string request field.
+- Code lifetime is 10 minutes from committed issuance; `now >= expiresAt` is expired. Use the existing controllable Clock. Successful confirmation consumes the secret and sets `users.email_verified=true` atomically under the User guard lock. A second confirmation returns 400 `40030 INVALID_EMAIL_PROOF`; concurrent confirmations have exactly one success.
 - Resend uses the same request endpoint. Enforce 60 seconds from the last issuance; premature requests return 429 `42930 EMAIL_REQUEST_COOLDOWN` and `Retry-After` in seconds. A committed new issuance immediately invalidates every previous token, including when delivery later fails. Issuance and confirmation serialize on the User guard lock.
 - Commit issuance before sending mail through the existing Resend/JDK adapter. A false result, missing configuration or network failure returns `deliveryAccepted:false`; no proof is granted. After the cooldown, the User can request a replacement. A crash after issuance is recoverable by another request. No automatic resend worker or durable plaintext email queue is introduced.
 - `deliveryAccepted:true` means provider acceptance, not inbox delivery. Neither provider result affects Candidate access. The request response never contains the link.
-- The confirmation URL uses the existing exact-origin allowlist and HTTPS policy with the existing localhost HTTP development exception. Put `emailSecret` in a URL fragment. An owned client must require sign-in and explicit confirmation, clear the fragment, and POST the secret; opening a link or issuing a GET changes no server state. Wrong-account, changed-email, malformed, expired and replayed proofs return the same 400 `40030 INVALID_EMAIL_PROOF`. A wrong-account request does not consume the real recipient's token.
+- Email the code as Vietnamese text for entry in the signed-in client. No confirmation URL or fragment is used for account email verification. Only sender and provider credentials are needed for this mail; invitation links and their configuration remain unchanged. Wrong-account, changed-email, malformed, expired, exhausted and replayed proofs return the same 400 `40030 INVALID_EMAIL_PROOF`. A wrong-account request never consumes the recipient's code.
+- At most five failed confirmation attempts are allowed per issued code. Count malformed code values and incorrect guesses while the actor's proof is active; persist failure before returning 400. On the fifth failure erase the hash and reject even the correct code. Serialize attempts with issuance/confirmation under the User lock. Resend after the existing cooldown resets the budget. Unparseable JSON is rejected at the HTTP boundary without a code attempt.
 - Account-email changes are outside this feature. No writer may change a User's email while retaining verified status or usable proof for the former email; block such a writer until its own approved email-change flow exists.
 
 Scoped authorization failures use 403 `40335 EMAIL_VERIFICATION_REQUIRED`; suspended Users preserve 403 `40304 ACCOUNT_SUSPENDED`. These messages remain English technical API text; clients display Vietnamese instructions. Keep the existing envelope, without establishing a project-wide error redesign.
@@ -155,6 +156,12 @@ Verify behavior at these boundaries:
 | Existing PostgreSQL test setup through application service/HTTP entry points | Migration compatibility, atomic rollback, unique constraints and competing registration/submission/acceptance/confirmation; not production deployment |
 | HTTP-example critical journeys | Shared registration to Candidate access, proof to Company/Staff review/correction, invitation and draft/publication gating; not absent frontend UI |
 
-Cover exact expiry/cooldown instants; no automatic registration mail; resend invalidates prior links even on failure; account isolation; single-use confirmation; both stored verification values are preserved but only verified Users are eligible; no User can bypass private recruiting gates with missing headers; existing applicants regain Candidate access; complete dossier failure/concurrency leaves no orphan data; pending edits rejected; same-Company correction preserves tax code/history; wrong-email/expired/revoked/competing invitation acceptance; membership removal and job-assignment boundaries; pending/rejected versus verified Company drafting/submission; Staff isolation; historical inbox access; private evidence non-enumeration; every tombstone without mutation. Use existing PostgreSQL tooling, no new dependency.
+Cover exact expiry/cooldown instants; no automatic registration mail; resend invalidates prior codes even on failure; account isolation; single-use confirmation; both stored verification values are preserved but only verified Users are eligible; no User can bypass private recruiting gates with missing headers; existing applicants regain Candidate access; complete dossier failure/concurrency leaves no orphan data; pending edits rejected; same-Company correction preserves tax code/history; wrong-email/expired/revoked/competing invitation acceptance; membership removal and job-assignment boundaries; pending/rejected versus verified Company drafting/submission; Staff isolation; historical inbox access; private evidence non-enumeration; every tombstone without mutation. Use existing PostgreSQL tooling, no new dependency.
 
 Run the documented `./mvnw test` and `./mvnw package` commands. Client checks require the separate client source.
+
+## 9. Approved code-entry amendment (2026-10-30)
+
+Human approver: User, explicitly approved six-digit codes, ten-minute expiry, five failed attempts and the existing sixty-second resend cooldown. This amendment replaces only account email verification links. Invitation links, secrets, endpoints, lifetimes and delivery remain unchanged.
+
+Apply `V2026.10.30.85__account_email_verification_codes.sql` to add the persisted attempt counter and invalidate outstanding account-verification links. Preserve verified flags and invitations. Stop old verification writers and deploy the backend with client code-entry UI; previously emailed account links require requesting a new code. Endpoint paths, envelope and `emailSecret` field remain, but accepted proof values change from links' secrets to codes. No frontend source is present in this checkout.

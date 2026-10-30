@@ -17,26 +17,32 @@ and `expiresAt`. Already-verified Users trigger no delivery. Provider acceptance
 is not evidence of inbox delivery. Missing configuration and provider failures
 report `deliveryAccepted:false` without rolling back the committed request.
 
-The link carries a private secret in the URL fragment. The receiving client must
-sign in, clear the fragment, and explicitly POST `{ "emailSecret": "..." }` to
-`/api/me/email-verification/confirm`. It must never put the secret in query
-parameters, logs, analytics or stored navigation. Confirmation does not sign in
-or create Company membership. Invalid, wrong-account, changed-email, expired,
+The email contains a six-digit code. The signed-in client submits
+`{ "emailSecret": "012345" }` to `/api/me/email-verification/confirm`.
+Keep the code as a string to preserve leading zeroes. Never put it in URLs,
+logs, analytics or stored navigation. Confirmation does not sign in or create
+Company membership. Invalid, wrong-account, changed-email, expired, exhausted,
 malformed and replayed proofs use the same 400 `40030 INVALID_EMAIL_PROOF`.
 
-Proofs expire at exactly 24 hours. Resending before 60 seconds returns 429
-`42930 EMAIL_REQUEST_COOLDOWN` and `Retry-After`; at 60 seconds another request
-is allowed. Each committed issuance invalidates the old proof, even if delivery
-fails. Confirmation and issuance serialize under the persisted User lock; one
-confirmation wins. No plaintext proof is stored and no automatic resend is added.
+Codes expire at exactly 10 minutes. Five failed attempts invalidate the code;
+the counter commits even when confirmation returns 400. Malformed code values
+count, but unparseable JSON is rejected before the service. Resending before
+60 seconds returns 429 `42930 EMAIL_REQUEST_COOLDOWN` and `Retry-After`;
+at 60 seconds a replacement may be requested and resets the attempt count.
+Each committed issuance invalidates the old proof even if delivery fails.
+Issuance, failed guesses and confirmation serialize under the persisted User lock.
+No plaintext code is stored and no automatic resend is added.
 
-Existing `ONBOARDING_EMAIL_FROM`, `ONBOARDING_EMAIL_CREDENTIAL`,
-`ONBOARDING_CONFIRMATION_URL`, and `ONBOARDING_ALLOWED_ORIGINS` configure the
-existing adapter. The exact-origin HTTPS policy and allowlisted localhost HTTP
-exception remain. Links now use `#emailSecret=...`; the retired employer/member
-confirmation flow is not a caller of this endpoint. No frontend source exists in this checkout;
-HTTP examples document the client transition, and browser work belongs to the
-client repository.
+Account-code mail uses `ONBOARDING_EMAIL_FROM` and `ONBOARDING_EMAIL_CREDENTIAL`;
+it does not require a frontend confirmation URL or origin allowlist.
+Invitation links and their configuration remain unchanged.
+
+Apply `V2026.10.30.85__account_email_verification_codes.sql` before this backend.
+It adds `failed_attempts` and invalidates outstanding account verification links,
+without changing verified accounts or invitations. Stop old verification writers
+and deploy the separate frontend code-entry form with this backend. Users with
+old account links must request a code; endpoint paths and `emailSecret` remain.
+No frontend source exists in this checkout.
 
 Migration `V2026.10.28.84__unified_registration_email_proof.sql` creates the
 hashed account-email proof table without a cohort column. Baseline upgrades preserve

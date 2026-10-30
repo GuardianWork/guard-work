@@ -9,6 +9,7 @@ import com.guardwork.backend.membership.service.CompanyAccessService;
 import com.guardwork.backend.onboarding.delivery.OnboardingDelivery;
 import com.guardwork.backend.onboarding.service.OnboardingSecrets;
 import com.guardwork.backend.user.model.User;
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -20,14 +21,15 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AccountEmailVerificationService {
     private static final Logger log = LoggerFactory.getLogger(AccountEmailVerificationService.class);
-    private static final Duration LIFETIME = Duration.ofHours(24);
+    private static final Duration LIFETIME = Duration.ofMinutes(10);
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final Duration COOLDOWN = Duration.ofSeconds(60);
     private final UserEmailVerificationRepository proofs;
     private final CompanyAccessService access;
@@ -50,7 +52,7 @@ public class AccountEmailVerificationService {
                                 Instant nextRequestAt, Instant expiresAt) {}
 
     public RequestResult request(Long actorId) {
-        String secret = OnboardingSecrets.token();
+        String secret = String.format(Locale.ROOT, "%06d", RANDOM.nextInt(1_000_000));
         var issued = issuance.execute(status -> {
             User user = access.requireActiveUser(actorId);
             Portal.PUBLIC.requireRole(user.getRole());
@@ -68,6 +70,7 @@ public class AccountEmailVerificationService {
             proof.setIssuedAt(now);
             proof.setExpiresAt(now.plus(LIFETIME));
             proof.setConsumedAt(null);
+            proof.setFailedAttempts(0);
             proofs.saveAndFlush(proof);
             return new Issued(user.getEmail(), now.plus(COOLDOWN), proof.getExpiresAt());
         });
@@ -82,21 +85,31 @@ public class AccountEmailVerificationService {
         return new RequestResult(accepted, false, issued.nextRequestAt(), issued.expiresAt());
     }
 
-    @Transactional
     public void confirm(Long actorId, String secret) {
-        User user = access.requireActiveUser(actorId);
-        Portal.PUBLIC.requireRole(user.getRole());
-        var proof = proofs.findById(actorId).orElseThrow(AccountEmailVerificationService::invalidProof);
-        Instant now = clock.instant();
-        if (secret == null || secret.length() != 43 || proof.getConsumedAt() != null
-                || !normalized(user.getEmail()).equals(proof.getEmail())
-                || !now.isBefore(proof.getExpiresAt()) || !OnboardingSecrets.matches(secret, proof.getSecretHash())) {
-            throw invalidProof();
-        }
-        user.setEmailVerified(true);
-        proof.setSecretHash(null);
-        proof.setConsumedAt(now);
-        proofs.saveAndFlush(proof);
+        // Return failure from the transaction so failed guesses commit before the HTTP error is raised.
+        boolean confirmed = Boolean.TRUE.equals(issuance.execute(status -> {
+            User user = access.requireActiveUser(actorId);
+            Portal.PUBLIC.requireRole(user.getRole());
+            var proof = proofs.findById(actorId).orElse(null);
+            Instant now = clock.instant();
+            if (proof == null || proof.getConsumedAt() != null
+                    || proof.getFailedAttempts() >= MAX_FAILED_ATTEMPTS
+                    || !normalized(user.getEmail()).equals(proof.getEmail())
+                    || !now.isBefore(proof.getExpiresAt())) return false;
+            if (secret == null || !secret.matches("[0-9]{6}")
+                    || !OnboardingSecrets.matches(secret, proof.getSecretHash())) {
+                proof.setFailedAttempts(proof.getFailedAttempts() + 1);
+                if (proof.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) proof.setSecretHash(null);
+                proofs.saveAndFlush(proof);
+                return false;
+            }
+            user.setEmailVerified(true);
+            proof.setSecretHash(null);
+            proof.setConsumedAt(now);
+            proofs.saveAndFlush(proof);
+            return true;
+        }));
+        if (!confirmed) throw invalidProof();
     }
 
     private static class EmailRequestCooldown extends ResponseStatusException {

@@ -8,7 +8,7 @@
 | **File** | `unified-registration-and-recruiting-access-spec.md` |
 | **Version** | 0.2.0 |
 | **Date** | 2026-10-27 |
-| **Last Updated** | 2026-10-28 |
+| **Last Updated** | 2026-10-30 |
 | **Owner** | User |
 | **Approver** | User |
 | **Status** | Approved |
@@ -33,7 +33,7 @@ Use one User registration flow for Candidate and recruiting workspaces. Keep acc
 | UREG-010 | Pending submitted dossiers cannot be edited. Rejected dossiers may be corrected and resubmitted for the same Company, retaining its immutable tax code and previous documents, declarations and review history. Block duplicate initial submissions for an existing tax code. Expose rejection feedback in Company settings and send the decision to the submitting Owner's verified account email. |
 | UREG-011 | Apply the same recruiting email-verification requirement to every User. Recruiting eligibility requires active status and stored `emailVerified=true`. Candidate access requires an active account but not email verification. Preserve existing verification values and records. `/api/auth/me` exposes `emailVerified` and `recruitingEmailEligible`. |
 | UREG-012 | Shared registration retains first name, last name, username, email and password, without Company information, phone number, gender or an account type. Create an active User immediately and allow sign-in. Newly registered Users remain email-unverified until genuine mailbox proof. |
-| UREG-013 | Send an email-verification link only when the User explicitly requests one. Do not automatically send verification email during registration. Links expire after 24 hours, resends require 60 seconds, and delivery failure grants no proof. See the implementation contract for exact behavior. |
+| UREG-013 | Send a six-digit email-verification code only when the User explicitly requests one. Do not automatically send verification email during registration. Codes expire after 10 minutes, permit at most five failed attempts, resends require 60 seconds, and delivery failure grants no proof. Invitation links remain unchanged. See the implementation contract for exact behavior. |
 | UREG-014 | Do not provide Save draft or autosave for initial Company setup. No unfinished Company information is persisted by the backend. Submit the complete dossier explicitly for Company verification; create Company and first Owner together as specified in UREG-006. The provisional-only `PUT /api/me/employer-onboarding/company` has no purpose in the replacement flow and is retired. Retain complete dossier submission and rejected-dossier correction. |
 | UREG-015 | Retire the separate employer registration API and update its clients to use shared registration followed by Company setup. Remove obsolete employer-registration and phone-verification steps while retaining Company review, private documents, declarations and review history. Existing development accounts and Company records remain intact; uncompleted employer registrations do not automatically become Users. |
 
@@ -50,7 +50,7 @@ Use one User registration flow for Candidate and recruiting workspaces. Keep acc
 
 1. Register through the shared endpoint with personal account fields only. Create an active User immediately; new Users start email-unverified and can sign in.
 2. Use Candidate features and switch to the Recruiting Workspace without changing account type or gaining Company authority.
-3. When the User explicitly requests email verification, send a link. Do not send automatically at registration. All unverified Users must complete proof before private recruiting operations, initial Company submission, or invitation acceptance.
+3. When the User explicitly requests email verification, send a code for manual entry. Do not send automatically at registration. All unverified Users must complete proof before private recruiting operations, initial Company submission, or invitation acceptance.
 4. A prospective Owner fills out the complete Company dossier. No Save draft or autosave request exists and the backend stores no unfinished Company form.
 5. Complete submission atomically creates a pending Company and its first Owner. Company setup does not require phone OTP or a separate employer registration.
 6. Platform Staff review the retained dossier. The Owner can inspect status and feedback. Rejection permits correction/resubmission of the same Company while preserving its tax code and earlier review evidence.
@@ -71,3 +71,5 @@ The backend provides shared registration, requested account-email proof, atomic 
 Verify HTTP contracts, service eligibility, migration behavior, atomic rollback, and concurrency using the existing PostgreSQL test setup. Run the backend test and package commands documented in the README. Browser verification requires the separate client source. No dependency, infrastructure, or retention-policy change is included.
 
 See [registration](../../backend/unified-registration.md), [Company setup](../../backend/company-setup.md), [invitations](../../backend/verified-email-invitations.md), and [retired onboarding](../../backend/employer-onboarding.md) for operational details.
+
+The User approved the account-only code-entry amendment on 2026-10-30; see contract section 9 for migration, client and invitation compatibility.

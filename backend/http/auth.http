@@ -54,9 +54,9 @@ Authorization: Bearer {{accessToken}}
 POST {{baseUrl}}/api/me/email-verification/request
 Authorization: Bearer {{accessToken}}
 
-### Confirm the fragment secret from your own mailbox while signed in
-# Copy only into your local request; never commit a real proof secret.
-@emailSecret=replace-with-private-fragment-secret
+### Enter the six-digit code from your own mailbox while signed in
+# Copy only into your local request; never commit a real verification code.
+@emailSecret=replace-with-six-digit-email-code
 POST {{baseUrl}}/api/me/email-verification/confirm
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json

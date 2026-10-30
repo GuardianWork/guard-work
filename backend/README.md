@@ -247,6 +247,13 @@ sign in and use Candidate capabilities immediately; they explicitly request and
 confirm email proof before applicable new-User recruiting operations. See
 [shared registration](../docs/backend/unified-registration.md) for endpoints,
 capability fields, mail configuration, the consolidated account-email proof migration and coordinated rollout.
+Account email verification uses a six-digit code entered as the string `emailSecret`, valid
+for 10 minutes with at most five failed attempts and a 60-second resend cooldown.
+Migration `V2026.10.30.85__account_email_verification_codes.sql` adds the persisted
+attempt counter and invalidates outstanding account-verification links; request a new code
+after deployment. Deploy the client code-entry form with this backend. Invitation links
+and their delivery configuration are unchanged. Account code mail needs only
+`ONBOARDING_EMAIL_FROM` and `ONBOARDING_EMAIL_CREDENTIAL`, without a frontend URL.
 All Users follow the same recruiting email gate; stored verification flags are preserved. No phone proof
 or account type is added to shared registration. Continue through
 [complete Company setup](../docs/backend/company-setup.md) or

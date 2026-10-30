@@ -13,29 +13,25 @@ public class ResendOnboardingDelivery implements OnboardingDelivery {
     private final ObjectMapper json;
     private final String sender;
     private final String credential;
-    private final String baseUrl;
-    private final Set<String> allowedOrigins;
     private final HttpClient http;
 
     @org.springframework.beans.factory.annotation.Autowired
     public ResendOnboardingDelivery(ObjectMapper json,
             @Value("${ONBOARDING_EMAIL_FROM:}") String sender,
-            @Value("${ONBOARDING_EMAIL_CREDENTIAL:}") String credential,
-            @Value("${ONBOARDING_CONFIRMATION_URL:}") String baseUrl,
-            @Value("${ONBOARDING_ALLOWED_ORIGINS:}") String origins) {
-        this(json, sender, credential, baseUrl, origins, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
+            @Value("${ONBOARDING_EMAIL_CREDENTIAL:}") String credential) {
+        this(json, sender, credential, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NEVER).build());
     }
 
-    ResendOnboardingDelivery(ObjectMapper json, String sender, String credential, String baseUrl, String origins, HttpClient http) {
-        this.json = json; this.sender = sender; this.credential = credential; this.baseUrl = baseUrl; this.http = http;
-        this.allowedOrigins = new HashSet<>(Arrays.asList(origins.split(",")));
+    ResendOnboardingDelivery(ObjectMapper json, String sender, String credential, HttpClient http) {
+        this.json = json; this.sender = sender; this.credential = credential; this.http = http;
     }
 
     @Override public boolean memberEmail(String recipient, String secret) {
-        String url = confirmationUrl();
-        return url != null && send(recipient, "Xác thực email tuyển dụng GuardWork",
-                "Đăng nhập và xác nhận email tại:\n" + url + "#emailSecret=" + secret, null);
+        return send(recipient, "Mã xác thực email GuardWork",
+                "Mã xác thực email của bạn là: " + secret
+                + "\nNhập mã này trong GuardWork. Mã có hiệu lực trong 10 phút."
+                + "\nKhông chia sẻ mã này với người khác.", null);
     }
 
     @Override public boolean decisionEmail(String recipient, String company, String outcome, String reason, UUID id) {
@@ -60,34 +56,4 @@ public class ResendOnboardingDelivery implements OnboardingDelivery {
         catch (Exception failure) { return false; }
     }
 
-    private String confirmationUrl() {
-        try {
-            URI uri = URI.create(baseUrl);
-            if (!permittedFrontendUrl(uri)) return null;
-            boolean allowed = allowedOrigins.stream().anyMatch(candidate -> {
-                try {
-                    URI configured = URI.create(candidate.trim());
-                    return permittedFrontendUrl(configured)
-                            && (configured.getPath().isEmpty() || "/".equals(configured.getPath()))
-                            && origin(uri).equals(origin(configured));
-                } catch (IllegalArgumentException invalid) { return false; }
-            });
-            if (!allowed) return null;
-            return uri.toASCIIString();
-        } catch (IllegalArgumentException invalid) { return null; }
-    }
-
-    private static boolean permittedFrontendUrl(URI uri) {
-        if (uri.getHost() == null || uri.getRawUserInfo() != null
-                || uri.getRawFragment() != null || uri.getRawQuery() != null) return false;
-        // HTTP is a localhost-only development exception; exact origin allowlisting still applies.
-        return "https".equals(uri.getScheme())
-                || "http".equals(uri.getScheme()) && "localhost".equalsIgnoreCase(uri.getHost())
-                && (uri.getPort() == -1 || uri.getPort() >= 1 && uri.getPort() <= 65535);
-    }
-
-    private static String origin(URI uri) {
-        int port = uri.getPort() == -1 ? ("http".equals(uri.getScheme()) ? 80 : 443) : uri.getPort();
-        return uri.getScheme() + "://" + uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
-    }
 }

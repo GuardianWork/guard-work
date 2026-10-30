@@ -42,21 +42,15 @@ as retained bytes. No data reset or new retention/deletion policy is introduced.
 ## Mail configuration and recovery
 
 The existing Resend adapter serves requested account-email proof and Company decisions.
-Configure environment-backed `ONBOARDING_EMAIL_FROM`, `ONBOARDING_EMAIL_CREDENTIAL`,
-`ONBOARDING_CONFIRMATION_URL` and `ONBOARDING_ALLOWED_ORIGINS`. Never commit credentials.
-The confirmation URL points to the client handling `#emailSecret=...`, which requires
-sign-in and explicit POST confirmation. Use HTTPS and an exact allowed origin. The
-existing local exception permits HTTP only on literal `localhost`, for example:
-
-```dotenv
-ONBOARDING_CONFIRMATION_URL=http://localhost:5137/verify
-ONBOARDING_ALLOWED_ORIGINS=http://localhost:5137
-```
-
-IP addresses, localhost subdomains/trailing-dot names, unexpected origins and URLs
-with user information, query strings or fragments are rejected. A changed scheme or
-effective port requires a matching allowlist entry. SMS/phone OTP runtime and
-`ONBOARDING_OTP_SECRET` have been removed; this journey needs no SMS vendor.
+Configure environment-backed `ONBOARDING_EMAIL_FROM` and `ONBOARDING_EMAIL_CREDENTIAL`.
+Never commit credentials. Account verification emails carry six-digit codes valid for
+10 minutes with five failed attempts and a 60-second resend cooldown. The signed-in
+client posts the code as `emailSecret`; no frontend URL or origin configuration is
+needed by this adapter. `ONBOARDING_CONFIRMATION_URL` and
+`ONBOARDING_ALLOWED_ORIGINS` are no longer used. Company invitation links retain
+their separate `COMPANY_INVITATION_*` URL/origin settings and existing rules.
+SMS/phone OTP runtime and `ONBOARDING_OTP_SECRET` remain removed; this journey needs
+no SMS vendor. See [account-code rollout](unified-registration.md) for migration 85.
 
 Staff decisions atomically retain the Company mutation, immutable decision, audit
 and delivery intent. Mail targets the submitting User's current account email.

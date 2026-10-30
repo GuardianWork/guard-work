@@ -25,6 +25,8 @@ public class UserEmailVerification {
     private Instant issuedAt;
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
+    @Column(name = "failed_attempts", nullable = false)
+    private int failedAttempts;
     @Column(name = "consumed_at")
     private Instant consumedAt;
 }
