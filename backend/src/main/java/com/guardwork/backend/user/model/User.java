@@ -50,6 +50,9 @@ public class User {
     @Column(nullable = false, length = 30)
     private String status = "ACTIVE";
 
+    @Column(name = "session_version", nullable = false)
+    private long sessionVersion;
+
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;
 

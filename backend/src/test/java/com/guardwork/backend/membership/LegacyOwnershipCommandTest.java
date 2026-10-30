@@ -358,6 +358,21 @@ class LegacyOwnershipCommandTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.activeMembership").isEmpty());
     }
 
+    @Test void revokedStaffCredentialCannotBeReusedForOperationalOwnershipAfterUnban() throws Exception {
+        Account reviewer=account(true), operator=account(true), applicant=account(false);
+        long company=legacy(false);String reference=UUID.randomUUID().toString();
+        command.review(reviewer.token(),approved(reference,company,applicant.id(),false));
+        var accounts=context.getBean(com.guardwork.backend.staff.service.StaffAccountService.class);
+        accounts.change(operator.id(),false,reviewer.id(),false,"Violation",null,"127.0.0.1",null);
+        accounts.change(operator.id(),false,reviewer.id(),true,"Appeal accepted",null,"127.0.0.1",null);
+        assertThatThrownBy(() -> command.review(reviewer.token(),approved(UUID.randomUUID().toString(),legacy(false),applicant.id(),false)))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("credential");
+        assertThatThrownBy(() -> command.assign(reviewer.token(),reference))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("credential");
+        assertThatThrownBy(() -> command.inspect(reviewer.token(),reference))
+            .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("credential");
+    }
+
     LegacyOwnershipCommand.Review approved(String ref, long company, long applicant, boolean banned) {
         return new LegacyOwnershipCommand.Review(ref, company, applicant, 7L, "REJECTED", banned,
                 "LEGAL_REPRESENTATIVE_REGISTRATION", true, true, true, false, "2099-12-31T00:00:00Z");

@@ -113,8 +113,7 @@ class RetiredOnboardingHttpTest {
                 new Route(HttpMethod.POST, "/api/companies/verification-request"))) {
             http.perform(request(route.method(), route.path()).header("Authorization", token)
                     .contentType(MediaType.APPLICATION_JSON).content("{}"))
-                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value(
-                            "40304 ACCOUNT_SUSPENDED: Account is suspended"));
+                    .andExpect(status().isUnauthorized());
         }
     }
 

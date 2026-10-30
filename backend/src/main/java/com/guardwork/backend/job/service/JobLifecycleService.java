@@ -43,6 +43,7 @@ public class JobLifecycleService {
         next = "PAUSED";
       }
       case "resume" -> {
+        if (job.isStaffSuspended()) throw state();
         if (!"PAUSED".equals(previous)) throw state();
         if (scope.company().getVerificationStatus() != VerificationStatus.VERIFIED)
           throw JobSubmissionService.conflict(

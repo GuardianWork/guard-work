@@ -122,7 +122,10 @@ Precondition: the target exists, subject to the common authorization conditions.
 | ADM-ACC-03 | Missing/inaccessible targets shall not be displayed. Retrieval errors shall be reported and permit retry. |
 | ADM-ACC-04 | Credentials, password hashes, tokens, and unrelated private communications shall not be displayed. |
 
-Exact search fields, private-field visibility, and pagination require a scoped contract before implementation.
+Exact search fields, private-field visibility, and pagination are defined by the
+[GW-92 scoped account contract](../../software-requirements/adm/account-management-spec.md),
+explicitly approved by the requesting human on 2026-10-30. This approval covers
+UC-18–20 only and does not approve the remaining Draft Staff capabilities.
 
 ### 3.5 UC-19–20 — Ban and Unban
 

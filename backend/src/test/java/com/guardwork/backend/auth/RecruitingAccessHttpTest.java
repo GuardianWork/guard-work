@@ -242,7 +242,7 @@ class RecruitingAccessHttpTest {
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", user.id());
         for (String path : List.of("/api/auth/me", "/api/v1/candidates/profile", "/api/me/notifications")) {
             http.perform(get(path).header("Authorization", user.authorization()))
-                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("40304 ACCOUNT_SUSPENDED: Account is suspended"));
+                    .andExpect(status().isUnauthorized());
         }
         http.perform(post("/api/auth/forgot-password").header("Authorization", user.authorization())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"unknown@example.vn\"}"))

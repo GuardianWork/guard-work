@@ -12,6 +12,9 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface CompanyMembershipRepository extends JpaRepository<CompanyMembership, Long> {
+  @Query("SELECT m.userId FROM CompanyMembership m WHERE m.companyId=:company AND m.status='ACTIVE' ORDER BY m.userId")
+  java.util.List<Long> activeUserIds(@Param("company") Long company);
+
   Optional<CompanyMembership> findByUserIdAndStatus(Long userId, MembershipStatus status);
 
   @Query(
