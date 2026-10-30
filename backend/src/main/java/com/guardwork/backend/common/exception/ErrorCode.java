@@ -21,6 +21,11 @@ public enum ErrorCode {
     INVALID_EMAIL_FORMAT(40015, "The email address you entered is not valid.", HttpStatus.BAD_REQUEST),
     INVALID_OTP(40018, "The OTP code is invalid or has expired.", HttpStatus.BAD_REQUEST),
 
+    // Candidate CV
+    CV_CONSENT_REQUIRED(40020, "You must confirm the CV privacy notice before uploading.", HttpStatus.BAD_REQUEST),
+    INVALID_CV_FILE_FORMAT(40021, "Only PDF, DOC, and DOCX files up to 10 MB are accepted.", HttpStatus.BAD_REQUEST),
+    CV_QUOTA_EXCEEDED(40022, "You have reached the maximum number of CVs.", HttpStatus.BAD_REQUEST),
+    CV_ASSET_NOT_VERIFIED(40023, "The uploaded file could not be verified. Please upload it again.", HttpStatus.BAD_REQUEST),
 
     // --- UNAUTHENTICATED (401) ---
     UNAUTHENTICATED(40100, "You must be logged in to perform this action.", HttpStatus.UNAUTHORIZED),
@@ -35,6 +40,13 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND(40400, "No endpoint found for this request", HttpStatus.NOT_FOUND),
     USER_NOT_FOUND(40401, "The user you are looking for could not be found.", HttpStatus.NOT_FOUND),
     VERIFICATION_TOKEN_NOT_FOUND(40404, "The verification token is invalid or has expired.", HttpStatus.NOT_FOUND),
+    CV_NOT_FOUND(40405, "The CV could not be found.", HttpStatus.NOT_FOUND),
+
+    // --- CONFLICT (409) ---
+    DUPLICATE_CV(40902, "This CV has already been registered.", HttpStatus.CONFLICT),
+
+    // --- SERVICE UNAVAILABLE (503) ---
+    CV_STORAGE_UNAVAILABLE(50300, "CV storage is temporarily unavailable. Please try again later.", HttpStatus.SERVICE_UNAVAILABLE),
 
     // --- TOO MANY REQUESTS (429) ---
     TOO_MANY_REQUESTS(42900, "Too many requests. Please wait %s seconds before trying again.", HttpStatus.TOO_MANY_REQUESTS);
