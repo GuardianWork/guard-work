@@ -49,23 +49,20 @@ return 400. Unknown content fields are rejected, including nested compensation/q
 fields. Content must be an object, but may be empty or incomplete. Explicit nulls remain
 unset; completeness and cross-field submission checks are deferred.
 
-Narrative fields are plain text. Outer whitespace is trimmed; internal Vietnamese Unicode
-and line breaks are preserved. Lengths count Unicode code points:
+The complete Job Description is one plain-text `description`. It can include responsibilities, qualifications, experience expectations and benefits in sections. Outer whitespace is trimmed; internal Vietnamese Unicode and line breaks are preserved. Lengths count Unicode code points:
 
 | Fields | Maximum |
 | --- | --- |
 | `title` | 200 |
-| `description`, `responsibilities` | 10,000 each |
-| `requiredQualifications`, `preferredQualifications`, `experienceExpectations`, `benefits` | 5,000 each |
+| `description` | 10,000 |
 | `location` | 1,000 |
-| `applicationInstructions` | 2,000 |
 
-`headcount` is an integer 1–10,000. `employmentType` accepts FULL_TIME, PART_TIME,
+`headcount` is optional; when present it must be an integer 1–10,000. `employmentType` accepts FULL_TIME, PART_TIME,
 CONTRACT, INTERNSHIP or TEMPORARY; `workArrangement` accepts ONSITE, HYBRID or REMOTE.
 `deadline` requires an ISO-8601 offset and is normalized to the exact UTC instant; a past
 proposed deadline may be saved during drafting.
 
-`compensation` accepts `disclosed` (boolean), `minimum`, `maximum` (positive exact decimals,
+`headcount` and `compensation` may be omitted. When supplied, `compensation` accepts `disclosed` (boolean), `minimum`, `maximum` (positive exact decimals,
 precision at most 18 and scale at most 2), `currency` (VND/USD) and `payPeriod`
 (HOUR/DAY/MONTH/YEAR). Completeness, range ordering, VND whole units and consistency
 with disclosure are submission checks.
@@ -118,13 +115,11 @@ It reads the exact normalized candidate-facing content without changing either v
 
 `POST /api/companies/me/jobs/{jobId}/revisions/{revisionId}/submit` requires both
 `expectedJobVersion` and `expectedRevisionVersion` plus `confirmed: true`. Submission
-requires every narrative and content choice, strictly future deadline, verified Company
-and current responsibility. Compensation must explicitly choose disclosure; disclosed
+requires nonblank title, description, employment type, work arrangement and location, a strictly future deadline, verified Company and current responsibility. Headcount and compensation may be omitted; supplied compensation must explicitly choose disclosure; disclosed
 ranges require ordered positive bounds, currency and pay period, with whole VND amounts.
 Single-choice questions require 2–10 distinct options; other types prohibit options.
 Every question requires a UUID key, type, nonblank prompt and explicit required flag.
-Application instructions direct Candidates through GuardWork; human review checks their
-meaning rather than unreliable substring detection. Text remains plain text data.
+Candidates apply through GuardWork. The description must explain the actual job; Platform Staff review its meaning rather than relying on keyword checks. Text remains plain text data.
 
 Submission preserves the exact content and transitions only the current draft to
 PENDING_REVIEW. Both versions advance. Company/job locking serializes competing submits;

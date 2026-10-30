@@ -224,9 +224,10 @@ class JobRevisionHttpTest {
     }
     Map<String,Object> complete() {
         var c=new LinkedHashMap<String,Object>();
-        for(String f:List.of("title","responsibilities","requiredQualifications","preferredQualifications","experienceExpectations","benefits","location"))c.put(f,"Nội dung");
-        c.put("description","Dòng một\nDòng hai"); c.put("applicationInstructions","Apply through GuardWork");
-        c.put("employmentType","FULL_TIME");c.put("workArrangement","ONSITE");c.put("headcount",2);
+        c.put("title", "Bảo vệ");
+        c.put("description", "Dòng một\nDòng hai");
+        c.put("location", "Hồ Chí Minh");
+        c.put("employmentType", "FULL_TIME");c.put("workArrangement", "ONSITE");c.put("headcount",2);
         var questions=new ArrayList<Map<String,Object>>();
         for(String type:List.of("SHORT_TEXT","SINGLE_CHOICE","YES_NO","NUMERIC")) {
           var q=new LinkedHashMap<String,Object>();q.put("key",UUID.randomUUID().toString());q.put("type",type);
