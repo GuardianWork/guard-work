@@ -1,5 +1,7 @@
 package com.guardwork.backend;
 
+import static com.guardwork.backend.CompanyDossierFixtures.completeDossier;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,8 +25,8 @@ class TestProfileHttpTest {
     void ordinaryTestRunUsesIsolatedProfileAndRealCompanySecurity() throws Exception {
         assertThat(environment.getActiveProfiles()).contains("test");
         MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build()
-                .perform(post("/api/companies/verification-request")
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .perform(completeDossier("POST", "/api/companies/verification-request", "{}")
+                        )
                 .andExpect(status().isUnauthorized());
     }
 }

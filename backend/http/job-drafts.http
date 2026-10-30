@@ -1,0 +1,156 @@
+# Private Job Posting drafts — run requests selectively in VS Code REST Client or JetBrains HTTP Client.
+# Start the backend with its migrated local database. Obtain access tokens using auth.http.
+# Existing seeded demo_owner / demo_recruiter accounts can be used (see backend/README.md).
+# Otherwise use auth.http for shared registration/proof, company-setup.http for complete submission, and company-membership.http for invitations.
+# Both actors must belong to the same Company. Pending/rejected Companies may draft;
+# All Users need verified account email for private recruiting; no legacy exemption remains. Phone proof is not required.
+# Copy IDs and versions from responses into the variables below. Keep tokens local.
+# Repeating a POST creates another job. Each successful PUT advances BOTH versions;
+# copy data.version and data.workingRevision.version before another save.
+
+@baseUrl = http://localhost:8080
+@ownerToken = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIiwidXNlcm5hbWUiOiJnd19vd25lcl90ZXN0XzAxIiwiZW1haWwiOiJndy1vd25lci10ZXN0QGV4YW1wbGUudGVzdCIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzkyNTE2NDI0LCJleHAiOjE3OTI2MDY0MjR9.CZHZFwBMCQVSDhIvtr-Cq8AgA8PJ6h2r15bD59I5veI
+@recruiterToken = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI3IiwidXNlcm5hbWUiOiJmaW5uenhqZSIsImVtYWlsIjoiZmlubnp4amVAZ21haWwuY29tIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3OTI1MTY0NjgsImV4cCI6MTc5MjYwNjQ2OH0.bQzjcJ_AOGszPnTES2nsVLzeg57k1Ubb0IjNHB7A3Wo
+@ownerJobId = REPLACE_WITH_OWNER_CREATED_JOB_ID
+@recruiterJobId = 2
+@jobVersion = 0
+@revisionVersion = 0
+@notificationId = REPLACE_WITH_RECRUITER_NOTIFICATION_ID
+
+### Confirm Owner Company context
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{ownerToken}}
+
+### Confirm Recruiter Company context (must match the Owner's Company)
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{recruiterToken}}
+
+### Owner creates an empty draft — 201, ownerResponsible=true, needsReassignment=false
+# Copy data.id into ownerJobId. This job is private to the Owner until explicitly assigned.
+POST {{baseUrl}}/api/companies/me/jobs
+Authorization: Bearer {{ownerToken}}
+Content-Type: application/json
+
+{
+  "content": {}
+}
+
+### Recruiter creates an incomplete draft — 201, current-period assignment created automatically
+# Copy data.id into recruiterJobId and both versions into jobVersion / revisionVersion.
+# Expect ownerResponsible=false, needsReassignment=false and the creator's membership in assignments.
+POST {{baseUrl}}/api/companies/me/jobs
+Authorization: Bearer {{recruiterToken}}
+Content-Type: application/json
+
+{
+  "content": {
+    "title": "  Nhân viên bảo vệ  ",
+    "description": "Bảo vệ tòa nhà tại Thành phố Hồ Chí Minh.\nCa làm việc được thỏa thuận."
+  }
+}
+
+### Owner lists all Company jobs, newest first
+GET {{baseUrl}}/api/companies/me/jobs?page=0&size=20
+Authorization: Bearer {{ownerToken}}
+
+### Recruiter lists only their currently assigned jobs
+GET {{baseUrl}}/api/companies/me/jobs?page=0&size=20
+Authorization: Bearer {{recruiterToken}}
+
+### Filter drafts with a current responsible person without expanding Recruiter access
+GET {{baseUrl}}/api/companies/me/jobs?status=DRAFT&needsReassignment=false&page=0&size=20
+Authorization: Bearer {{recruiterToken}}
+
+### Owner checks jobs needing reassignment — normally empty immediately after these creations
+GET {{baseUrl}}/api/companies/me/jobs?needsReassignment=true&page=0&size=20
+Authorization: Bearer {{ownerToken}}
+
+### Read the Owner-created private draft
+GET {{baseUrl}}/api/companies/me/jobs/{{ownerJobId}}
+Authorization: Bearer {{ownerToken}}
+
+### Owner inspects the Recruiter-created job, including current versions and assignment
+GET {{baseUrl}}/api/companies/me/jobs/{{recruiterJobId}}
+Authorization: Bearer {{ownerToken}}
+
+### Recruiter inspects their own assigned job — copy current versions before saving
+GET {{baseUrl}}/api/companies/me/jobs/{{recruiterJobId}}
+Authorization: Bearer {{recruiterToken}}
+
+### Replace the Recruiter's draft with sample content — 200
+# All content fields are replaced, not merged. Deadline is an explicit offset-bearing instant.
+# Saving is preparation only: this does not submit, review or publish the job.
+PUT {{baseUrl}}/api/companies/me/jobs/{{recruiterJobId}}/draft
+Authorization: Bearer {{recruiterToken}}
+Content-Type: application/json
+
+{
+  "expectedJobVersion": {{jobVersion}},
+  "expectedRevisionVersion": {{revisionVersion}},
+  "content": {
+    "title": "Nhân viên bảo vệ tòa nhà",
+    "description": "Bảo vệ khu vực làm việc.\nHỗ trợ khách đến liên hệ.",
+    "responsibilities": "Kiểm soát ra vào.\nTuần tra và ghi nhận sự việc.",
+    "requiredQualifications": "Có tinh thần trách nhiệm và giao tiếp lịch sự.",
+    "preferredQualifications": "Ưu tiên có chứng chỉ nghiệp vụ bảo vệ.",
+    "experienceExpectations": "Không yêu cầu kinh nghiệm; được hướng dẫn công việc.",
+    "benefits": "Đồng phục và đào tạo nghiệp vụ.",
+    "location": "Quận Bình Thạnh, Thành phố Hồ Chí Minh",
+    "applicationInstructions": "Ứng tuyển trực tiếp qua GuardWork.",
+    "employmentType": "FULL_TIME",
+    "workArrangement": "ONSITE",
+    "headcount": 2,
+    "deadline": "2030-12-31T17:00:00+07:00",
+    "compensation": {
+      "disclosed": true,
+      "minimum": 8000000,
+      "maximum": 12000000,
+      "currency": "VND",
+      "payPeriod": "MONTH"
+    },
+    "screeningQuestions": [
+      {
+        "key": "25cd018a-71a2-45bd-bfe4-3ea09bac252d",
+        "type": "YES_NO",
+        "prompt": "Bạn có thể làm việc theo ca không?",
+        "required": true
+      },
+      {
+        "key": "db41e4dd-a7e1-4cc5-8878-2fc3857f467d",
+        "type": "SINGLE_CHOICE",
+        "prompt": "Bạn ưu tiên ca làm việc nào?",
+        "required": false,
+        "options": ["Ca ngày", "Ca đêm"]
+      }
+    ]
+  }
+}
+
+### Read back saved text, exact compensation values and updated versions
+GET {{baseUrl}}/api/companies/me/jobs/{{recruiterJobId}}
+Authorization: Bearer {{recruiterToken}}
+
+### Optional replacement check — refresh BOTH version variables first
+# Expect previous description, compensation and screeningQuestions to disappear from content.
+# This deliberately replaces the sample above with an incomplete draft.
+PUT {{baseUrl}}/api/companies/me/jobs/{{recruiterJobId}}/draft
+Authorization: Bearer {{recruiterToken}}
+Content-Type: application/json
+
+{
+  "expectedJobVersion": {{jobVersion}},
+  "expectedRevisionVersion": {{revisionVersion}},
+  "content": {
+    "title": "Bản nháp đang chuẩn bị"
+  }
+}
+
+### Recruiter's assignment inbox — JOB_ASSIGNED carries jobId and revisionId
+# Copy the JOB_ASSIGNED item's id into notificationId, not its jobId.
+# Own historical inbox access remains available to active recipients after membership loss or without recruiting email proof.
+GET {{baseUrl}}/api/me/notifications?page=0&size=20
+Authorization: Bearer {{recruiterToken}}
+
+### Mark the Recruiter's own assignment notification read — 200, repeated reads are safe
+PATCH {{baseUrl}}/api/me/notifications/{{notificationId}}/read
+Authorization: Bearer {{recruiterToken}}

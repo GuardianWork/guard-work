@@ -1,5 +1,9 @@
 # [GW-SR-REC-02] Company onboarding, ownership, and Recruiter access
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> Company setup follows shared registration and complete atomic multipart dossier submission; new Users need actual account-email proof before initial Company submission or first invitation acceptance. Invitations still require matching normalized account email, explicit acceptance and existing secret/state/expiry/Company checks. One active membership, current authority and immediate revocation remain unchanged. Legacy Users retain their email exemption; phone proof and applicant Candidate restrictions are retired. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 > Employer onboarding coordination (2026-10-18): the user approved [GW-SR-REC-03](company-onboarding-verification-enhancement-spec.md) and confirmed its implementation contract. Its new-applicant path supersedes automatic email proof, unrestricted Candidate capability, separate Company-email input and mutable-only dossier handling for enrolled employer applicants. Ordinary Candidate registration and legacy Company compatibility remain scoped as documented; CHECKED is derived from existing Company eligibility states. SMS integration, production retention and legacy rollout remain unresolved. See [implementation details](../../backend/employer-onboarding.md).
 
 | Field | Value |
@@ -9,9 +13,9 @@
 | **Project** | GuardWork |
 | **Module** | Company Membership MVP |
 | **File** | `company-membership-mvp-spec.md` |
-| **Version** | 0.3.0 |
+| **Version** | 0.3.1 |
 | **Date** | 2026-10-08 |
-| **Last Updated** | 2026-10-24 |
+| **Last Updated** | 2026-10-28 |
 | **Owner** | Thinh |
 | **Approver** | Thinh |
 | **Lifecycle** | Draft |
@@ -444,7 +448,16 @@ The backend uses a narrow `CompanyInvitationMailer` port and a Resend adapter im
 
 ### 10.1 Sender and message configuration
 
-The deployment supplies `COMPANY_INVITATION_FROM`, `COMPANY_INVITATION_PROVIDER_CREDENTIAL`, `COMPANY_INVITATION_BASE_URL`, `COMPANY_INVITATION_ALLOWED_ORIGINS`, `COMPANY_INVITATION_CONNECT_TIMEOUT_SECONDS`, and `COMPANY_INVITATION_REQUEST_TIMEOUT_SECONDS` through environment-backed configuration or a secret store. The frontend base URL must be HTTPS and match its exact allow-listed origin. Never commit credentials. The email contains the Company name, Recruiter role, expiry in `Asia/Ho_Chi_Minh`, and one HTTPS link containing the random secret. It does not include Candidate data, another Company identity, or account-existence hints. See [`backend/.env.example`](../../../backend/.env.example).
+The deployment supplies `COMPANY_INVITATION_FROM`, `COMPANY_INVITATION_PROVIDER_CREDENTIAL`, `COMPANY_INVITATION_BASE_URL`, `COMPANY_INVITATION_ALLOWED_ORIGINS`, `COMPANY_INVITATION_CONNECT_TIMEOUT_SECONDS`, and `COMPANY_INVITATION_REQUEST_TIMEOUT_SECONDS` through environment-backed configuration or a secret store. The frontend base URL must be HTTPS and match its exact allow-listed origin, with the explicitly requested localhost-only HTTP exception below. Never commit credentials. The email contains the Company name, Recruiter role, expiry in `Asia/Ho_Chi_Minh`, and one confirmation link containing the random secret only in its URL fragment. It does not include Candidate data, another Company identity, or account-existence hints. See [`backend/.env.example`](../../../backend/.env.example).
+
+On 2026-10-21, the user explicitly requested a narrow HTTP exception for local invitation testing. Both configuration settings may use `http://localhost` with an optional port from 1–65535, provided scheme, host and effective port match exactly. Omitted HTTP ports mean 80; omitted HTTPS ports mean 443. This exception covers the literal hostname `localhost` only, not IP addresses, subdomains, trailing-dot names or remote hosts. HTTP still requires explicit origin allowlisting. Base URLs cannot contain user information, query strings or existing fragments; allowlist entries must be origins without a path other than an optional `/`. Resend's provider endpoint remains HTTPS.
+
+For a frontend running on port 5173, set the following in the backend's local `.env` and restart the backend (use the actual frontend confirmation-page path):
+
+```dotenv
+COMPANY_INVITATION_BASE_URL=http://localhost:5173/invitation
+COMPANY_INVITATION_ALLOWED_ORIGINS=http://localhost:5173
+```
 
 ### 10.2 Delivery and retry behavior
 
@@ -495,7 +508,7 @@ The current approved Company Verification and AUTH specifications retain their a
 
 ## 14. Approval and implementation status
 
-GW-001 completion was explicitly confirmed by the user on 2026-10-08. Tickets GW-002 through GW-007 are implemented on `feat/company-membership-mvp` from `77ea324`; the original pending-review table records publication history and does not represent an outstanding implementation blocker. Coordinated AUTH/Company Verification documentation records the protected-route transition. Resend provider configuration is implemented; deployment must supply its credential, verified sender, HTTPS frontend URL, and allowed origin.
+GW-001 completion was explicitly confirmed by the user on 2026-10-08. Tickets GW-002 through GW-007 are implemented on `feat/company-membership-mvp` from `77ea324`; the original pending-review table records publication history and does not represent an outstanding implementation blocker. Coordinated AUTH/Company Verification documentation records the protected-route transition. Resend provider configuration is implemented; deployment must supply its credential, verified sender, frontend URL (HTTPS, or explicitly allowlisted HTTP on literal localhost for local testing), and allowed origin.
 
 ## 15. Draft amendment: bind departure to a membership period
 

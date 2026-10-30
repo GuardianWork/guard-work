@@ -1,14 +1,8 @@
 # Authentication, Identity & Access Control — Software Requirements Specification
 
-> Portal routing coordination (2026-10-24): the user supplied and authorized the
-> public/Staff proxy implementation contract in this session. See
-> [GW-SR-AUTH-02](portal-routing-contract.md) for header context, role enforcement,
-> bound refresh sessions, error envelopes, optional CORS, and compatibility details.
-> Platform-role and API examples below use the Staff rename recorded
-> in [Staff specification section 4.3](../../feat/staff/spec.md#43-gw-81-runtime-adoption-and-compatibility);
-> Company `ADMIN` membership remains unchanged.
+Shared registration creates an active User with unverified email and sends no mail. Candidate access requires active status; private recruiting operations require verified account email for every User. Account-email request/confirmation, complete Company setup, and retired onboarding routes are defined in [GW-SR-AUTH-03](unified-registration-implementation-contract.md).
 
-> Employer onboarding coordination (2026-10-18): the user approved [GW-SR-REC-03](../rec/company-onboarding-verification-enhancement-spec.md) and confirmed its implementation contract. Its new-applicant path supersedes automatic email proof, unrestricted Candidate capability, separate Company-email input and mutable-only dossier handling for enrolled employer applicants. Ordinary Candidate registration and legacy Company compatibility remain scoped as documented; CHECKED is derived from existing Company eligibility states. SMS integration, production retention and legacy rollout remain unresolved. See [implementation details](../../backend/employer-onboarding.md).
+The [public/Staff portal contract](portal-routing-contract.md) defines proxy headers, role checks, refresh-session binding, envelopes, and CORS. Platform Staff authority remains separate from Company `ADMIN` membership. Company verification is separate from account-email proof.
 
 | Field | Value |
 |---|---|
@@ -18,14 +12,14 @@
 | **File** | `authentication-authorization-spec.md` |
 | **Version** | 1.0.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-24 |
+| **Last Updated** | 2026-10-28 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |
 
 ---
 
-> Company Membership MVP coordination (2026-10-08): the user confirmed completion of GW-001 and authorized dependent implementation under [GW-SR-REC-02](../rec/company-membership-mvp-spec.md). Company creation requires an active authenticated User; Company authority is read from current persisted membership and Company state on every request. `/api/auth/me` returns the existing `activeMembership` contract, including `joinedAt`, without adding Company roles to tokens. Private Company identifiers return a non-enumerating not-found response for inaccessible resources; principal-scoped operations follow the companion contract. Ownership transfer, Admin membership management, Job/Application permissions, and own-Company application restrictions remain subsequent milestones; REQ-AUTH-13/14 are not implemented by this MVP.
+Company membership follows [GW-SR-REC-02](../rec/company-membership-mvp-spec.md). Company creation requires an active authenticated User; Company authority is read from current persisted membership and Company state on every request. `/api/auth/me` returns the existing `activeMembership` contract, including `joinedAt`, without adding Company roles to tokens. Private Company identifiers return a non-enumerating not-found response for inaccessible resources; principal-scoped operations follow the companion contract. Ownership transfer, Admin membership management, Job/Application permissions, and own-Company application restrictions remain subsequent milestones; REQ-AUTH-13/14 are not implemented by this MVP.
 
 ## Table of Contents
 

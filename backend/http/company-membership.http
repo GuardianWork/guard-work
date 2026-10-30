@@ -7,19 +7,22 @@
 # A FAILED delivery leaves the invitation pending; configure delivery, then resend to get a fresh email.
 # Owner APIs return delivery status, never the raw invitation secret.
 # Copy the secret from the delivered email URL fragment after '#secret=' for recipient requests.
+# New recipients must explicitly verify account email before first acceptance.
+# Invitation possession/preview is not account-email proof; no phone or Company dossier is required.
 # No frontend invitation page is included; use these API requests to preview/accept/decline manually.
 # Keep pasted tokens/secrets local; do not commit them in this file.
 
 @baseUrl = http://localhost:8080
-@ownerToken=REPLACE_WITH_OWNER_ACCESS_TOKEN
+@ownerToken = REPLACE_WITH_OWNER_ACCESS_TOKEN
 @recipientToken = REPLACE_WITH_RECIPIENT_ACCESS_TOKEN
-@recipientEmail = replace-with-an-inbox-you-control@example.com
-@recipientUsername = gw_recruiter_test_01
+@recipientEmail = invited.recruiter@example.test
+@recipientUsername = invited_recruiter
 @recipientPassword = LocalTestPass123
-@invitationId = REPLACE_WITH_INVITATION_ID
-@invitationSecret = REPLACE_WITH_SECRET_FROM_EMAIL
+@invitationId = 1
+@invitationSecret = REPLACE_WITH_INVITATION_SECRET
 @membershipId = REPLACE_WITH_RECRUITER_MEMBERSHIP_ID
 @notificationId = REPLACE_WITH_NOTIFICATION_ID
+@accountEmailSecret = REPLACE_WITH_ACCOUNT_EMAIL_SECRET
 
 ### Confirm Owner context before managing invitations
 GET {{baseUrl}}/api/auth/me
@@ -77,7 +80,21 @@ Content-Type: application/json
   "secret": "{{invitationSecret}}"
 }
 
-### Accept the invitation explicitly
+### Explicitly request account-email verification for a newly registered recipient
+### No email is sent at registration. Copy the separate account-email secret from its delivered link.
+POST {{baseUrl}}/api/me/email-verification/request
+Authorization: Bearer {{recipientToken}}
+
+### Confirm the recipient's account email; this does not accept the Company invitation
+POST {{baseUrl}}/api/me/email-verification/confirm
+Authorization: Bearer {{recipientToken}}
+Content-Type: application/json
+
+{
+  "emailSecret": "{{accountEmailSecret}}"
+}
+
+### Accept the invitation explicitly (all Users require verified account email)
 POST {{baseUrl}}/api/company-invitations/accept
 Authorization: Bearer {{recipientToken}}
 Content-Type: application/json

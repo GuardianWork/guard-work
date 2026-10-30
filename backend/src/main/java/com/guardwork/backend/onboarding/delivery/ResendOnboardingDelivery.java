@@ -13,36 +13,25 @@ public class ResendOnboardingDelivery implements OnboardingDelivery {
     private final ObjectMapper json;
     private final String sender;
     private final String credential;
-    private final String baseUrl;
-    private final Set<String> allowedOrigins;
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
-            .followRedirects(HttpClient.Redirect.NEVER).build();
+    private final HttpClient http;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ResendOnboardingDelivery(ObjectMapper json,
             @Value("${ONBOARDING_EMAIL_FROM:}") String sender,
-            @Value("${ONBOARDING_EMAIL_CREDENTIAL:}") String credential,
-            @Value("${ONBOARDING_CONFIRMATION_URL:}") String baseUrl,
-            @Value("${ONBOARDING_ALLOWED_ORIGINS:}") String origins) {
-        this.json = json; this.sender = sender; this.credential = credential; this.baseUrl = baseUrl;
-        this.allowedOrigins = new HashSet<>(Arrays.asList(origins.split(",")));
+            @Value("${ONBOARDING_EMAIL_CREDENTIAL:}") String credential) {
+        this(json, sender, credential, HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
+                .followRedirects(HttpClient.Redirect.NEVER).build());
     }
 
-    @Override public boolean registrationEmail(String recipient, UUID id, String secret) {
-        String url = confirmationUrl();
-        return url != null && send(recipient, "Xác thực email tài khoản GuardWork",
-                "Mở liên kết để xác nhận đăng ký. Liên kết có hiệu lực trong 24 giờ.\n"
-                + url + "#registration=" + id + "&emailSecret=" + secret, null);
+    ResendOnboardingDelivery(ObjectMapper json, String sender, String credential, HttpClient http) {
+        this.json = json; this.sender = sender; this.credential = credential; this.http = http;
     }
 
     @Override public boolean memberEmail(String recipient, String secret) {
-        String url = confirmationUrl();
-        return url != null && send(recipient, "Xác thực email tuyển dụng GuardWork",
-                "Đăng nhập và xác nhận email tại:\n" + url + "#memberEmailSecret=" + secret, null);
-    }
-
-    @Override public boolean sms(String phone, String code) {
-        // No provider has been selected. Never substitute console output or accept undelivered proof.
-        return false;
+        return send(recipient, "Mã xác thực email GuardWork",
+                "Mã xác thực email của bạn là: " + secret
+                + "\nNhập mã này trong GuardWork. Mã có hiệu lực trong 10 phút."
+                + "\nKhông chia sẻ mã này với người khác.", null);
     }
 
     @Override public boolean decisionEmail(String recipient, String company, String outcome, String reason, UUID id) {
@@ -67,13 +56,4 @@ public class ResendOnboardingDelivery implements OnboardingDelivery {
         catch (Exception failure) { return false; }
     }
 
-    private String confirmationUrl() {
-        try {
-            URI uri = URI.create(baseUrl);
-            String origin = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() == -1 ? "" : ":" + uri.getPort());
-            if (!"https".equals(uri.getScheme()) || uri.getHost() == null || uri.getUserInfo() != null
-                    || uri.getFragment() != null || uri.getQuery() != null || !allowedOrigins.contains(origin)) return null;
-            return uri.toASCIIString();
-        } catch (IllegalArgumentException invalid) { return null; }
-    }
 }

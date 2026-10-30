@@ -1,10 +1,11 @@
 name: Continuous Integration
 
-# Trigger the CI pipeline on pushes to the dev branch and pull requests to main or dev
+# Trigger CI on integration/feature pushes and pull requests to main or dev.
 on:
   push:
     branches:
       - dev
+      - 'feat/**'
   pull_request:
     branches:
       - main
@@ -69,3 +70,29 @@ jobs:
           name: gw-backend-jar
           path: backend/target/*.jar
           retention-days: 7
+
+  rebase-check:
+    name: Rebase feature branch on dev
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/feat/'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout task branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Fetch latest dev and require it in task branch history
+        run: |
+          git fetch --no-tags origin +refs/heads/dev:refs/remotes/origin/dev
+          if ! git merge-base --is-ancestor origin/dev HEAD; then
+            echo '::error::Rebase this task branch onto the latest origin/dev, rerun checks, and push again.'
+            exit 1
+          fi
+          if [ -n "$(git rev-list --merges origin/dev..HEAD)" ]; then
+            echo '::error::Do not merge dev into the task branch; rebase the task commits onto origin/dev.'
+            exit 1
+          fi

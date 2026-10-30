@@ -19,26 +19,23 @@ import org.springframework.web.server.ResponseStatusException;
 public class LegalDossierService {
     private static final int MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
     private static final String DECLARATION = loadDeclaration();
-    private final EmployerProfileRepository profiles;
     private final VerificationDocumentRepository documents;
     private final VerificationAttemptRepository attempts;
     private final DecisionDeliveryRepository deliveries;
     private final CompanyRepository companies;
     private final CompanyService companyService;
     private final CompanyAccessService access;
-    private final PersonalVerificationService personal;
     private final com.guardwork.backend.user.repository.UserRepository users;
 
-    public LegalDossierService(EmployerProfileRepository profiles, VerificationDocumentRepository documents,
+    public LegalDossierService(VerificationDocumentRepository documents,
             VerificationAttemptRepository attempts, DecisionDeliveryRepository deliveries, CompanyRepository companies,
-            CompanyService companyService, CompanyAccessService access, PersonalVerificationService personal,
+            CompanyService companyService, CompanyAccessService access,
             com.guardwork.backend.user.repository.UserRepository users) {
-        this.profiles = profiles; this.documents = documents; this.attempts = attempts; this.deliveries = deliveries;
-        this.companies = companies; this.companyService = companyService; this.access = access; this.personal = personal;
+        this.documents = documents; this.attempts = attempts; this.deliveries = deliveries;
+        this.companies = companies; this.companyService = companyService; this.access = access;
         this.users = users;
     }
 
-    public record DocumentInfo(UUID documentId, String filename, String mediaType, String sha256) {}
     public record AttemptInfo(UUID attemptId, Long companyId, String companyName, String taxCode, String workAddress,
                               String submitterPosition, String representation, String declarationText,
                               String declarationVersion, UUID documentId, Instant submittedAt, String outcome,
@@ -51,21 +48,79 @@ public class LegalDossierService {
     }
 
     @Transactional
-    public DocumentInfo upload(Long actor, MultipartFile file) {
-        personal.requirePersonal(actor);
-        if (file == null || file.isEmpty() || file.getSize() > MAX_DOCUMENT_BYTES)
-            throw OnboardingSecrets.invalid("A document up to 10 MiB is required");
+    public Company registerComplete(Long actor, CompanyDossierRequest request, List<MultipartFile> file) {
+        var user = access.requireActiveUser(actor);
+        com.guardwork.backend.auth.service.AccountEmailVerificationService.requireRecruitingEmailEligible(user);
+        if (request == null) throw invalidDossier("Complete Company dossier is required");
+        String name = requiredDossier(request.name(), 255);
+        String tax = requiredDossier(request.taxCode(), 50);
+        validateCompleteLegal(request.legal());
+        VerificationDocument document = retainCompleteDocument(actor, file);
+        Company company = companyService.registerCompanyFromCompleteDossier(actor,
+                new CompanyRegistrationRequest(name, tax, user.getEmail(), documentPath(document.getId())));
+        recordAttempt(actor, company, completeLegal(request.legal(), document.getId()));
+        return company;
+    }
+
+    @Transactional
+    public Company correctComplete(Long actor, Long companyId, CompanyDossierCorrectionRequest request, List<MultipartFile> file) {
+        var user = access.requireActiveUser(actor);
+        com.guardwork.backend.auth.service.AccountEmailVerificationService.requireRecruitingEmailEligible(user);
+        Company current = companyId == null ? access.requireOwner(actor).company() : access.requireOwnerOf(actor, companyId);
+        if (request == null || request.expectedVersion() == null || request.expectedVersion() < 0)
+            throw invalidDossier("A current nonnegative version is required");
+        String name = requiredDossier(request.name(), 255);
+        validateCompleteLegal(request.legal());
+        VerificationDocument document = retainCompleteDocument(actor, file);
+        Company company = companyService.resubmitCompany(actor, current.getId(), new CompanyResubmissionRequest(
+                name, null, documentPath(document.getId()), request.expectedVersion()));
+        recordAttempt(actor, company, completeLegal(request.legal(), document.getId()));
+        return company;
+    }
+
+    private static void validateCompleteLegal(CompanyDossierRequest.Legal legal) {
+        if (legal == null || !Boolean.TRUE.equals(legal.declarationAccepted()))
+            throw invalidDossier("Legal details and explicit declaration are required");
+        requiredDossier(legal.workAddress(), 1000);
+        requiredDossier(legal.submitterPosition(), 200);
+        if (!Set.of("LEGAL_REPRESENTATIVE", "AUTHORIZED_REPRESENTATIVE").contains(String.valueOf(legal.representation())))
+            throw invalidDossier("Representative selection is required");
+    }
+
+    private static LegalDetails completeLegal(CompanyDossierRequest.Legal legal, UUID documentId) {
+        return new LegalDetails(legal.workAddress().trim(), legal.submitterPosition().trim(),
+                legal.representation(), true, documentId);
+    }
+
+    private VerificationDocument retainCompleteDocument(Long actor, List<MultipartFile> files) {
+        if (files == null || files.size() != 1) throw invalidDossier("Exactly one registration document is required");
+        MultipartFile file = files.getFirst();
+        if (file == null || file.isEmpty()) throw invalidDossier("A registration document is required");
+        if (file.getSize() > MAX_DOCUMENT_BYTES) throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
+                "41330 DOCUMENT_TOO_LARGE: Maximum document size is 10 MiB");
         byte[] bytes;
         try { bytes = file.getBytes(); }
-        catch (java.io.IOException invalid) { throw OnboardingSecrets.invalid("Document could not be read"); }
+        catch (java.io.IOException invalid) { throw invalidDossier("Document could not be read"); }
         String media = mediaType(bytes);
-        if (media == null) throw OnboardingSecrets.invalid("Only PDF, JPEG and PNG documents are allowed");
-        VerificationDocument d = new VerificationDocument(); d.setId(UUID.randomUUID()); d.setUploaderId(actor);
+        if (media == null) throw invalidDossier("Only PDF, JPEG and PNG documents are allowed");
+        VerificationDocument document = new VerificationDocument();
+        document.setId(UUID.randomUUID()); document.setUploaderId(actor);
         String filename = file.getOriginalFilename() == null ? "document" : file.getOriginalFilename();
         filename = filename.replaceAll("[\\p{Cntrl}/\\\\]", "_");
-        d.setFilename(OnboardingSecrets.required(filename, 255)); d.setMediaType(media); d.setContent(bytes);
-        d.setContentHash(OnboardingSecrets.hash(bytes)); d.setCreatedAt(Instant.now()); documents.saveAndFlush(d);
-        return new DocumentInfo(d.getId(), d.getFilename(), media, d.getContentHash());
+        document.setFilename(requiredDossier(filename, 255));
+        document.setMediaType(media); document.setContent(bytes); document.setContentHash(OnboardingSecrets.hash(bytes));
+        document.setCreatedAt(Instant.now());
+        return documents.saveAndFlush(document);
+    }
+
+    private static String requiredDossier(String value, int maximum) {
+        if (value == null || value.isBlank() || value.trim().codePointCount(0, value.trim().length()) > maximum)
+            throw invalidDossier("Required dossier field is invalid");
+        return value.trim();
+    }
+
+    private static ResponseStatusException invalidDossier(String reason) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "40001 INVALID_INPUT: " + reason);
     }
 
     @Transactional
@@ -75,38 +130,10 @@ public class LegalDossierService {
         if ("STAFF".equals(user.getRole())) return d;
         var linked = attempts.findByDocumentId(id);
         if (linked.isEmpty() && actor.equals(d.getUploaderId())) return d;
-        var current = access.findCurrentCompanyAccess(actor);
+        var current = access.findCurrentCompanyAccessForStatus(actor);
         if (current == null || !"OWNER".equals(current.membership().getRole().name())
                 || linked.stream().noneMatch(a -> a.getCompanyId().equals(current.company().getId()))) throw notFound();
         return d;
-    }
-
-    @Transactional
-    public Company register(Long actor, CompanyRegistrationRequest request) {
-        // Old clients remain on the approved legacy journey until a separate rollout/migration.
-        if (profiles.findById(actor).isEmpty()) return companyService.registerCompany(actor, request);
-        personal.requirePersonal(actor);
-        if (request == null) throw OnboardingSecrets.invalid("Dossier is required");
-        LegalDetails legal = validateLegal(actor, request.legal());
-        String email = access.requireActiveUser(actor).getEmail();
-        Company company = companyService.registerCompanyFromVerifiedApplicant(actor, new CompanyRegistrationRequest(
-                request.name(), request.taxCode(), email, documentPath(legal.documentId())));
-        recordAttempt(actor, company, legal);
-        return company;
-    }
-
-    @Transactional
-    public Company correct(Long actor, Long companyId, CompanyResubmissionRequest request) {
-        Company current = companyId == null ? access.requireOwner(actor).company() : access.requireOwnerOf(actor, companyId);
-        if (!attempts.existsByCompanyId(current.getId()) && (profiles.findById(actor).isEmpty() || request == null || request.legal() == null))
-            return companyService.resubmitCompany(actor, current.getId(), request);
-        personal.requirePersonal(actor);
-        if (request == null) throw OnboardingSecrets.invalid("Dossier is required");
-        LegalDetails legal = validateLegal(actor, request.legal());
-        Company corrected = companyService.resubmitCompany(actor, current.getId(), new CompanyResubmissionRequest(
-                OnboardingSecrets.required(request.name(), 255), null, documentPath(legal.documentId()), request.expectedVersion()));
-        recordAttempt(actor, corrected, legal);
-        return corrected;
     }
 
     @Transactional
@@ -115,7 +142,7 @@ public class LegalDossierService {
         Long id;
         if ("STAFF".equals(user.getRole()) && companyId != null) {
             id = companies.findById(companyId).orElseThrow(LegalDossierService::notFound).getId();
-        } else id = companyId == null ? access.requireOwner(actor).company().getId() : access.requireOwnerOf(actor, companyId).getId();
+        } else id = companyId == null ? access.requireOwnerForStatus(actor).company().getId() : access.requireOwnerOfForStatus(actor, companyId).getId();
         return attempts.findByCompanyIdOrderBySubmittedAtAsc(id).stream().map(AttemptInfo::from).toList();
     }
 
@@ -131,17 +158,6 @@ public class LegalDossierService {
         intent.setRecipientEmail(recipient.getEmail()); intent.setCompanyName(attempt.getCompanyName());
         intent.setOutcome(attempt.getOutcome()); intent.setRejectionReason(attempt.getRejectionReason());
         intent.setNextAttemptAt(Instant.now()); deliveries.saveAndFlush(intent);
-    }
-
-    private LegalDetails validateLegal(Long actor, LegalDetails legal) {
-        if (legal == null || !Boolean.TRUE.equals(legal.declarationAccepted()) || legal.documentId() == null)
-            throw OnboardingSecrets.invalid("Legal document and explicit declaration are required");
-        OnboardingSecrets.required(legal.workAddress(), 1000); OnboardingSecrets.required(legal.submitterPosition(), 200);
-        if (!Set.of("LEGAL_REPRESENTATIVE", "AUTHORIZED_REPRESENTATIVE").contains(String.valueOf(legal.representation())))
-            throw OnboardingSecrets.invalid("Representative selection is required");
-        var document = documents.findById(legal.documentId()).orElseThrow(LegalDossierService::notFound);
-        if (!actor.equals(document.getUploaderId())) throw notFound();
-        return legal;
     }
 
     private void recordAttempt(Long actor, Company company, LegalDetails legal) {

@@ -15,8 +15,11 @@ GitHub Actions discards the service after the job. Local test configuration and 
 that rejects `backend_db` remain unchanged.
 
 ### How to use
-- **Push**: Any code push to the `dev` branch.
-- **Pull Request**: Any pull request targeting the `main` or `dev` branches.
+- **Push**: Pushes to `dev` and `feat/**` run CI. Feature branch pushes also require
+  the latest `origin/dev` commit to be in their history.
+- **Pull Request**: Open a normal PR targeting `main` or `dev`; CI runs automatically.
+  If a check fails, inspect the logs, fix the issue, and wait for the next run to pass.
+  Agents do not merge. Follow `docs/agent-guides/pull-request-workflow.md`.
 
 ---
 

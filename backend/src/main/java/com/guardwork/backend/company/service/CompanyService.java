@@ -46,18 +46,10 @@ public class CompanyService {
     }
 
     @Transactional
-    public Company registerCompany(Long actorId, CompanyRegistrationRequest request) {
-        return registerCompany(actorId, request, false);
-    }
-
-    @Transactional
-    public Company registerCompanyFromVerifiedApplicant(Long actorId, CompanyRegistrationRequest request) {
-        return registerCompany(actorId, request, true);
-    }
-
-    private Company registerCompany(Long actorId, CompanyRegistrationRequest request, boolean accountEmailOnly) {
+    public Company registerCompanyFromCompleteDossier(Long actorId, CompanyRegistrationRequest request) {
         log.debug("event=company_registration outcome=started");
-        access.requireActiveUser(actorId);
+        var actor = access.requireActiveUser(actorId);
+        com.guardwork.backend.auth.service.AccountEmailVerificationService.requireRecruitingEmailEligible(actor);
         var activeMembership = memberships.findByUserIdAndStatus(actorId, MembershipStatus.ACTIVE);
         if (activeMembership.isPresent()) {
             if (activeMembership.get().getRole() == CompanyRole.OWNER
@@ -67,7 +59,7 @@ public class CompanyService {
             }
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40910 ACTIVE_COMPANY_MEMBERSHIP_EXISTS: Active Company membership already exists");
         }
-        Company company = createCompanyRecord(request, accountEmailOnly);
+        Company company = createCompanyRecord(request);
         company.setOwnerUserId(actorId);
         companyRepository.saveAndFlush(company);
         CompanyMembership membership = new CompanyMembership();
@@ -81,7 +73,7 @@ public class CompanyService {
         return company;
     }
 
-    private Company createCompanyRecord(CompanyRegistrationRequest request, boolean accountEmailOnly) {
+    private Company createCompanyRecord(CompanyRegistrationRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
         }
@@ -109,9 +101,8 @@ public class CompanyService {
         String email = request.email().trim().toLowerCase(Locale.ROOT);
 
         Optional<Company> existingByTaxCode = companyRepository.findByTaxCode(taxCode);
-        boolean existingByEmail = !accountEmailOnly && companyRepository.existsByEmail(email);
 
-        if (existingByTaxCode.isPresent() || existingByEmail) {
+        if (existingByTaxCode.isPresent()) {
             log.debug("event=company_registration outcome=existing_record");
             throw new ResponseStatusException(HttpStatus.CONFLICT, "40901 DUPLICATE_TAX_CODE: Company registration details already registered");
         }
@@ -130,11 +121,6 @@ public class CompanyService {
     @Transactional
     public Company resubmitCompany(Long actorId, Long companyId, CompanyResubmissionRequest request) {
         return correctRejectedCompany(access.requireOwnerOf(actorId, companyId), request);
-    }
-
-    @Transactional
-    public Company resubmitCurrentCompany(Long actorId, CompanyResubmissionRequest request) {
-        return correctRejectedCompany(access.requireOwner(actorId).company(), request);
     }
 
     private Company correctRejectedCompany(Company company, CompanyResubmissionRequest request) {
@@ -208,14 +194,14 @@ public class CompanyService {
 
     @Transactional
     public CurrentCompanyResponse getCurrentCompany(Long actorId) {
-        var current = access.findCurrentCompanyAccess(actorId);
+        var current = access.findCurrentCompanyAccessForStatus(actorId);
         return current == null ? null : new CurrentCompanyResponse(current.company().getId(), current.company().getName(),
-                current.membership().getRole().name());
+                current.membership().getRole().name(), current.company().isBanned());
     }
 
     @Transactional
     public Company getOwnerVerification(Long actorId) {
-        return access.requireOwner(actorId).company();
+        return access.requireOwnerForStatus(actorId).company();
     }
 
     private void validateLength(String value, int maximum, String field) {

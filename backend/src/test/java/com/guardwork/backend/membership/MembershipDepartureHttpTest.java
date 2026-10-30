@@ -1,5 +1,7 @@
 package com.guardwork.backend.membership;
 
+import static com.guardwork.backend.CompanyDossierFixtures.completeDossier;
+
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -566,8 +568,8 @@ class MembershipDepartureHttpTest {
     }
 
     long createdCompany(String token) throws Exception {
-        String body = http.perform(post("/api/companies/verification-request").header("Authorization", token)
-                .contentType(MediaType.APPLICATION_JSON).content(company(UUID.randomUUID().toString())))
+        String body = http.perform(completeDossier("POST", "/api/companies/verification-request", company(UUID.randomUUID().toString())).header("Authorization", token)
+                )
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
         return mapper.readTree(body).path("data").path("id").asLong();
     }
@@ -583,6 +585,7 @@ class MembershipDepartureHttpTest {
                 .content(mapper.writeValueAsString(Map.of("firstName", "Ánh", "lastName", "Nguyễn", "username", name,
                         "email", email, "password", "Password123"))))
                 .andExpect(status().isCreated());
+        database.update("UPDATE users SET email_verified=TRUE WHERE email=?", email);
         String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email, "password", "Password123"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();

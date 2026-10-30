@@ -1,19 +1,25 @@
 # [GW-SR-REC-03] Company Onboarding and Verification Enhancement
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> Separate employer registration, restricted Candidate access, mandatory phone proof and provisional Company updates are superseded by shared active-User registration, explicit requested account-email proof for new Users and complete atomic multipart dossier submission. Legacy routes and JSON dossier contracts retire with documented 410 responses after replacement callers migrate. Existing Users remain exempt from new email proof; incomplete employer registrations are neither promoted nor deleted. Company review, private documents, declarations, immutable attempts and decision delivery remain. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 | Field | Value |
 |---|---|
 | **Specification ID** | GW-SR-REC-03 |
 | **Project** | GuardWork |
 | **Module** | Employer onboarding, personal verification, and Company verification |
 | **File** | `company-onboarding-verification-enhancement-spec.md` |
-| **Version** | 0.1.0 |
+| **Version** | 0.1.1 |
 | **Date** | 2026-10-18 |
-| **Last Updated** | 2026-10-24 |
+| **Last Updated** | 2026-10-28 |
 | **Owner** | VyTrg (proposed, following the existing Company Verification ownership) |
 | **Approver** | VyTrg (proposed human reviewer; formal approval pending) |
 | **Status** | Draft |
 
 The user confirmed the consolidated product direction after a design interview on 2026-10-18, subsequently stated that they had read and approved this document, requested implementation, and confirmed the [concrete technical contract](company-onboarding-implementation-contract.md) with “chốt”. Those later confirmations authorize the documented implementation choices; SMS vendor selection and the explicitly unresolved production-readiness policies remain outstanding. The Draft metadata is retained as the original review register; it does not override the recorded human authorization. Agents do not independently declare human approval.
+
+On 2026-10-21, the user explicitly requested the same narrow localhost HTTP exception for onboarding confirmation URLs as for Company Invitations. Both new-registration and existing-member confirmation links may use HTTP only on literal `localhost`, with an optional port from 1–65535 and an explicitly allowlisted matching scheme, host and effective port (HTTP defaults to 80; HTTPS defaults to 443). Other hosts require HTTPS. IP addresses, subdomains and trailing-dot names do not qualify for the HTTP exception. URL user information, queries and pre-existing fragments remain prohibited; secrets are added only in fragments. Allowlist entries are origins, with at most an optional `/` path. Resend API transport remains HTTPS. The user requested no new test files for this change. See [configuration examples](../../backend/employer-onboarding.md#configuration-and-delivery).
 
 ## 1. Introduction
 

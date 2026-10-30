@@ -1,5 +1,9 @@
 # GW-SR-REC-03 — Implementation Contract Proposal
 
+> Unified registration coordination (2026-10-28): the user explicitly approved
+> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
+> The separate employer/personal-phone/provisional-save flow and pre-upload/JSON dossier contracts below are historical within the replacement scope. Shared registration, requested account-email proof for new Users, atomic complete multipart submission/correction and documented 410 retirement now follow the approved replacement. Preserve existing Company review, private retained evidence, membership and delivery mechanisms; no automatic promotion or data deletion is authorized. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+
 | Field | Value |
 |---|---|
 | Status | Human confirmation recorded; implementation in progress; SMS/production readiness outstanding |

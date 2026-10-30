@@ -8,7 +8,6 @@ import java.util.*;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 public class VerificationDocumentController {
@@ -16,10 +15,7 @@ public class VerificationDocumentController {
     public VerificationDocumentController(LegalDossierService dossiers) { this.dossiers = dossiers; }
 
     @PostMapping("/api/me/employer-onboarding/documents")
-    public ApiResponse<LegalDossierService.DocumentInfo> upload(@AuthenticationPrincipal UserPrincipal actor,
-            @RequestParam("file") MultipartFile file) {
-        return ApiResponse.ok("Document retained", dossiers.upload(actor.getId(), file));
-    }
+    public void retiredUpload() { throw EmployerOnboardingController.retired(); }
 
     @GetMapping("/api/company-verification-documents/{id}")
     public ResponseEntity<byte[]> document(@AuthenticationPrincipal UserPrincipal actor, @PathVariable UUID id) {

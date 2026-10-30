@@ -133,8 +133,7 @@ public class ResendCompanyInvitationMailer implements CompanyInvitationMailer {
 
   private URI allowedInvitationBase() {
     URI base = URI.create(baseUrl);
-    if (!"https".equals(base.getScheme())
-        || base.getHost() == null
+    if (!permittedFrontendScheme(base)
         || base.getRawUserInfo() != null
         || base.getRawQuery() != null
         || base.getRawFragment() != null) throw new IllegalArgumentException();
@@ -147,8 +146,7 @@ public class ResendCompanyInvitationMailer implements CompanyInvitationMailer {
                 candidate -> {
                   try {
                     URI configured = URI.create(candidate);
-                    return "https".equals(configured.getScheme())
-                        && configured.getHost() != null
+                    return permittedFrontendScheme(configured)
                         && configured.getRawUserInfo() == null
                         && configured.getRawQuery() == null
                         && configured.getRawFragment() == null
@@ -162,8 +160,17 @@ public class ResendCompanyInvitationMailer implements CompanyInvitationMailer {
     return base;
   }
 
+  private static boolean permittedFrontendScheme(URI uri) {
+    if (uri.getHost() == null) return false;
+    if ("https".equals(uri.getScheme())) return true;
+    // Explicit origin allowlisting still applies; HTTP is only for literal localhost development.
+    return "http".equals(uri.getScheme())
+        && "localhost".equalsIgnoreCase(uri.getHost())
+        && (uri.getPort() == -1 || uri.getPort() >= 1 && uri.getPort() <= 65535);
+  }
+
   private static String origin(URI uri) {
-    int port = uri.getPort() == -1 ? 443 : uri.getPort();
+    int port = uri.getPort() == -1 ? ("http".equals(uri.getScheme()) ? 80 : 443) : uri.getPort();
     return uri.getScheme() + "://" + uri.getHost().toLowerCase(Locale.ROOT) + ":" + port;
   }
 }
