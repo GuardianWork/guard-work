@@ -88,7 +88,7 @@ class AuthServiceTest {
         );
         when(userRepository.findByUsername("an_nguyen")).thenReturn(Optional.empty());
         when(userRepository.findByEmail("an@example.com")).thenReturn(Optional.empty());
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
             User u = invocation.getArgument(0);
             u.setId(10L);
             return u;
@@ -99,6 +99,18 @@ class AuthServiceTest {
         assertThat(userDto.id()).isEqualTo(10L);
         assertThat(userDto.username()).isEqualTo("an_nguyen");
         assertThat(userDto.role()).isEqualTo("USER");
+    }
+
+    @Test
+    void register_OverlongNamesAndEmailAreInvalidBeforePersistence() {
+        for (RegisterUserRequest request : new RegisterUserRequest[]{
+                new RegisterUserRequest("N".repeat(101), "An", "an_nguyen", "an@example.com", "Password123"),
+                new RegisterUserRequest("Minh", "N".repeat(101), "an_nguyen", "an@example.com", "Password123"),
+                new RegisterUserRequest("Minh", "An", "an_nguyen", "a".repeat(250) + "@example.com", "Password123")}) {
+            assertThatThrownBy(() -> authService.register(request))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .extracting(e -> ((ResponseStatusException) e).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        }
     }
 
     @Test

@@ -240,6 +240,28 @@ src/main/java/com/guardwork/backend/
   dependencies or new shared architecture.
 - DB access via Spring Data JPA.
 
+## Shared registration and email verification
+
+Shared registration creates an active unverified User and sends no mail. Users may
+sign in and use Candidate capabilities immediately; they explicitly request and
+confirm email proof before applicable new-User recruiting operations. See
+[shared registration](../docs/backend/unified-registration.md) for endpoints,
+capability fields, mail configuration, the consolidated account-email proof migration and coordinated rollout.
+Account email verification uses a six-digit code entered as the string `emailSecret`, valid
+for 10 minutes with at most five failed attempts and a 60-second resend cooldown.
+Migration `V2026.10.30.85__account_email_verification_codes.sql` adds the persisted
+attempt counter and invalidates outstanding account-verification links; request a new code
+after deployment. Deploy the client code-entry form with this backend. Invitation links
+and their delivery configuration are unchanged. Account code mail needs only
+`ONBOARDING_EMAIL_FROM` and `ONBOARDING_EMAIL_CREDENTIAL`, without a frontend URL.
+All Users follow the same recruiting email gate; stored verification flags are preserved. No phone proof
+or account type is added to shared registration. Continue through
+[complete Company setup](../docs/backend/company-setup.md) or
+[verified-email invitation acceptance](../docs/backend/verified-email-invitations.md).
+Separate employer signup, phone OTP, provisional saves and standalone evidence uploads
+are [retired with HTTP 410](../docs/backend/employer-onboarding.md); retained records remain intact.
+No frontend source is bundled in this checkout.
+
 ## API Docs
 
 Swagger UI is exposed via [springdoc-openapi](https://springdoc.org/):
@@ -255,15 +277,18 @@ Company verification responses for Staff and Owner views expose `processingStatu
 `PENDING` with a null outcome; `VERIFIED` and `REJECTED` map to processing `CHECKED` with the
 corresponding outcome. Eligibility continues to use `verificationStatus`; `CHECKED` alone does
 not mean approval. These are derived fields and require no schema migration.
-See [employer onboarding](../docs/backend/employer-onboarding.md) for the new registration/verification
-APIs, frontend, private legal dossiers, delivery configuration, migration, and remaining SMS and
-production-readiness prerequisites. The technical choices were confirmed by the user and recorded
-in [ADR 0005](../docs/architecture/decisions/0005-staged-employer-onboarding.md).
+See [complete Company setup](../docs/backend/company-setup.md) for atomic multipart dossiers,
+private legal evidence, Staff review and rejected correction, and [retirement and decision delivery](../docs/backend/employer-onboarding.md)
+for mail configuration, retained-data compatibility and recovery. The approved replacement is
+recorded in [ADR 0008](../docs/architecture/decisions/0008-unified-registration-and-company-setup.md).
 
 Company, Staff and known application-error advice use order `0`, ahead of the global
 `InternalServerExceptionHandler` at `LOWEST_PRECEDENCE`. Spring selects the first applicable
 advice with a matching handler; this ordering preserves existing status codes and response
 envelopes before the catch-all maps unexpected exceptions to a generic HTTP 500.
+
+See [private Job Posting drafts](../docs/backend/job-drafts.md) for the Company job APIs,
+content bounds, eligibility, single migration, and notification compatibility.
 
 ## Database
 
@@ -280,3 +305,29 @@ docker compose -f docker-compose.test.yml up -d --wait  # start test database on
 ./mvnw test            # run tests
 ./mvnw package         # build
 ```
+
+### Job publication and expiry
+
+Platform Staff members decide pending submitted revisions with
+`PUT /api/staff/job-revisions/{revisionId}/decision`, providing the current job and
+revision versions, `outcome` (`APPROVED` or `REJECTED`), and a trimmed 10–1,000
+character rejection reason when rejecting. Company membership does not restrict
+platform review, including review of the Staff member's own Company. Decisions
+preserve submitted content and record both job and platform audit facts. Approval
+rechecks Company verification, suspension, current responsibility and the proposed
+deadline before publishing. Review recipients use the existing durable outbox and
+inbox retry mechanism.
+
+`GET /api/jobs/{jobId}` is public, including for signed-in users still completing
+onboarding. It returns only approved content and Company ID/name. Drafts and
+suspended Companies return 404. Availability becomes false at the approved deadline,
+including when scheduled reconciliation has not yet run; expired approved details
+remain readable. This endpoint does not accept Applications.
+
+Expiry reconciles under Company then job locks and records one `JOB_EXPIRED` fact.
+The scheduled worker uses `jobs.expiry.poll-ms=60000` and
+`jobs.expiry.batch-size=100` defaults (valid batch range 1–1000), committing each
+job independently. Set `jobs.expiry.worker-enabled=false` to disable scheduling;
+`JobExpiryService.expireDue()` is the bounded operational recovery entry point.
+Tests disable scheduling and control the Clock explicitly. No schema migration or
+new dependency accompanies moderation, public details, or expiry.

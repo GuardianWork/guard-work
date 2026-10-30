@@ -1,45 +1,58 @@
 package com.guardwork.backend.onboarding.service;
 
-import com.guardwork.backend.company.model.VerificationStatus;
-import com.guardwork.backend.company.repository.CompanyRepository;
-import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
-import com.guardwork.backend.onboarding.repository.*;
+import com.guardwork.backend.auth.service.AccountEmailVerificationService;
 import com.guardwork.backend.user.repository.UserRepository;
+import com.guardwork.backend.user.model.User;
+import java.util.Set;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
+/** Scoped request prerequisite check; business services recheck authority under their actor lock. */
 @Service
 public class OnboardingAccessPolicy {
-    private final EmployerProfileRepository profiles;
-    private final VerificationAttemptRepository attempts;
-    private final CompanyMembershipRepository members;
-    private final CompanyRepository companies;
     private final UserRepository users;
 
-    public OnboardingAccessPolicy(EmployerProfileRepository profiles, VerificationAttemptRepository attempts,
-            CompanyMembershipRepository members, CompanyRepository companies, UserRepository users) {
-        this.profiles = profiles; this.attempts = attempts; this.members = members; this.companies = companies; this.users = users;
+    public OnboardingAccessPolicy(UserRepository users) {
+        this.users = users;
+    }
+
+    @Transactional(readOnly = true)
+    public void requireAccess(Long actor, String path, String method) {
+        if ("GET".equals(method) && path.matches("/api/jobs/[1-9][0-9]*")) return;
+        if ("POST".equals(method) && Set.of("/api/auth/register", "/api/auth/login", "/api/auth/refresh",
+                "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password").contains(path)) return;
+        var user = currentActiveUser(actor);
+        boolean companyRoute = path.equals("/api/companies") || path.startsWith("/api/companies/");
+        boolean statusRead = "GET".equals(method) && Set.of("/api/companies/me", "/api/companies/me/verification",
+                "/api/companies/me/verification/history").contains(path);
+        if (companyRoute && !statusRead) AccountEmailVerificationService.requireRecruitingEmailEligible(user);
+        // Candidate, verification, own inbox and authorized evidence/status reads retain feature checks.
+        // Recipient invitation acceptance checks proof after its historical-receipt branch, in service.
+    }
+
+    @Transactional(readOnly = true)
+    public void requireActiveAccount(Long actor) {
+        currentActiveUser(actor);
+    }
+
+    private User currentActiveUser(Long actor) {
+        var user = users.findById(actor).orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                "40100 UNAUTHORIZED: Authentication required"));
+        if (!"ACTIVE".equals(user.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
+        }
+        return user;
     }
 
     @Transactional(readOnly = true)
     public boolean permits(Long actor, String path, String method) {
-        var profile = profiles.findById(actor);
-        var companyId = members.findActiveCompanyId(actor);
-        boolean enhancedMembership = companyId.isPresent() && attempts.existsByCompanyId(companyId.get());
-        if (profile.isEmpty() && !enhancedMembership) return true; // Legacy rollout is explicitly isolated.
-        if (users.findById(actor).filter(u -> "ACTIVE".equals(u.getStatus())).isEmpty()) return false;
-        if (path.startsWith("/api/auth/") || path.startsWith("/api/me/employer-onboarding")
-                || path.equals("/api/companies/me") || path.equals("/api/companies/me/verification")
-                || path.equals("/api/companies/me/verification/history") || path.startsWith("/api/company-verification-documents/")
-                || path.equals("/api/companies/verification-request") || path.matches("/api/companies/[0-9]+/resubmit")
-                || path.startsWith("/api/notifications")) return true;
-        boolean candidateRoute = path.startsWith("/api/v1/candidate");
-        if (candidateRoute) return profile.isEmpty() || !profile.get().isApplicant();
-        // Invitation consumption does not grant employer-operation eligibility by itself.
-        if (path.startsWith("/api/company-invitations/")) return true;
-        if (profile.isEmpty() || profile.get().getEmailVerifiedAt() == null || profile.get().getPhoneVerifiedAt() == null)
+        try {
+            requireAccess(actor, path, method);
+            return true;
+        } catch (ResponseStatusException denied) {
             return false;
-        return companyId.flatMap(companies::findById).filter(c -> !c.isBanned()
-                && c.getVerificationStatus() == VerificationStatus.VERIFIED).isPresent();
+        }
     }
 }

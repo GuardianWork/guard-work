@@ -30,7 +30,7 @@ class MigrationV4Test {
         List<Map<String, Object>> columns = jdbcTemplate.queryForList(
                 "SELECT column_name, data_type, is_nullable " +
                         "FROM information_schema.columns " +
-                        "WHERE table_name = 'companies' AND column_name = 'email'",
+                        "WHERE table_schema = current_schema() AND table_name = 'companies' AND column_name = 'email'",
                 new MapSqlParameterSource()
         );
         assertThat(columns).hasSize(1);
@@ -39,7 +39,7 @@ class MigrationV4Test {
 
         // Verify index 'idx_companies_email' exists
         List<Map<String, Object>> indexes = jdbcTemplate.queryForList(
-                "SELECT indexname FROM pg_indexes WHERE tablename = 'companies' AND indexname = 'idx_companies_email'",
+                "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'companies' AND indexname = 'idx_companies_email'",
                 new MapSqlParameterSource()
         );
         assertThat(indexes).hasSize(1);

@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 
-/** Scheduling is limited to the two approved Company Membership notification types. */
+/** Recovers approved Company Membership and Job Posting notification intents. */
 @Configuration
 @EnableScheduling
 @ConditionalOnProperty(

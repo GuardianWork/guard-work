@@ -1,0 +1,47 @@
+# Complete Company setup after shared registration and explicitly requested email proof.
+# Set accessToken from /api/auth/login and place a real PDF/JPEG/PNG at ./company-license.pdf.
+@baseUrl = http://localhost:8080
+@accessToken = replace-with-access-token
+@companyId = 1
+
+### Submit the complete dossier once; no draft-save or pre-upload request exists.
+POST {{baseUrl}}/api/companies/verification-request
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=guardwork-dossier
+
+--guardwork-dossier
+Content-Disposition: form-data; name="dossier"
+Content-Type: application/json
+
+{"name":"Công ty Ánh Dương","taxCode":"0312345678","legal":{"workAddress":"Địa chỉ đăng ký kinh doanh","submitterPosition":"Giám đốc","representation":"LEGAL_REPRESENTATIVE","declarationAccepted":true}}
+--guardwork-dossier
+Content-Disposition: form-data; name="file"; filename="company-license.pdf"
+Content-Type: application/pdf
+
+< ./company-license.pdf
+--guardwork-dossier--
+
+### Read own Company review status and suspension state.
+GET {{baseUrl}}/api/companies/me/verification
+Authorization: Bearer {{accessToken}}
+
+### Read retained review history. Document IDs download through authenticated private GET routes.
+GET {{baseUrl}}/api/companies/me/verification/history
+Authorization: Bearer {{accessToken}}
+
+### Correct only a REJECTED Company, using its current version and a complete new document.
+PUT {{baseUrl}}/api/companies/{{companyId}}/resubmit
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=guardwork-correction
+
+--guardwork-correction
+Content-Disposition: form-data; name="dossier"
+Content-Type: application/json
+
+{"name":"Công ty Ánh Dương","expectedVersion":1,"legal":{"workAddress":"Địa chỉ đã sửa","submitterPosition":"Giám đốc","representation":"AUTHORIZED_REPRESENTATIVE","declarationAccepted":true}}
+--guardwork-correction
+Content-Disposition: form-data; name="file"; filename="company-license.pdf"
+Content-Type: application/pdf
+
+< ./company-license.pdf
+--guardwork-correction--

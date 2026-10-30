@@ -43,3 +43,24 @@ Content-Type: application/json
   "usernameOrEmail": "{{adminUsernameOrEmail}}",
   "password": "{{adminPassword}}"
 }
+
+### Current verification and capability state
+# Set locally from the login response; keep real tokens out of tracked files.
+@accessToken=replace-with-local-access-token
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{accessToken}}
+
+### Explicitly request account email proof (never sent automatically at registration)
+POST {{baseUrl}}/api/me/email-verification/request
+Authorization: Bearer {{accessToken}}
+
+### Enter the six-digit code from your own mailbox while signed in
+# Copy only into your local request; never commit a real verification code.
+@emailSecret=replace-with-six-digit-email-code
+POST {{baseUrl}}/api/me/email-verification/confirm
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "emailSecret": "{{emailSecret}}"
+}

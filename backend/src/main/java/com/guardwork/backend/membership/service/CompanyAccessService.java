@@ -45,7 +45,31 @@ public class CompanyAccessService {
   }
 
   public Access findCurrentCompanyAccess(Long actorId) {
-    requireActiveUser(actorId);
+    return findCurrentCompanyAccess(actorId, false);
+  }
+
+  /** Only Company status and retained-evidence reads may use this suspension exception. */
+  public Access findCurrentCompanyAccessForStatus(Long actorId) {
+    return findCurrentCompanyAccess(actorId, true);
+  }
+
+  public Access requireOwnerForStatus(Long actorId) {
+    return requireOwner(findCurrentCompanyAccessForStatus(actorId), actorId);
+  }
+
+  public Company requireOwnerOfForStatus(Long actorId, Long companyId) {
+    var access = findCurrentCompanyAccessForStatus(actorId);
+    if (access == null || !access.company().getId().equals(companyId)
+        || access.membership().getRole() != CompanyRole.OWNER
+        || !actorId.equals(access.company().getOwnerUserId())) throw notFound();
+    return access.company();
+  }
+
+  private Access findCurrentCompanyAccess(Long actorId, boolean statusRead) {
+    User actor = requireActiveUser(actorId);
+    if (!statusRead) {
+      com.guardwork.backend.auth.service.AccountEmailVerificationService.requireRecruitingEmailEligible(actor);
+    }
     // Do not cache the membership entity before waiting on Company: its role may change meanwhile.
     var candidate = memberships.findActiveCompanyId(actorId);
     if (candidate.isEmpty()) return null;
@@ -54,7 +78,7 @@ public class CompanyAccessService {
     CompanyMembership member =
         memberships.findActiveForUpdate(actorId).orElseThrow(CompanyAccessService::notFound);
     if (!member.getCompanyId().equals(company.getId())
-        || company.isBanned()
+        || (company.isBanned() && (!statusRead || member.getRole() != CompanyRole.OWNER))
         || company.getOwnerUserId() == null) {
       throw notFound();
     }
@@ -62,7 +86,10 @@ public class CompanyAccessService {
   }
 
   public Access requireOwner(Long actorId) {
-    Access access = findCurrentCompanyAccess(actorId);
+    return requireOwner(findCurrentCompanyAccess(actorId), actorId);
+  }
+
+  private Access requireOwner(Access access, Long actorId) {
     if (access == null) {
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN, "40302 NOT_COMPANY_MEMBER: Active Company membership required");

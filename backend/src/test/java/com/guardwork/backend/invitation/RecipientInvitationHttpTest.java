@@ -1,5 +1,7 @@
 package com.guardwork.backend.invitation;
 
+import static com.guardwork.backend.CompanyDossierFixtures.completeDossier;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -163,6 +165,9 @@ class RecipientInvitationHttpTest {
         "UPDATE companies SET verification_status='VERIFIED',is_banned=true WHERE id=?", company);
     secretPost("accept", recipient, secret, true).andExpect(status().isNotFound());
     database.update("UPDATE companies SET is_banned=false WHERE id=?", company);
+    secretPost("accept", recipient, secret, true).andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.message").value("40335 EMAIL_VERIFICATION_REQUIRED: Verify your account email before recruiting"));
+    database.update("UPDATE users SET email_verified=true WHERE id=?", userId(recipient));
     secretPost("accept", recipient, secret, true).andExpect(status().isCreated());
   }
 
@@ -652,10 +657,10 @@ class RecipientInvitationHttpTest {
   long createdCompany(String token) throws Exception {
     String body =
         http.perform(
-                post("/api/companies/verification-request")
+                completeDossier("POST", "/api/companies/verification-request", company(UUID.randomUUID().toString()))
                     .header("Authorization", token)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content(company(UUID.randomUUID().toString())))
+
+                    )
             .andExpect(status().isCreated())
             .andReturn()
             .getResponse()
@@ -687,6 +692,7 @@ class RecipientInvitationHttpTest {
                             "password",
                             "Password123"))))
         .andExpect(status().isCreated());
+    database.update("UPDATE users SET email_verified=TRUE WHERE email=?", email);
     String response =
         http.perform(
                 post("/api/auth/login")

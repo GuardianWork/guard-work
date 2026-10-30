@@ -7,17 +7,21 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.multipart.MultipartFile;
+import java.util.List;
+import org.springframework.http.MediaType;
+import org.springframework.web.server.ResponseStatusException;
+import com.guardwork.backend.company.dto.CompanyDossierRequest;
+import com.guardwork.backend.company.dto.CompanyDossierCorrectionRequest;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.guardwork.backend.staff.dto.CompanyVerificationResponse;
 import com.guardwork.backend.common.ApiResponse;
-import com.guardwork.backend.company.dto.CompanyRegistrationRequest;
 import com.guardwork.backend.company.dto.CurrentCompanyResponse;
 import com.guardwork.backend.company.dto.OwnerVerificationResponse;
-import com.guardwork.backend.company.dto.CompanyResubmissionRequest;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.service.CompanyService;
 import com.guardwork.backend.onboarding.service.LegalDossierService;
@@ -34,28 +38,39 @@ public class CompanyController {
         this.dossiers = dossiers;
     }
 
-    @PostMapping("/verification-request")
+    @PostMapping(value = "/verification-request", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<CompanyVerificationResponse> requestVerification(@AuthenticationPrincipal UserPrincipal principal, @RequestBody CompanyRegistrationRequest request) {
-        Company company = dossiers.register(principal.getId(), request);
+    public ApiResponse<CompanyVerificationResponse> requestVerification(@AuthenticationPrincipal UserPrincipal principal, @RequestPart("dossier") CompanyDossierRequest request, @RequestPart("file") List<MultipartFile> file) {
+        Company company = dossiers.registerComplete(principal.getId(), request, file);
         return ApiResponse.ok("Company submitted for verification", CompanyVerificationResponse.from(company));
     }
 
-    @PutMapping("/{id}/resubmit")
+    @PutMapping(value = "/{id}/resubmit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<OwnerVerificationResponse> resubmitVerification(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable("id") Long id,
-            @RequestBody CompanyResubmissionRequest request
+            @RequestPart("dossier") CompanyDossierCorrectionRequest request, @RequestPart("file") List<MultipartFile> file
     ) {
-        Company company = dossiers.correct(principal.getId(), id, request);
+        Company company = dossiers.correctComplete(principal.getId(), id, request, file);
         return ApiResponse.ok("Company resubmitted for verification successfully", OwnerVerificationResponse.from(company));
     }
 
-    @PutMapping("/me/verification")
+    @PutMapping(value = "/me/verification", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<OwnerVerificationResponse> resubmitCurrentVerification(
-            @AuthenticationPrincipal UserPrincipal principal, @RequestBody CompanyResubmissionRequest request) {
+            @AuthenticationPrincipal UserPrincipal principal, @RequestPart("dossier") CompanyDossierCorrectionRequest request, @RequestPart("file") List<MultipartFile> file) {
         return ApiResponse.ok("Company resubmitted for verification successfully",
-                OwnerVerificationResponse.from(dossiers.correct(principal.getId(), null, request)));
+                OwnerVerificationResponse.from(dossiers.correctComplete(principal.getId(), null, request, file)));
+    }
+
+    @PostMapping(value = "/verification-request", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public void retiredRegistration() { throw retired(); }
+
+    @PutMapping(value = {"/me/verification", "/{id}/resubmit"}, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public void retiredCorrection() { throw retired(); }
+
+    private static ResponseStatusException retired() {
+        return new ResponseStatusException(HttpStatus.GONE,
+                "41030 ONBOARDING_RETIRED: Use shared registration and Company setup");
     }
 
     @GetMapping("/me")

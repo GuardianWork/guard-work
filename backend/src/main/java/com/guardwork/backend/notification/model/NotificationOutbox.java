@@ -27,6 +27,12 @@ public class NotificationOutbox {
   @Column(name = "company_name", nullable = false)
   private String companyName;
 
+  @Column(name = "job_id")
+  private Long jobId;
+
+  @Column(name = "revision_id")
+  private Long revisionId;
+
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 
