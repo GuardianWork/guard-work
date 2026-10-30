@@ -10,12 +10,24 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class JobPublicationController {
   private final JobPublicationService service;
-  public JobPublicationController(JobPublicationService service){this.service=service;}
-  @PutMapping("/api/staff/job-revisions/{id}/decision")
-  public ApiResponse<JobPublicationService.Receipt> decide(@AuthenticationPrincipal UserPrincipal actor,@PathVariable Long id,
-      @RequestBody JobPublicationService.Decision request,HttpServletRequest http) {
-    return ApiResponse.ok(service.decide(actor.getId(),id,request,http.getRemoteAddr(),http.getHeader("User-Agent")));
+
+  public JobPublicationController(JobPublicationService service) {
+    this.service = service;
   }
+
+  @PutMapping("/api/staff/job-revisions/{id}/decision")
+  public ApiResponse<JobPublicationService.Receipt> decide(
+      @AuthenticationPrincipal UserPrincipal actor,
+      @PathVariable Long id,
+      @RequestBody JobPublicationService.Decision request,
+      HttpServletRequest http) {
+    return ApiResponse.ok(
+        service.decide(
+            actor.getId(), id, request, http.getRemoteAddr(), http.getHeader("User-Agent")));
+  }
+
   @GetMapping("/api/jobs/{id}")
-  public ApiResponse<JobPublicationService.PublicDetail> publicDetail(@PathVariable Long id){return ApiResponse.ok(service.publicDetail(id));}
+  public ApiResponse<JobPublicationService.PublicDetail> publicDetail(@PathVariable Long id) {
+    return ApiResponse.ok(service.publicDetail(id));
+  }
 }
