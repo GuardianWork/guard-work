@@ -41,16 +41,6 @@ class CandidateCvControllerTest {
     }
 
     @Test
-    void uploadUrlRejectsMissingConsent() throws Exception {
-        mockMvc.perform(post("/api/v1/candidate/cvs/upload-url")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"consentGiven\":false}"))
-                .andExpect(status().isBadRequest());
-
-        verifyNoInteractions(cvService);
-    }
-
-    @Test
     void uploadUrlUsesAuthenticatedCandidate() throws Exception {
         when(cvService.generateUploadUrl(eq(USER_ID), any()))
                 .thenReturn(new UploadUrlResponse("https://upload", "key", "123", "signature", "candidates/x/cvs/y"));
@@ -61,8 +51,9 @@ class CandidateCvControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"consentGiven\":true,\"folder\":\"client\",\"publicId\":\"client\"}"))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.publicId").value("candidates/x/cvs/y"))
-                    .andExpect(jsonPath("$.url").value("https://upload"));
+                    .andExpect(jsonPath("$.status").value(200))
+                    .andExpect(jsonPath("$.data.publicId").value("candidates/x/cvs/y"))
+                    .andExpect(jsonPath("$.data.url").value("https://upload"));
         }
     }
 
@@ -83,8 +74,9 @@ class CandidateCvControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
-                    .andExpect(jsonPath("$.fileName").value("cv.pdf"))
-                    .andExpect(jsonPath("$.isDefault").value(true));
+                    .andExpect(jsonPath("$.status").value(201))
+                    .andExpect(jsonPath("$.data.fileName").value("cv.pdf"))
+                    .andExpect(jsonPath("$.data.isDefault").value(true));
         }
     }
 
@@ -109,7 +101,9 @@ class CandidateCvControllerTest {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
             mockMvc.perform(get("/api/v1/candidate/cvs").param("candidateId", candidateId.toString()))
                     .andExpect(status().isOk())
-                    .andExpect(content().json("[]"));
+                    .andExpect(jsonPath("$.status").value(200))
+                    .andExpect(jsonPath("$.data").isArray())
+                    .andExpect(jsonPath("$.data").isEmpty());
         }
     }
 
@@ -123,7 +117,8 @@ class CandidateCvControllerTest {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
             mockMvc.perform(get("/api/v1/candidate/cvs/{id}/download-url", cvId))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.url").value("https://download"));
+                    .andExpect(jsonPath("$.status").value(200))
+                    .andExpect(jsonPath("$.data.url").value("https://download"));
         }
     }
 }

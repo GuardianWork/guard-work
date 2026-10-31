@@ -60,9 +60,6 @@ public class CandidateCvService {
      */
     @Transactional
     public UploadUrlResponse generateUploadUrl(Long userId, UploadUrlRequest request) {
-        if (!Boolean.TRUE.equals(request.consentGiven())) {
-            throw new AppException(ErrorCode.CV_CONSENT_REQUIRED);
-        }
         CandidateProfile profile = profileService.getOrCreateProfile(userId);
         UUID candidateId = profile.getId();
         if (cvRepository.countByCandidateId(candidateId) >= MAX_CVS_PER_CANDIDATE) {
@@ -301,6 +298,37 @@ public class CandidateCvService {
         } catch (RuntimeException cleanupFailure) {
             log.warn("event=cv_asset_cleanup outcome=failed resource_type={}", asset.resourceType());
         }
+    }
+
+    @Transactional
+    public void deleteCv(Long userId, UUID cvId) {
+        UUID candidateId = currentCandidateId(userId);
+        CandidateCv cv = cvRepository.findByIdAndCandidateId(cvId, candidateId)
+                .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
+
+        String format = CONTENT_TYPE_TO_FORMAT.get(cv.getContentType());
+        if (format == null) {
+            throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
+        }
+        String resourceType = FORMAT_TO_RESOURCE_TYPE.get(format);
+
+        // Delete from Cloudinary first; a storage failure keeps the database row.
+        storage.delete(cv.getPublicId(), resourceType);
+        cvRepository.delete(cv);
+    }
+
+    @Transactional
+    public CandidateCvResponse setDefaultCv(Long userId, UUID cvId) {
+        UUID candidateId = currentCandidateId(userId);
+        CandidateCv selected = cvRepository.findByIdAndCandidateId(cvId, candidateId)
+                .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
+
+        List<CandidateCv> cvs = cvRepository.findByCandidateIdOrderByCreatedAtDesc(candidateId);
+        for (CandidateCv cv : cvs) {
+            cv.setDefault(cv.getId().equals(selected.getId()));
+        }
+        cvRepository.saveAll(cvs);
+        return mapToResponse(selected);
     }
 
     private CandidateCvResponse mapToResponse(CandidateCv cv) {

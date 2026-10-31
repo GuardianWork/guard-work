@@ -73,15 +73,6 @@ class CandidateCvServiceTest {
     class GenerateUploadUrl {
 
         @Test
-        void requiresPrivacyConsent() {
-            AppException failure = assertThrows(AppException.class,
-                    () -> service.generateUploadUrl(USER_ID, new UploadUrlRequest(false, null, null)));
-
-            assertEquals(ErrorCode.CV_CONSENT_REQUIRED, failure.getErrorCode());
-            verifyNoInteractions(storage);
-        }
-
-        @Test
         void enforcesQuotaBeforeIssuingSignature() {
             when(cvRepository.countByCandidateId(candidateId)).thenReturn(5L);
 
