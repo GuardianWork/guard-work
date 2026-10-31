@@ -55,7 +55,7 @@ class EmployerEmailEligibilityHttpTest {
                 .content(json.writeValueAsString(Map.of("usernameOrEmail", username, "password", password))))
                 .andExpect(status().isOk()).andReturn();
         String token = "Bearer " + json.readTree(login.getResponse().getContentAsString()).path("data").path("accessToken").asText();
-        http.perform(get("/api/v1/candidates/profile").header("Authorization", token)).andExpect(status().isOk());
+        http.perform(get("/api/candidates/profile").header("Authorization", token)).andExpect(status().isOk());
         http.perform(get("/api/me/employer-onboarding").header("Authorization", token)).andExpect(status().isGone());
         http.perform(post("/api/me/email-verification/request").header("Authorization", token))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.deliveryAccepted").value(true));

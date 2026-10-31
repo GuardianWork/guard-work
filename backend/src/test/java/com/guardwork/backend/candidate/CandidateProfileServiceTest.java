@@ -104,13 +104,13 @@ class CandidateProfileServiceTest {
 
         @Test
         void updatesProfileAndDerivesEmail() {
-            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
             when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
             UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
                     "Jane Doe",
-                    "0123",
+                    " 0901234567 ",
                     "https://example.com/avatar.png",
                     List.of("Java", "Spring"),
                     List.of(new ExperienceEntry("Acme", "Dev", "2020-01", "2021-01", "Did stuff")),
@@ -121,7 +121,8 @@ class CandidateProfileServiceTest {
             CandidateProfile updated = service.updateProfile(user.getId(), request);
 
             assertEquals("Jane Doe", updated.getFullName());
-            assertEquals("0123", updated.getPhoneNumber());
+            assertEquals("+84901234567", updated.getPhoneNumber());
+            assertEquals("+84901234567", user.getPhoneNumber());
             assertEquals("https://example.com/avatar.png", updated.getAvatarUrl());
             assertEquals(user.getEmail(), updated.getEmail());
             assertEquals(1, updated.getExperience().size());
@@ -133,7 +134,7 @@ class CandidateProfileServiceTest {
 
         @Test
         void trimsAndDeduplicatesSkills() {
-            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
             when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -153,7 +154,7 @@ class CandidateProfileServiceTest {
 
         @Test
         void createsSkeletonWhenProfileMissing() {
-            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
             when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -187,7 +188,7 @@ class CandidateProfileServiceTest {
                     null
             );
 
-            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
 
             AppException ex = assertThrows(AppException.class,
@@ -209,7 +210,7 @@ class CandidateProfileServiceTest {
                     null
             );
 
-            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
 
             AppException ex = assertThrows(AppException.class,

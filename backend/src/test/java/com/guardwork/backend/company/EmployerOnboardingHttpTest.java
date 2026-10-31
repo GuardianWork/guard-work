@@ -56,7 +56,7 @@ class EmployerOnboardingHttpTest {
     @Test void sharedJourneyPreservesReviewedEvidenceActualStaffIdentityAndDecisionDeliveryRecovery() throws Exception {
         Account owner = account();
         verify(delivery, never()).memberEmail(anyString(), anyString());
-        http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.token())).andExpect(status().isOk());
+        http.perform(get("/api/candidates/profile").header("Authorization", owner.token())).andExpect(status().isOk());
         String tax = UUID.randomUUID().toString();
         http.perform(dossier("POST", "/api/companies/verification-request", initial(tax)).header("Authorization", owner.token()))
                 .andExpect(status().isForbidden());
@@ -137,7 +137,7 @@ class EmployerOnboardingHttpTest {
         verify(delivery).decisionEmail(eq(owner.email()), eq("Công ty Ánh Dương mới"), eq("VERIFIED"), isNull(), eq(approvedAttempt));
         http.perform(get("/api/companies/me/jobs/" + job + "/draft/preview").header("Authorization", owner.token()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.validationIssues[?(@.code == 'COMPANY_NOT_VERIFIED')]").isEmpty());
-        http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.token())).andExpect(status().isOk());
+        http.perform(get("/api/candidates/profile").header("Authorization", owner.token())).andExpect(status().isOk());
     }
 
     JsonNode history(String token) throws Exception {

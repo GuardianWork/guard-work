@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guardwork.backend.candidate.cvs.CandidateCvStorage;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
+import com.guardwork.backend.user.AccountPhone;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,7 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(JobApplicationHttpTest.StorageConfig.class)
 class JobApplicationHttpTest {
 
-    private static final String APPLICATIONS = "/api/v1/candidate/applications";
+    private static final String APPLICATIONS = "/api/candidate/applications";
     private static final String FORM = APPLICATIONS + "/form";
     private static final String PDF = "application/pdf";
 
@@ -63,6 +64,8 @@ class JobApplicationHttpTest {
         String candidate = account();
         long userId = userId(candidate);
         UUID profile = profile(userId);
+        String accountPhone = AccountPhone.normalize(phone());
+        database.update("UPDATE users SET phone_number=? WHERE id=?", accountPhone, userId);
         UUID cv = cv(profile);
         long company = company();
         Job job = publishedJob(company, userId);
@@ -72,7 +75,7 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.job.title").value("Backend Engineer"))
                 .andExpect(jsonPath("$.data.profile.fullName").value("Nguyễn Văn An"))
                 .andExpect(jsonPath("$.data.profile.email").value(email(userId)))
-                .andExpect(jsonPath("$.data.profile.phoneNumber").value("0901234567"))
+                .andExpect(jsonPath("$.data.profile.phoneNumber").value(accountPhone))
                 .andExpect(jsonPath("$.data.cvs[0].id").value(cv.toString()))
                 .andExpect(jsonPath("$.data.defaultCvId").value(cv.toString()))
                 .andExpect(jsonPath("$.data.alreadyApplied").value(false));
@@ -171,7 +174,7 @@ class JobApplicationHttpTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(submitBody(999_999L, UUID.randomUUID(), "Nguyễn Văn An", null)))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.status").value(ErrorCode.ACCOUNT_SUSPENDED.getCode()));
+                .andExpect(jsonPath("$.message").value("40304 ACCOUNT_SUSPENDED: Account is suspended"));
     }
 
     @Test
@@ -231,6 +234,10 @@ class JobApplicationHttpTest {
                         .content(submitBody(999_999L, UUID.randomUUID(), "Nguyễn Văn An", null)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(ErrorCode.JOB_NOT_FOUND.getCode()));
+    }
+
+    static String phone() {
+        return "09%08d".formatted(Math.floorMod(UUID.randomUUID().getLeastSignificantBits(), 100_000_000));
     }
 
     String submitBody(long jobId, UUID cvId, String fullName, String coverLetter) throws Exception {

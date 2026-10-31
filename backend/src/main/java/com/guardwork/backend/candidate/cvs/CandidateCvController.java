@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/candidate/cvs")
+@RequestMapping("/api/candidate/cvs")
 @RequiredArgsConstructor
 public class CandidateCvController {
 

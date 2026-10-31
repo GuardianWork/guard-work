@@ -26,7 +26,7 @@ class CanonicalAccountPhoneHttpTest {
     @Autowired ObjectMapper json;
     @Autowired JdbcTemplate database;
     MockMvc http;
-    static final String PATH = "/api/v1/candidates/profile";
+    static final String PATH = "/api/candidates/profile";
     record Account(long id, String token) {}
 
     @BeforeEach

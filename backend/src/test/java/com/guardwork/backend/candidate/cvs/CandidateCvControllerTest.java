@@ -47,7 +47,7 @@ class CandidateCvControllerTest {
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
-            mockMvc.perform(post("/api/v1/candidate/cvs/upload-url")
+            mockMvc.perform(post("/api/candidate/cvs/upload-url")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"consentGiven\":true,\"folder\":\"client\",\"publicId\":\"client\"}"))
                     .andExpect(status().isOk())
@@ -70,7 +70,7 @@ class CandidateCvControllerTest {
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
-            mockMvc.perform(post("/api/v1/candidate/cvs")
+            mockMvc.perform(post("/api/candidate/cvs")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isCreated())
@@ -84,7 +84,7 @@ class CandidateCvControllerTest {
     void registerRejectsMissingPublicId() throws Exception {
         CreateCandidateCvRequest request = new CreateCandidateCvRequest(null, "cv.pdf", 100L, "application/pdf", " ");
 
-        mockMvc.perform(post("/api/v1/candidate/cvs")
+        mockMvc.perform(post("/api/candidate/cvs")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -99,7 +99,7 @@ class CandidateCvControllerTest {
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
-            mockMvc.perform(get("/api/v1/candidate/cvs").param("candidateId", candidateId.toString()))
+            mockMvc.perform(get("/api/candidate/cvs").param("candidateId", candidateId.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value(200))
                     .andExpect(jsonPath("$.data").isArray())
@@ -115,7 +115,7 @@ class CandidateCvControllerTest {
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
-            mockMvc.perform(get("/api/v1/candidate/cvs/{id}/download-url", cvId))
+            mockMvc.perform(get("/api/candidate/cvs/{id}/download-url", cvId))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.status").value(200))
                     .andExpect(jsonPath("$.data.url").value("https://download"));

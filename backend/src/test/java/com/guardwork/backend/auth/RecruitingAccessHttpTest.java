@@ -128,7 +128,7 @@ class RecruitingAccessHttpTest {
                         assertThat(error.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
                         assertThat(error.getReason()).startsWith("40982 COMPANY_VERIFICATION_REQUIRED");
                     });
-            http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.authorization()))
+            http.perform(get("/api/candidates/profile").header("Authorization", owner.authorization()))
                     .andExpect(status().isOk());
         }
     }
@@ -179,7 +179,7 @@ class RecruitingAccessHttpTest {
         long notification = json.readTree(inbox).path("data").path("content").get(0).path("id").asLong();
         http.perform(patch("/api/me/notifications/" + notification + "/read").header("Authorization", recruiter.authorization()))
                 .andExpect(status().isOk());
-        http.perform(get("/api/v1/candidates/profile").header("Authorization", recruiter.authorization()))
+        http.perform(get("/api/candidates/profile").header("Authorization", recruiter.authorization()))
                 .andExpect(status().isOk());
     }
 
@@ -197,7 +197,7 @@ class RecruitingAccessHttpTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("EMAIL_VERIFICATION_REQUIRED");
         http.perform(get("/api/me/notifications").header("Authorization", owner.authorization())).andExpect(status().isOk());
-        http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.authorization())).andExpect(status().isOk());
+        http.perform(get("/api/candidates/profile").header("Authorization", owner.authorization())).andExpect(status().isOk());
         verifyEmail(owner);
         http.perform(get("/api/companies/me/jobs/" + draft.id()).header("Authorization", owner.authorization()))
                 .andExpect(status().isOk());
@@ -240,7 +240,7 @@ class RecruitingAccessHttpTest {
     @Test void suspendedUserLosesProtectedReadsButKeepsAnonymousRecoveryAndPublicDetailRules() throws Exception {
         var user = account();
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", user.id());
-        for (String path : List.of("/api/auth/me", "/api/v1/candidates/profile", "/api/me/notifications")) {
+        for (String path : List.of("/api/auth/me", "/api/candidates/profile", "/api/me/notifications")) {
             http.perform(get(path).header("Authorization", user.authorization()))
                     .andExpect(status().isUnauthorized());
         }

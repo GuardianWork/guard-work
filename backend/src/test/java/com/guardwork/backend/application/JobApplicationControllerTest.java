@@ -75,7 +75,7 @@ class JobApplicationControllerTest {
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
-            mockMvc.perform(get("/api/v1/candidate/applications/form").param("jobId", JOB_ID.toString()))
+            mockMvc.perform(get("/api/candidate/applications/form").param("jobId", JOB_ID.toString()))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.job.title").value("Backend Engineer"))
                     .andExpect(jsonPath("$.data.defaultCvId").value(CV_ID.toString()))
@@ -92,7 +92,7 @@ class JobApplicationControllerTest {
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
-            mockMvc.perform(post("/api/v1/candidate/applications")
+            mockMvc.perform(post("/api/candidate/applications")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest())))
                     .andExpect(status().isCreated())
@@ -106,7 +106,7 @@ class JobApplicationControllerTest {
         SubmitApplicationRequest request = new SubmitApplicationRequest(
                 JOB_ID, "Nguyễn Văn An", "an@example.com", "12345", "Em quan tâm", CV_ID);
 
-        mockMvc.perform(post("/api/v1/candidate/applications")
+        mockMvc.perform(post("/api/candidate/applications")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -119,7 +119,7 @@ class JobApplicationControllerTest {
         SubmitApplicationRequest request = new SubmitApplicationRequest(
                 JOB_ID, "Nguyễn Văn An", "an@example.com", "0901234567", null, null);
 
-        mockMvc.perform(post("/api/v1/candidate/applications")
+        mockMvc.perform(post("/api/candidate/applications")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -134,7 +134,7 @@ class JobApplicationControllerTest {
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
-            mockMvc.perform(post("/api/v1/candidate/applications")
+            mockMvc.perform(post("/api/candidate/applications")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(validRequest())))
                     .andExpect(status().isConflict())

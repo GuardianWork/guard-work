@@ -78,7 +78,7 @@ class CandidateProfileControllerTest {
 
         try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
             mockedSecurity.when(SecurityUtils::getCurrentUserId).thenReturn(testPrincipal.getId());
-            mockMvc.perform(get("/api/v1/candidates/profile"))
+            mockMvc.perform(get("/api/candidates/profile"))
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.status").value("200"))
@@ -112,7 +112,7 @@ class CandidateProfileControllerTest {
 
         try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
             mockedSecurity.when(SecurityUtils::getCurrentUserId).thenReturn(testPrincipal.getId());
-            mockMvc.perform(put("/api/v1/candidates/profile")
+            mockMvc.perform(put("/api/candidates/profile")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
@@ -138,7 +138,7 @@ class CandidateProfileControllerTest {
 
         try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
             mockedSecurity.when(SecurityUtils::getCurrentUserId).thenReturn(testPrincipal.getId());
-            mockMvc.perform(put("/api/v1/candidates/profile")
+            mockMvc.perform(put("/api/candidates/profile")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest());
