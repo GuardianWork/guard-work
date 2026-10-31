@@ -48,12 +48,17 @@ public class JwtService {
     }
 
     public String generateAccessToken(Long userId, String username, String email, String role, Portal portal) {
+        return generateAccessToken(userId, username, email, role, portal, 0);
+    }
+
+    public String generateAccessToken(Long userId, String username, String email, String role, Portal portal, long sessionVersion) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
                 .claim("username", username)
                 .claim("email", email)
                 .claim("role", role)
+                .claim("sessionVersion", sessionVersion)
                 .claim("portal", portal.value())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(accessExpirationMs)))

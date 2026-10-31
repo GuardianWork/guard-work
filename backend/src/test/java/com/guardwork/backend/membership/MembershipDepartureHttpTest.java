@@ -205,9 +205,9 @@ class MembershipDepartureHttpTest {
         long ownerId = userId(owner), recipientId = userId(recipient);
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", ownerId);
         http.perform(delete("/api/companies/me/members/" + membership).header("Authorization", owner))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", recipientId);
-        leave(recipient).andExpect(status().isForbidden());
+        leave(recipient).andExpect(status().isUnauthorized());
         http.perform(delete("/api/companies/me/members/" + membership)).andExpect(status().isUnauthorized());
     }
 

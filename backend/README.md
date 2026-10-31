@@ -309,6 +309,13 @@ docker compose -f docker-compose.test.yml up -d --wait  # start test database on
 ./mvnw package         # build
 ```
 
+After switching branches, use `./mvnw clean test` or `./mvnw clean package` so
+removed test classes and migration resources cannot remain in `target/` and alter
+verification. If an isolated test database already applied migrations from another
+branch, use a separately named isolated test database via
+`BACKEND_TEST_DATABASE_URL`; do not repair migration history or reset a shared
+or development database to hide a build mismatch.
+
 ### Job publication and expiry
 
 Platform Staff members decide pending submitted revisions with
@@ -335,39 +342,38 @@ job independently. Set `jobs.expiry.worker-enabled=false` to disable scheduling;
 Tests disable scheduling and control the Clock explicitly. No schema migration or
 new dependency accompanies moderation, public details, or expiry.
 
-### GW-85 rebase compatibility and canonical phone cutover
+### Staff account management (GW-92)
 
-GW-85 retains one nullable, unique normalized `users.phone_number`; Candidate
-profile GET/PUT reads and changes that source atomically. Historical Candidate and
-employer phone/proof columns remain retained. Duplicate contacts return 409 and
-invalid Vietnamese mobile numbers return 400. Existing phone-less accounts remain valid.
+See the [frontend integration guide](../docs/backend/staff-account-management.md)
+for request/response examples, screen flow, and error/session handling.
 
-The newer approved AUTH-03 flow takes precedence over the earlier employer-only
-journey: shared registration sends no mail, Candidate access requires no email proof,
-account verification uses explicitly requested six-digit codes, and retired employer
-onboarding endpoints return 410. Retained employer profiles grant no additional
-restrictions or authority. Complete multipart Company submission and invitation
-acceptance use current account verification and existing Company permissions.
+UC-18–20 use `/api/staff/accounts/users` and `/api/staff/accounts/companies` for
+search, `/{id}` for detail, and `POST /{id}/ban` or `POST /{id}/unban` for enforcement.
+Search accepts literal `q`, zero-based `page`, and `size` 1–100 (default 20), sorted
+by descending ID. DTOs expose only the identifying fields, effective state,
+active ban, and action eligibility in the
+[account contract](../docs/software-requirements/adm/account-management-spec.md).
+Ban accepts a required `reason` and optional future `expiresAt`; null means permanent.
+Unban requires a `reason`. Staff cannot ban themselves. Company roles grant no
+Platform authority. The repository contains backend APIs only; no Staff UI is delivered here.
 
-The additional `demo_employer_unverified` fixture can sign in, use Candidate features
-and explicitly request account verification; private recruiting actions require proof.
-Its `.test` mailbox cannot receive real mail. Seed reruns preserve changed accounts.
+Apply `V2026.10.30.92__account_enforcement.sql` and
+`V2026.10.30.93__allow_managed_account_bans.sql` before starting the new application.
+Stop old application instances/token issuers during deployment. User access JWTs now
+carry `sessionVersion`; legacy tokens without it use zero until invalidated. Every
+authenticated request checks current persisted state and version. Database failure
+returns 503 without trusting cached JWT state. Ban/unban atomically invalidates
+access versions and refresh tokens, retains history, and appends an audit record.
+Company actions invalidate all active Owner/Admin/Recruiter sessions; members may
+sign in again for permitted personal access while Company restrictions apply.
 
-The committed GW-85 migrations `V2026.10.27.83` and `V2026.10.27.84` predate
-`dev` migrations `V2026.10.28.84` and `V2026.10.30.85`. Preserve their files and
-checksums. For an existing database already migrated on `dev`, stop account/contact
-writers, back up the database and run the read-only SQL reports in
-`sql/canonical-account-phone-preflight.sql` and `sql/employer-email-proof-preflight.sql`.
-Resolve invalid contacts, differing same-User contacts, cross-User phone collisions
-and normalized-email collisions through reviewed correction; never choose a silent
-winner or reset the database. With clean preflights, perform one controlled startup:
+Temporary expiry runs every 60 seconds and also reconciles at authentication and
+Company access boundaries. Configure `accounts.expiry.worker-enabled=false` to disable
+only the scheduler, or `accounts.expiry.poll-ms` to change its interval. Staff reads
+derive expiry without mutating state. Unban/expiry never restores old credentials,
+roles, Company verification, or suspended postings. Existing unmanaged legacy
+suspensions require separately approved reconciliation rather than invented ban history.
 
-```bash
-SPRING_FLYWAY_OUT_OF_ORDER=true ./mvnw spring-boot:run
-```
-
-Verify both GW-85 migrations completed successfully, then restart with the default
-`SPRING_FLYWAY_OUT_OF_ORDER=false`. Fresh databases migrate in normal order and
-need no override. This upgrade adds the canonical phone and retained historical
-email snapshots; shared account-email proof remains in `user_email_verification`.
-No retained onboarding secret can create an account or grant recruiting access.
+Company bans retain publication status and set `staff_suspended` on public postings.
+Public detail excludes these postings after unban too; publication approval/resume
+cannot clear Staff suspension. Restoration is outside UC-18–20.

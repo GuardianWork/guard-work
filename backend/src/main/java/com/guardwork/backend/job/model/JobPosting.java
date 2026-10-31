@@ -33,6 +33,9 @@ public class JobPosting {
   @Column(name = "approved_deadline")
   private Instant approvedDeadline;
 
+  @Column(name = "staff_suspended", nullable = false)
+  private boolean staffSuspended;
+
   @Version
   @Column(name = "version")
   private Long version;

@@ -5,38 +5,30 @@ import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.membership.model.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.user.model.User;
-import com.guardwork.backend.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-/**
- * Authorization remains inside the business transaction, with actor -> Company -> membership locks.
- */
+/** Authorization stays in the business transaction, with Company -> user -> membership locks. */
 @Service
 @Transactional(propagation = Propagation.MANDATORY)
 public class CompanyAccessService {
-  private final UserRepository users;
+  private final com.guardwork.backend.staff.service.AccountEnforcementService enforcement;
   private final CompanyRepository companies;
   private final CompanyMembershipRepository memberships;
 
   public CompanyAccessService(
-      UserRepository users, CompanyRepository companies, CompanyMembershipRepository memberships) {
-    this.users = users;
+      CompanyRepository companies, CompanyMembershipRepository memberships,
+      com.guardwork.backend.staff.service.AccountEnforcementService enforcement) {
+    this.enforcement = enforcement;
     this.companies = companies;
     this.memberships = memberships;
   }
 
   public User requireActiveUser(Long actorId) {
-    User actor =
-        users
-            .findByIdForUpdate(actorId)
-            .orElseThrow(
-                () ->
-                    new ResponseStatusException(
-                        HttpStatus.UNAUTHORIZED, "40100 UNAUTHORIZED: Authentication required"));
+    User actor = enforcement.lockUser(actorId);
     if (!"ACTIVE".equals(actor.getStatus())) {
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
@@ -66,17 +58,19 @@ public class CompanyAccessService {
   }
 
   private Access findCurrentCompanyAccess(Long actorId, boolean statusRead) {
-    User actor = requireActiveUser(actorId);
-    if (!statusRead) {
-      com.guardwork.backend.auth.service.AccountEmailVerificationService.requireRecruitingEmailEligible(actor);
-    }
     // Do not cache the membership entity before waiting on Company: its role may change meanwhile.
     var candidate = memberships.findActiveCompanyId(actorId);
     if (candidate.isEmpty()) return null;
     Company company =
         companies.findByIdForUpdate(candidate.get()).orElseThrow(CompanyAccessService::notFound);
+    enforcement.settleCompany(company);
+    User actor = requireActiveUser(actorId);
+    if (!statusRead) {
+      com.guardwork.backend.auth.service.AccountEmailVerificationService.requireRecruitingEmailEligible(actor);
+    }
     CompanyMembership member =
-        memberships.findActiveForUpdate(actorId).orElseThrow(CompanyAccessService::notFound);
+        memberships.findActiveForUpdate(actorId).orElse(null);
+    if (member == null) return null;
     if (!member.getCompanyId().equals(company.getId())
         || (company.isBanned() && (!statusRead || member.getRole() != CompanyRole.OWNER))
         || company.getOwnerUserId() == null) {

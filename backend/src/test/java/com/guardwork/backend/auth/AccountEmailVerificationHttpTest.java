@@ -199,7 +199,7 @@ class AccountEmailVerificationHttpTest {
         long id = login.path("user").path("id").asLong();
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", id);
         http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
         database.update("UPDATE users SET status='ACTIVE',role='STAFF' WHERE id=?", id);
         http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
                 .andExpect(status().isForbidden());

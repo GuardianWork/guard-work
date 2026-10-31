@@ -409,7 +409,7 @@ class RecipientInvitationHttpTest {
     long id = userId(user);
     database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", id);
     http.perform(get("/api/me/notifications").header("Authorization", user))
-        .andExpect(status().isForbidden());
+        .andExpect(status().isUnauthorized());
   }
 
   long lastInvitation(String owner) throws Exception {

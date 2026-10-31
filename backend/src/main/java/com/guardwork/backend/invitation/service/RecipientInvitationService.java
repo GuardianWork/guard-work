@@ -165,11 +165,11 @@ public class RecipientInvitationService {
   }
 
   private Locked lock(Long actor, CompanyInvitationRepository.Candidate candidate, String secret) {
-    var user = access.requireActiveUser(actor);
     var company =
         companies
             .findByIdForUpdate(candidate.getCompanyId())
             .orElseThrow(RecipientInvitationService::unavailable);
+    var user = access.requireActiveUser(actor);
     var invitation =
         invitations
             .findByIdForUpdate(candidate.getId())

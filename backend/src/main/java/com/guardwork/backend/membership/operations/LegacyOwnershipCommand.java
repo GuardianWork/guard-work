@@ -81,7 +81,9 @@ public class LegacyOwnershipCommand {
   @Transactional
   public AuditReport inspect(String operatorToken, String caseReference) {
     Long actor = authenticated(operatorToken);
-    requireStaff(lockUsers(actor).get(actor));
+    User user=lockUsers(actor).get(actor);
+    requireStaff(user);
+    requireCredential(operatorToken,user);
     MembershipAuditEvent audit =
         audits
             .findByReviewCaseReferenceAndEventType(caseReference, "LEGACY_OWNER_ASSIGNED")
@@ -104,13 +106,15 @@ public class LegacyOwnershipCommand {
   public String review(String reviewerToken, Review input) {
     Long reviewerId = authenticated(reviewerToken);
     validate(input);
-    Map<Long, User> locked = lockUsers(reviewerId, input.applicantUserId());
-    requireStaff(locked.get(reviewerId));
-    requireActiveApplicant(locked.get(input.applicantUserId()));
     Company company =
         companies
             .findByIdForUpdate(input.companyId())
             .orElseThrow(() -> refused("Company not found"));
+    Map<Long, User> locked = lockUsers(reviewerId, input.applicantUserId());
+    requireStaff(locked.get(reviewerId));
+    requireCredential(reviewerToken,locked.get(reviewerId));
+    requireActiveApplicant(locked.get(input.applicantUserId()));
+
     requireUnassigned(company, input.applicantUserId());
     if (!company.getVersion().equals(input.expectedVersion())
         || !company.getVerificationStatus().name().equals(input.expectedVerificationStatus())
@@ -147,18 +151,20 @@ public class LegacyOwnershipCommand {
     Long operatorId = authenticated(operatorToken);
     OwnershipReview review =
         reviews.findById(caseReference).orElseThrow(() -> refused("Recorded approval required"));
+    Company company =
+        companies
+            .findByIdForUpdate(review.getCompanyId())
+            .orElseThrow(() -> refused("Company not found"));
     Map<Long, User> locked =
         lockUsers(operatorId, review.getReviewerUserId(), review.getApplicantUserId());
     requireStaff(locked.get(operatorId));
+    requireCredential(operatorToken,locked.get(operatorId));
     requireStaff(locked.get(review.getReviewerUserId()));
     if (operatorId.equals(review.getReviewerUserId()))
       throw refused("Reviewer and operator must differ");
     requireActiveApplicant(locked.get(review.getApplicantUserId()));
     if (!"APPROVED".equals(review.getDecision())) throw refused("Recorded approval required");
-    Company company =
-        companies
-            .findByIdForUpdate(review.getCompanyId())
-            .orElseThrow(() -> refused("Company not found"));
+
     // Waiting for the Company guard can outlive otherwise valid authority evidence.
     if (!currentEvidence(review.getEvidenceValidUntil()))
       throw refused("Current evidence required; new review required");
@@ -249,10 +255,21 @@ public class LegacyOwnershipCommand {
     }
   }
 
+  private void requireCredential(String token, User user) {
+    try {
+      var claims=jwt.parseAndValidateToken(token);
+      Number version=claims.get("sessionVersion",Number.class);
+      if (!"STAFF".equals(claims.get("role",String.class))
+          || user.getSessionVersion()!=(version==null ? 0 : version.longValue()))
+        throw refused("Current authenticated operator credential required");
+    } catch (RuntimeException failure) {
+      throw refused("Current authenticated operator credential required");
+    }
+  }
+
   private Map<Long, User> lockUsers(Long... ids) {
     Map<Long, User> locked = new HashMap<>();
-    // All User guards precede the Company guard; stable ordering also avoids review/operator
-    // deadlocks.
+    // Mutating callers hold the Company guard first; user guards have a stable order.
     TreeSet<Long> ordered = new TreeSet<>();
     for (Long id : ids) ordered.add(id);
     for (Long id : ordered)

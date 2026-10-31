@@ -141,7 +141,7 @@ class CompanyCorrectionHttpTest {
         database.update("UPDATE companies SET is_banned=false WHERE id=?", id);
         long ownerId = userId(owner);
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", ownerId);
-        assertCorrectionDenied(owner, id, 403, 403);
+        assertCorrectionDenied(owner, id, 401, 401);
         database.update("UPDATE users SET status='ACTIVE' WHERE id=?", ownerId);
         http.perform(get("/api/companies/me/verification").header("Authorization", owner)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.verificationStatus").value("REJECTED"))
@@ -268,7 +268,7 @@ class CompanyCorrectionHttpTest {
             } finally {
                 connection.commit();
             }
-            assertThat(correction.get(10, TimeUnit.SECONDS)).isEqualTo(403);
+            assertThat(correction.get(10, TimeUnit.SECONDS)).isEqualTo(401);
         }
         database.update("UPDATE users SET status='ACTIVE' WHERE id=?", actorId);
         http.perform(get("/api/companies/me/verification").header("Authorization", owner)).andExpect(status().isOk())

@@ -4,16 +4,16 @@
 |---|---|
 | Document ID | GW-ADM-UC |
 | Work item | GW-81 — Scope Staff documentation |
-| Status | Draft — scoped to UC-11–21 |
+| Status | Draft — UC-11–21 plus scoped personal-history addition UC-22 |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-10-24 |
+| Last updated | 2026-10-30 |
 | Primary actor | Platform Staff (`STAFF`) |
-| Source | Existing UC-11–21, retained for the four Staff responsibilities requested in GW-81 |
+| Source | Existing UC-11–21 from GW-81; UC-22 personal-history scope confirmed in session on 2026-10-30 |
 
 ## 1. Scope and common conditions
 
-This document covers eleven use cases in four areas: account management, Company verification dossier review, receipt and inspection of user reports, and Job Posting moderation. Existing UC-11–21 and requirement identifiers are retained for traceability. Technical prose is English; Vietnamese titles are retained. Login is a prerequisite, and opening a posting is contextual navigation for moderation and history.
+This document retains eleven use cases in four areas: account management, Company verification dossier review, receipt and inspection of user reports, and Job Posting moderation. UC-22 adds a read-only personal activity-history view across account management, Job Posting management, and Company verification. Existing UC-11–21 and requirement identifiers are retained for traceability. Technical prose is English; Vietnamese titles are retained. Login is a prerequisite, and opening a posting is contextual navigation for moderation and history.
 
 All use cases describe an authenticated Platform Staff member with Platform role `STAFF`. Company membership roles, including Company `ADMIN`, do not independently grant Platform Staff authority. Every operation must enforce authorization on the server. The user approved runtime adoption in GW-81: Platform role `STAFF` and `/api/staff/**` replace the former Platform role and routes. See [migration and compatibility](spec.md#43-gw-81-runtime-adoption-and-compatibility) for the implemented boundary and client impact. Company `ADMIN` membership remains unchanged.
 
@@ -36,6 +36,7 @@ The use-case descriptions remain Draft. The user separately approved the GW-81 r
 | 19 | UC-19 | Khóa tài khoản | UC-ADM-03-B / ADM-BAN |
 | 20 | UC-20 | Mở khóa tài khoản | UC-ADM-03-U / ADM-BAN |
 | 21 | UC-21 | Công khai lại tin tuyển dụng đã ẩn | ADM-JOB / draft restoration workflow |
+| 22 | UC-22 | Xem lịch sử hoạt động của bản thân | ADM-ACT / GW-SR-ADM-03 |
 
 Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigned to different capabilities. Report details extend report-list viewing; approval and rejection extend dossier viewing; ban and unban extend account viewing. Hide, posting history, and restoration of public visibility are available from an authorized job context without adding a standalone job-view use case here.
 
@@ -248,6 +249,41 @@ Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigne
     - **4b.** The hiding reason remains unresolved or the posting does not meet publication eligibility conditions. The system refuses the action and explains the unmet condition.
     - **6a.** A mandatory visibility update or audit step cannot be completed. The system reports an error and does not confirm successful republication.
 
+### UC-22 — View Own Activity History
+
+- **Actor:** Authenticated, currently active Platform Staff.
+- **Description:** Let the Staff view and find their own successful data-changing
+  activities in account management, Job Posting management, and Company verification.
+- **Pre-condition:** The caller satisfies existing Staff authentication, current-role,
+  session-validity, and portal rules.
+- **Post-condition:** Only the caller's matching retained activities are displayed;
+  no business state or audit history is changed by the view.
+- **Event flow:**
+  - **Main flow:**
+    1. The Staff opens personal activity history.
+    2. The system selects the actor from trusted authentication context.
+    3. The system lists the actor's in-scope committed changes, newest first,
+       covering the most recent 30 Vietnam calendar dates including today.
+    4. Each record shows time, action, target type/code, recorded before/after
+       state, and an applicable recorded reason.
+    5. The Staff may filter by inclusive date range, business group, action,
+       and exact target code within its group/type, or move between 20-row pages.
+    6. The system returns only matching records belonging to that actor.
+  - **Alternative flows:**
+    - **2a.** Authentication/authority fails: deny access and return no history.
+    - **3a.** No matches: display an empty state and permit filter changes.
+    - **3b.** Retrieval fails: display an error and permit retry.
+    - **4a.** An old record lacks a fact: show “Không có dữ liệu”; do not infer it
+      from the target's current state or fabricate history.
+    - **5a.** A filter is invalid: request corrected input without broadening access.
+- **Constraints:** Read/search/filter/paginate only; no edit, delete, hide, export,
+  raw-audit viewer, or navigation to the target. Failed attempts, reads, and
+  authentication/session events are excluded. Existing authorized Company/Job
+  history may still identify the Staff who made a decision.
+- **Specification:** [GW-SR-ADM-03](../../software-requirements/adm/personal-activity-history-spec.md)
+  and its [API proposal](../../software-requirements/adm/personal-activity-history-implementation-contract.md).
+  Product scope was confirmed on 2026-10-30; technical implementation approval is pending.
+
 ## 4. Interpretation and implementation boundaries
 
 - **Publication spelling:** The supplied UC 13 precondition says `PUBLISHING`, while its alternative 4a says `PUBLISHED`. This document consistently uses `PUBLISHED`, matching the existing Staff lifecycle; it does not introduce a new status or migration.
@@ -258,11 +294,14 @@ Legacy `UC-ADM-*` workflow identifiers are retained as references, not reassigne
 - **Decision delivery:** Notifications are a required outcome, not a promise of immediate mailbox arrival. Enhanced retained submissions currently create an email delivery intent addressed to the submitter in the decision transaction; a worker sends after commit and retries. Delivery failure does not undo a committed decision. Legacy URL-only dossiers without a retained submission do not currently create that intent. The remaining legacy notification gap is not hidden by this specification.
 - **Dossier presentation:** Existing responses derive `processingStatus = CHECKED` for both `VERIFIED` and `REJECTED`; `CHECKED` does not itself mean approved. The interface reloads the list after a successful decision, but currently reports errors without automatically reloading on conflict.
 - **Read-only report scope:** UC 11–12 do not begin review, acquire a review lock, resolve/reject a report, or apply a sanction. Existing outcomes may be displayed. Former report-resolution requirements are outside this revision’s selected scope, not silently removed from the wider product.
-- **Coverage and delivery:** Login, standalone job viewing, job closure, report adjudication, and audit-log search are outside this eleven-case inventory. Audit recording remains required for the mutations described here.
+- **Coverage and delivery:** Login, standalone job viewing, job closure, report adjudication, and general cross-Staff audit-log search remain outside scope. UC-22 adds only the authenticated caller's personal history; it does not change existing audit recording or target-history permissions.
 - **Current implementation:** Company verification, retained dossier history/private documents, decision audit, and enhanced-submission email intents have implementation support. This document does not claim implemented Staff report, job moderation/history, or account governance APIs.
 - **Unselected infrastructure:** Search/cache removal, verification-decision delivery, and session revocation describe required effects. They do not select Redis, Kafka, or Elasticsearch as new approved architecture.
 
 ## 5. Related sources
+
+- [Personal activity history specification](../../software-requirements/adm/personal-activity-history-spec.md)
+- [Personal activity history API proposal](../../software-requirements/adm/personal-activity-history-implementation-contract.md)
 
 - [Aligned Staff requirements](spec.md)
 - [Company verification reference](company_verification.md)

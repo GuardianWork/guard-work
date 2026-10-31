@@ -604,3 +604,20 @@ period. JWT platform roles and claims are unchanged, and current persistence rem
 The existing approved example above is retained for comparison. The review branch prepared this proposal; the
 current implementation retains the approved response fields and bodyless departure request until human approval.
 The coordinated amendment remains pending human approval before merge.
+
+## GW-92 scoped enforcement amendment (2026-10-30)
+
+The requesting human approved [GW-SR-ADM-02](../adm/account-management-spec.md) in
+session, including database-backed access-session versions, persisted active-state
+checks, transactional refresh-token revocation, Company-member invalidation, and
+expiry reconciliation. See [ADR 0009](../../architecture/decisions/0009-account-enforcement.md).
+Existing signed-role and portal boundaries remain enforced; current persisted roles
+cannot be elevated by an older token. Legacy JWTs without `sessionVersion` mean zero.
+Rollout requires stopping old issuers/API instances. This scoped amendment does not
+approve unrelated Draft Staff requirements or introduce a distributed revocation service.
+
+For this amendment, an inactive account's bearer token is treated as unauthenticated
+(401) on protected requests, including legacy `SUSPENDED` accounts. Credential login
+still returns the existing 403 suspension response. Anonymous recovery and public
+reads retain their existing access rules. This replaces the previous service-level
+403 expectation for inactive bearer tokens; callers should require sign-in again.
