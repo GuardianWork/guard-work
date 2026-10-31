@@ -71,7 +71,7 @@ terminal and run Docker log/status commands in another.
 | --- | --- |
 | [`docker-compose.yml`](docker-compose.yml) | Starts PostgreSQL and the local `seed` service; supplies database credentials and read-only mounts. |
 | [`docker/dev-seed/seed.sh`](docker/dev-seed/seed.sh) | Checks the enable flag, waits for Flyway migrations, runs the SQL, and prints the account table after successful seeding. |
-| [`docker/dev-seed/seed.sql`](docker/dev-seed/seed.sql) | Inserts demo accounts, Candidate/employer profiles, a Company, and memberships in one transaction. |
+| [`docker/dev-seed/seed.sql`](docker/dev-seed/seed.sql) | Inserts demo accounts, Candidate/employer profiles, a Company, memberships and GW-93 job scenarios in one transaction. |
 | [`.env.example`](.env.example) | Documents local database settings and `GUARDWORK_DEV_SEED_ENABLED`. |
 
 Edit `seed.sql` to change fixture definitions; existing rows are preserved on reruns,
@@ -142,7 +142,7 @@ do not fabricate phone proof.
 These are direct local fixtures, so no OTP or email delivery is needed. They preserve
 the platform/Company role separation in GW-SR-AUTH-01 and GW-SR-REC-02; available
 operations still depend on implemented APIs. The certificate URL is a placeholder;
-no legal dossier, real document, job posting, CV file, or verification delivery is created.
+no legal dossier, real document, CV file, or verification delivery is created. Synthetic Job Postings and their histories are included for GW-93 testing.
 
 Each `docker compose up -d` reruns an exited seed service and inserts missing fixtures.
 It preserves existing passwords, statuses, Company state, profiles, and membership history;
@@ -342,38 +342,72 @@ job independently. Set `jobs.expiry.worker-enabled=false` to disable scheduling;
 Tests disable scheduling and control the Clock explicitly. No schema migration or
 new dependency accompanies moderation, public details, or expiry.
 
-### Staff account management (GW-92)
 
-See the [frontend integration guide](../docs/backend/staff-account-management.md)
-for request/response examples, screen flow, and error/session handling.
+### Staff Job Posting hiding and history
 
-UC-18–20 use `/api/staff/accounts/users` and `/api/staff/accounts/companies` for
-search, `/{id}` for detail, and `POST /{id}/ban` or `POST /{id}/unban` for enforcement.
-Search accepts literal `q`, zero-based `page`, and `size` 1–100 (default 20), sorted
-by descending ID. DTOs expose only the identifying fields, effective state,
-active ban, and action eligibility in the
-[account contract](../docs/software-requirements/adm/account-management-spec.md).
-Ban accepts a required `reason` and optional future `expiresAt`; null means permanent.
-Unban requires a `reason`. Staff cannot ban themselves. Company roles grant no
-Platform authority. The repository contains backend APIs only; no Staff UI is delivered here.
+UC-13/UC-14 add `PUT /api/staff/jobs/{jobId}/hide` and
+`GET /api/staff/jobs/{jobId}/history` for active Platform Staff. A current job version
+and a trimmed 1–1000 code-point reason are required to suspend a public posting.
+The change and both audit records commit atomically; history is read-only and
+paginated independently of revision history. Both the Company-enforcement
+`staff_suspended` flag and the individual Staff
+`SUSPENDED` status hide content on the public job endpoint. Company unban or ban
+expiry preserves posting suspension. Suspended content is unavailable on
+the public job endpoint; Company authoring/lifecycle actions cannot restore it.
+Pending review decisions preserve suspension.
 
-Apply `V2026.10.30.92__account_enforcement.sql` and
-`V2026.10.30.93__allow_managed_account_bans.sql` before starting the new application.
-Stop old application instances/token issuers during deployment. User access JWTs now
-carry `sessionVersion`; legacy tokens without it use zero until invalidated. Every
-authenticated request checks current persisted state and version. Database failure
-returns 503 without trusting cached JWT state. Ban/unban atomically invalidates
-access versions and refresh tokens, retains history, and appends an audit record.
-Company actions invalidate all active Owner/Admin/Recruiter sessions; members may
-sign in again for permitted personal access while Company restrictions apply.
+Migration `V2026.10.31.86__staff_job_suspension.sql` adds `SUSPENDED` to the status
+constraint. Deploy compatible clients and stop older writers; rollback requires
+reviewed treatment of suspended rows. Public job details send `Cache-Control:
+no-store`; existing responses cached before rollout may require invalidation.
+See [job workflow documentation](../docs/backend/job-drafts.md#staff-hiding-and-posting-event-history-gw-93)
+and the [approved contract](../docs/software-requirements/adm/staff-job-management-contract.md).
+No new dependency, notification channel, public search or restoration workflow is added.
 
-Temporary expiry runs every 60 seconds and also reconciles at authentication and
-Company access boundaries. Configure `accounts.expiry.worker-enabled=false` to disable
-only the scheduler, or `accounts.expiry.poll-ms` to change its interval. Staff reads
-derive expiry without mutating state. Unban/expiry never restores old credentials,
-roles, Company verification, or suspended postings. Existing unmanaged legacy
-suspensions require separately approved reconciliation rather than invented ban history.
 
-Company bans retain publication status and set `staff_suspended` on public postings.
-Public detail excludes these postings after unban too; publication approval/resume
-cannot clear Staff suspension. Restoration is outside UC-18–20.
+### GW-93 development Job Postings
+
+The existing local seed now creates nine Vietnamese demo jobs under `GW-DEMO-LOCAL-001`.
+They use synthetic content/history, Owner Responsibility and an assignment to the
+existing active `demo_recruiter` membership when eligible. No notification or mail
+is sent. These are development fixtures, not evidence of real review/delivery.
+
+| Fixture marker | Initial Job Posting state | Manual check |
+| --- | --- | --- |
+| `GW93-HIDE-READY` | `PUBLISHED` | Public content is readable; Staff can hide it with current version and reason. |
+| `GW93-PUBLISHED-EDIT` | `PUBLISHED` | A second revision is pending; pending content must not replace public approved content. |
+| `GW93-SUSPENDED` | `SUSPENDED` | Public GET returns 404; Staff history retains actor and reason. |
+| `GW93-SUSPENDED-EDIT` | `SUSPENDED` | A second revision is pending; approving it must keep the posting hidden. |
+| `GW93-PAUSED` | `PAUSED` | Public details remain readable with applications unavailable; hide returns conflict. |
+| `GW93-CLOSED` | `CLOSED` | Public details remain readable; hide/resume are unavailable. |
+| `GW93-EXPIRED` | `EXPIRED` | Past approved deadline, no applications, system expiry actor is null. |
+| `GW93-DRAFT` | `DRAFT` | Private incomplete draft; absent from submitted-revision Staff queues. |
+| `GW93-PENDING` | `DRAFT` | First revision is `PENDING_REVIEW`; Staff can inspect/decide it; no public content yet. |
+
+Start the backend to apply committed Flyway migrations, then run:
+
+```bash
+docker compose up -d seed
+docker compose logs --tail 80 seed
+```
+
+The output lists each fixture marker, actual job/revision IDs, current states and
+version tokens. IDs are allocated by PostgreSQL; do not assume a fixed ID.
+Use `demo_staff` / `GuardWork123!` in the Staff portal, or `demo_owner` and
+`demo_recruiter` with the same initial password in the public portal. Existing
+passwords are preserved, so use changed credentials when applicable.
+
+For Staff navigation, request `GET /api/staff/job-revisions?status=ALL`; the default
+queue shows only pending revisions. Use the printed `job_id` for public details and
+posting history, and reload a Staff revision for its current `jobVersion` before
+hiding. See the [frontend integration guide](../docs/backend/staff-job-management-frontend-integration.md).
+
+Reruns identify jobs by the stable `developmentFixture` marker in their immutable
+`JOB_CREATED` facts, create only missing fixtures, and preserve all existing
+content, versions, reviews, assignments and manual hide/pause/close actions. They
+never restore a removed Recruiter membership or reset Company/account restrictions.
+Fresh public deadlines are 30 days from the initial seed run; reruns do not extend
+them. The expired scenario starts one day in the past. If a demo Owner/Staff/Company
+is no longer eligible, creating missing jobs fails atomically with a clear error
+rather than overriding its state. Duplicate or foreign fixture markers fail as
+identifier collisions. No schema migration or dependency is added.

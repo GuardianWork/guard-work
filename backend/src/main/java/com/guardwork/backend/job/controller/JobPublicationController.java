@@ -4,6 +4,7 @@ import com.guardwork.backend.auth.security.UserPrincipal;
 import com.guardwork.backend.common.ApiResponse;
 import com.guardwork.backend.job.service.JobPublicationService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,7 +28,10 @@ public class JobPublicationController {
   }
 
   @GetMapping("/api/jobs/{id}")
-  public ApiResponse<JobPublicationService.PublicDetail> publicDetail(@PathVariable Long id) {
+  public ApiResponse<JobPublicationService.PublicDetail> publicDetail(
+      @PathVariable Long id, HttpServletResponse response) {
+    // Set before service evaluation so unavailable/error responses also cannot be cached.
+    response.setHeader("Cache-Control", "no-store");
     return ApiResponse.ok(service.publicDetail(id));
   }
 }

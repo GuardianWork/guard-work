@@ -17,6 +17,52 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JobMigrationCompatibilityTest {
   @Autowired DataSource dataSource;
 
+  @Test void suspensionMigrationPreservesPublishedContentAndImmutableHistory() throws Exception {
+    String schema = "staff_job_upgrade_" + UUID.randomUUID().toString().replace("-", "");
+    var admin = new JdbcTemplate(dataSource);
+    try {
+      Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+          .target("2026.10.30.93").load().migrate();
+      try (var connection = dataSource.getConnection()) {
+        String originalSchema = connection.getSchema();
+        try {
+          connection.setSchema(schema);
+          var database = new JdbcTemplate(new org.springframework.jdbc.datasource.SingleConnectionDataSource(connection, true));
+          long user = database.queryForObject("INSERT INTO users(first_name,last_name,username,email,password,role) "
+              + "VALUES ('Staff','Reviewer','reviewer','reviewer@example.vn','fixture','STAFF') RETURNING id", Long.class);
+          long company = database.queryForObject("INSERT INTO companies(name,tax_code,registration_certificate_url) "
+              + "VALUES ('Retained Company','retained-tax','https://example.vn/license') RETURNING id", Long.class);
+          long job = database.queryForObject("INSERT INTO job_postings(company_id,creator_user_id,status,owner_responsible,created_at,updated_at) "
+              + "VALUES (?,?,'DRAFT',true,now(),now()) RETURNING id", Long.class, company, user);
+          long revision = database.queryForObject("INSERT INTO job_posting_revisions(job_id,revision_number,content,state,creator_user_id,created_at,submitter_user_id,submitted_at,reviewer_user_id,decided_at) "
+              + "VALUES (?,1,'{\"deadline\":\"2099-12-01T00:00:00Z\",\"title\":\"Retained content\"}'::jsonb,'APPROVED',?,now(),?,now(),?,now()) RETURNING id", Long.class, job, user, user, user);
+          database.update("UPDATE job_postings SET status='PUBLISHED',published_revision_id=?,approved_deadline='2099-12-01T00:00:00Z' WHERE id=?",revision,job);
+          database.update("INSERT INTO job_audit_events(company_id,job_id,actor_user_id,event_type,created_at,facts) VALUES (?,?,?,'JOB_CREATED',now(),'{\"ownerResponsible\":true}')", company, job, user);
+          String original = database.queryForObject("SELECT content::text FROM job_posting_revisions WHERE id=?",String.class,revision);
+          var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+              .target("2026.10.31.86").load();
+          assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+          upgrade.validate();
+          assertThat(database.queryForObject("SELECT status FROM job_postings WHERE id=?",String.class,job)).isEqualTo("PUBLISHED");
+          database.update("UPDATE job_postings SET status='SUSPENDED' WHERE id=?",job);
+          assertThat(database.queryForObject("SELECT content::text FROM job_posting_revisions WHERE id=?",String.class,revision)).isEqualTo(original);
+          assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=?",Long.class,job)).isEqualTo(1);
+          for (String sql : java.util.List.of("UPDATE job_postings SET status='UNKNOWN' WHERE id="+job,
+              "UPDATE job_audit_events SET event_type='JOB_SUSPENDED' WHERE job_id="+job,
+              "DELETE FROM job_audit_events WHERE job_id="+job,
+              "UPDATE job_posting_revisions SET content='{}'::jsonb WHERE id="+revision)) {
+            org.assertj.core.api.Assertions.assertThatThrownBy(()->database.update(sql))
+                .isInstanceOf(org.springframework.dao.DataAccessException.class);
+          }
+        } finally {
+          connection.setSchema(originalSchema);
+        }
+      }
+    } finally {
+      admin.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
+    }
+  }
+
   @Test void codeMigrationInvalidatesOldAccountLinksWithoutChangingVerifiedFlags() {
     String schema = "email_upgrade_" + UUID.randomUUID().toString().replace("-", "");
     var database = new JdbcTemplate(dataSource);
@@ -29,7 +75,8 @@ class JobMigrationCompatibilityTest {
       database.update("INSERT INTO " + schema
           + ".user_email_verification(user_id,email,secret_hash,issued_at,expires_at) "
           + "VALUES (?,'email@example.vn',repeat('a',64),now(),now()+interval '24 hours')", user);
-      var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).target("2026.10.30.85").load();
+      var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+          .target("2026.10.30.85").load();
       assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
       assertThat(database.queryForObject("SELECT secret_hash IS NULL AND consumed_at IS NOT NULL "
           + "AND failed_attempts=0 FROM " + schema + ".user_email_verification WHERE user_id=?", Boolean.class, user)).isTrue();
@@ -58,10 +105,9 @@ class JobMigrationCompatibilityTest {
       database.update("INSERT INTO " + schema
           + ".user_notifications(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) "
           + "VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Baseline',now())", event, user, company);
-      var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).target("2026.10.30.85").load();
-      // Pin the pre-enforcement milestone: jobs, canonical account phones, retained
-      // employer email proof, unified account-email proof and the code attempt budget.
-      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(5);
+      var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load();
+      // Upgrade to the current release; retained-data assertions must survive future migrations.
+      upgrade.migrate();
       upgrade.validate();
       assertThat(database.queryForObject("SELECT role FROM " + schema + ".users WHERE username='baseline_staff'", String.class))
           .isEqualTo("STAFF");

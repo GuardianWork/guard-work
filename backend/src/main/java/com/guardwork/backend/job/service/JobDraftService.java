@@ -143,7 +143,7 @@ public class JobDraftService {
           HttpStatus.CONFLICT, "40022 CONCURRENT_MODIFICATION: Reload current versions");
     expiry.reconcile(job);
     if (!"DRAFT".equals(revision.getState())
-        || Set.of("CLOSED", "EXPIRED").contains(job.getStatus()))
+        || Set.of("CLOSED", "EXPIRED", "SUSPENDED").contains(job.getStatus()))
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "40978 JOB_STATE_CONFLICT: Draft cannot be edited");
     revision.setContent(content.normalize(request.content()));
@@ -169,7 +169,7 @@ public class JobDraftService {
     if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE)
       throw DraftContent.invalid("pagination");
     if (status != null
-        && !Set.of("DRAFT", "PUBLISHED", "PAUSED", "CLOSED", "EXPIRED").contains(status))
+        && !Set.of("DRAFT", "PUBLISHED", "PAUSED", "CLOSED", "EXPIRED", "SUSPENDED").contains(status))
       throw DraftContent.invalid("status");
     var listedAt = clock.instant();
     Specification<JobPosting> filter =
@@ -269,7 +269,7 @@ public class JobDraftService {
   JobDetail detail(JobPosting job, JobRevision revision, CompanyAccessService.Access scope) {
     var current = assignments.current(job.getId());
     String status = expiry.effectiveStatus(job);
-    boolean terminal = Set.of("CLOSED", "EXPIRED").contains(status);
+    boolean terminal = Set.of("CLOSED", "EXPIRED", "SUSPENDED").contains(status);
     var actions = new ArrayList<String>();
     var evaluation = eligibility.evaluate(scope.company(), job, revision, current);
     boolean responsible = !evaluation.needsReassignment();

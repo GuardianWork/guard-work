@@ -48,6 +48,7 @@ Use this required question before implementation:
 - Update authoritative documentation with changes to behavior, setup, commands, configuration, contracts, migrations, or architecture.
 - Comment rationale and non-obvious constraints rather than narrating the code.
 - Change generated artifacts through their source and documented generator. Keep build output, IDE state, local secrets, and machine-specific files untracked.
+- After successfully implementing and verifying a new feature, review tests in the affected scope and remove legacy test code that only covers superseded behavior. Preserve tests for current approved requirements and relevant regressions; update or replace coverage when needed. Rerun the affected tests after cleanup before considering the feature complete.
 
 ### Approval boundaries
 

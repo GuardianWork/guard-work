@@ -19,7 +19,8 @@ class AccountEnforcementMigrationTest {
     try {
       Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("2026.10.30.85").load().migrate();
       long user=db.queryForObject("INSERT INTO "+schema+".users(first_name,last_name,username,email,password,status) VALUES ('An','Nguyen','legacy','legacy@test.invalid','hash','SUSPENDED') RETURNING id",Long.class);
-      var upgrade=Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).load();
+      var upgrade=Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema)
+          .target("2026.10.30.93").load();
       assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
       assertThat(db.queryForObject("SELECT status FROM "+schema+".users WHERE id=?",String.class,user)).isEqualTo("SUSPENDED");
       assertThat(db.queryForObject("SELECT session_version FROM "+schema+".users WHERE id=?",Long.class,user)).isZero();

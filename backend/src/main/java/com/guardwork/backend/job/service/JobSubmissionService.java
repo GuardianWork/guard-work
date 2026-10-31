@@ -72,7 +72,7 @@ public class JobSubmissionService {
     if (!Boolean.TRUE.equals(request.confirmed())) throw DraftContent.invalid("confirmed");
     expiry.reconcile(job);
     if (!"DRAFT".equals(revision.getState())
-        || Set.of("CLOSED", "EXPIRED").contains(job.getStatus()))
+        || Set.of("CLOSED", "EXPIRED", "SUSPENDED").contains(job.getStatus()))
       throw conflict("40978 JOB_STATE_CONFLICT: Revision cannot be submitted");
     var issues = submissionIssues(scope, job, revision);
     for (var issue : issues) {
@@ -125,7 +125,7 @@ public class JobSubmissionService {
   private List<DraftContent.ValidationIssue> submissionIssues(
       CompanyAccessService.Access scope, JobPosting job, JobRevision revision) {
     var issues = new ArrayList<>(eligibility.evaluate(scope.company(), job, revision).issues());
-    if (Set.of("CLOSED", "EXPIRED").contains(expiry.effectiveStatus(job)))
+    if (Set.of("CLOSED", "EXPIRED", "SUSPENDED").contains(expiry.effectiveStatus(job)))
       issues.add(new DraftContent.ValidationIssue("job", "TERMINAL_STATE"));
     return issues;
   }
