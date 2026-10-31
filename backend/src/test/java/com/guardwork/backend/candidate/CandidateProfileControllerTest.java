@@ -1,6 +1,7 @@
 package com.guardwork.backend.candidate;
 
 import com.guardwork.backend.candidate.dto.UpdateCandidateProfileRequest;
+import com.guardwork.backend.candidate.dto.CandidateProfileResponse;
 import com.guardwork.backend.auth.security.UserPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,20 +44,22 @@ class CandidateProfileControllerTest {
 
     private final UserPrincipal testPrincipal = new UserPrincipal(1L, "testuser", "test@example.com", "USER");
 
-    private CandidateProfile sampleProfile() {
+    private CandidateProfileResponse sampleProfile() {
         CandidateProfile profile = new CandidateProfile();
         profile.setId(UUID.randomUUID());
         profile.setUserId(testPrincipal.getId());
         profile.setFullName("John Doe");
         profile.setAvatarUrl("https://example.com/avatar.png");
-        profile.setPhoneNumber("0123456789");
+        profile.setPhoneNumber("+84901234567");
         profile.setSkills(List.of("Kotlin", "Docker"));
         profile.setExperienceSummary("5 years");
         profile.setEducationSummary("BS Computer Science");
         profile.setPublic(true);
         profile.setCreatedAt(java.time.Instant.now());
         profile.setUpdatedAt(java.time.Instant.now());
-        return profile;
+        return new CandidateProfileResponse(profile.getId(), profile.getUserId(), profile.getFullName(),
+                profile.getAvatarUrl(), profile.getPhoneNumber(), profile.getSkills(), profile.getExperienceSummary(),
+                profile.getEducationSummary(), profile.isPublic(), profile.getCreatedAt(), profile.getUpdatedAt());
     }
 
 
@@ -70,7 +73,7 @@ class CandidateProfileControllerTest {
 
     @Test
     void getProfile_returnsMappedResponse() throws Exception {
-        CandidateProfile profile = sampleProfile();
+        CandidateProfileResponse profile = sampleProfile();
         when(profileService.getOrCreateProfile(anyLong())).thenReturn(profile);
 
         try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
@@ -79,8 +82,8 @@ class CandidateProfileControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.status").value("200"))
-                    .andExpect(jsonPath("$.data.fullName").value(profile.getFullName()))
-                    .andExpect(jsonPath("$.data.avatarUrl").value(profile.getAvatarUrl()))
+                    .andExpect(jsonPath("$.data.fullName").value(profile.fullName()))
+                    .andExpect(jsonPath("$.data.avatarUrl").value(profile.avatarUrl()))
                     .andExpect(jsonPath("$.data.skills[0]").value("Kotlin"))
                     .andExpect(jsonPath("$.data.isPublic").value(true));
         }
@@ -88,10 +91,10 @@ class CandidateProfileControllerTest {
 
     @Test
     void updateProfile_returnsUpdatedResponse() throws Exception {
-        CandidateProfile updated = sampleProfile();
-        updated.setFullName("Jane Doe");
-        updated.setPhoneNumber("0987654321");
-        updated.setPublic(false);
+        CandidateProfileResponse sample = sampleProfile();
+        CandidateProfileResponse updated = new CandidateProfileResponse(sample.id(), sample.userId(), "Jane Doe",
+                sample.avatarUrl(), "+84987654321", sample.skills(), sample.experienceSummary(),
+                sample.educationSummary(), false, sample.createdAt(), sample.updatedAt());
 
         UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
                 "Jane Doe",
@@ -115,7 +118,7 @@ class CandidateProfileControllerTest {
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.status").value("200"))
                     .andExpect(jsonPath("$.data.fullName").value("Jane Doe"))
-                    .andExpect(jsonPath("$.data.phoneNumber").value("0987654321"))
+                    .andExpect(jsonPath("$.data.phoneNumber").value("+84987654321"))
                     .andExpect(jsonPath("$.data.isPublic").value(false));
         }
     }

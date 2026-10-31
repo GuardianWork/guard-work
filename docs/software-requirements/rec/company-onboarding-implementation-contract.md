@@ -1,115 +1,103 @@
-# GW-SR-REC-03 — Implementation Contract Proposal
+# GW-SR-REC-03 — Implementation Contract and Required Amendment
 
-> Unified registration coordination (2026-10-28): the user explicitly approved
-> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
-> The separate employer/personal-phone/provisional-save flow and pre-upload/JSON dossier contracts below are historical within the replacement scope. Shared registration, requested account-email proof for new Users, atomic complete multipart submission/correction and documented 410 retirement now follow the approved replacement. Preserve existing Company review, private retained evidence, membership and delivery mechanisms; no automatic promotion or data deletion is authorized. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
+> Implementation update (2026-10-27): after the canonical-phone delivery, the user approved the remaining concrete schema/API in plan sections 3–5. Immediate official accounts, bound authenticated email proof, normalized-email uniqueness/preflight, scoped pre-email restrictions, invitation admission checks and pending-route 410 retirement are implemented. See [the current backend contract/cutover](../../backend/employer-onboarding.md). Tables below preserve the original planning inventory; they are not a claim that the implemented scope remains awaiting approval.
+
 
 | Field | Value |
 |---|---|
-| Status | Human confirmation recorded; implementation in progress; SMS/production readiness outstanding |
+| Status | Product and Q10–Q17 implementation directions confirmed; concrete schema/API proposal ready for technical review |
 | Date | 2026-10-18 |
-| Last updated | 2026-10-24 |
-| Product specification | [Company onboarding enhancement](company-onboarding-verification-enhancement-spec.md) |
-| Delivery analysis | [Current flow and gap analysis](company-onboarding-verification-gap-analysis.md) |
-| Working branch | `feat/GW-73-enhance-company-verification-flow` |
-| Starting revision | `717b1905d9d035406f37114f78a990a1c0517964` |
+| Last updated | 2026-10-27 |
+| Product specification | [GW-SR-REC-03, version 0.2.1](company-onboarding-verification-enhancement-spec.md) |
+| Current gap and work order | [Email-only implementation plan](company-onboarding-email-only-implementation-plan.md) |
+| Historical delivery analysis | [2026-10-18 evidence snapshot](company-onboarding-verification-gap-analysis.md) |
+| Current implementation inventory | [Backend onboarding](../../backend/employer-onboarding.md) |
 
-## 1. Approval boundary
+## 1. Confirmation and scope
 
-The product journey and the provisional-registration/derived-CHECKED directions were approved by the user. The referenced documents explicitly leave physical schema, API design, frontend, delivery integrations, rollout and retention unresolved. Root `AGENTS.md` requires explicit approval before selecting those architectures, changing schema or introducing breaking API changes.
+On 2026-10-18 the user confirmed the original concrete contract with “chốt”; [ADR 0005](../../architecture/decisions/0005-staged-employer-onboarding.md) records its pending-registration, scoped API/security, retained PostgreSQL evidence, Resend delivery and dependency-free UI choices. No dependency was added. On 2026-10-27 the user confirmed Q1–Q5 and Q7–Q9 of the email-only amendment and explicitly deferred Q6. [ADR 0007](../../architecture/decisions/0007-email-only-employer-onboarding.md) records the changed boundary.
 
-The user subsequently confirmed this concrete contract with “chốt” on 2026-10-18. That confirmation authorizes its schema/API, scoped authorization, PostgreSQL document storage, Resend delivery and dependency-free frontend choices. [ADR 0005](../../architecture/decisions/0005-staged-employer-onboarding.md) records those choices. No dependency addition or upgrade is proposed. SMS vendor selection, production retention/disposal, aggregate abuse limits and legacy rollout remain open inputs rather than implicitly selected policies.
+The target now creates an official, restricted account at successful registration, requires unique email and declared phone across existing accounts, and uses actual email proof before Company preparation/submission or Recruiter invitation acceptance. SMS is removed as a target feature and prerequisite, including for already-enrolled accounts.
 
-## 2. Proposed data changes
+These are confirmed product requirements, not approval of an unspecified replacement schema/API. This documentation change implements no runtime behavior. Unaffected technical choices remain as previously authorized; concrete breaking API/schema amendments still need review under the root Agent Guide.
 
-Add new Flyway migrations; do not edit existing migrations or reset existing databases.
+### 1.1 Follow-up confirmation and concrete proposal
 
-| Data | Proposed persistence and constraints |
+The user confirmed Q10–Q17: backend/API/examples only; one canonical phone shared with Candidate; coordinated client contract changes; account retention on email-submission failure; old pending-proof/SMS route retirement with 410 and retained inactive records; blocking conversion on conflicting/invalid phones; Candidate edits to the shared number; and authenticated email confirmation without continuation tokens. [ADR 0008](../../architecture/decisions/0008-canonical-account-phone.md) records the canonical-phone trade-off.
+
+The [current implementation plan](company-onboarding-email-only-implementation-plan.md) is the evidence-backed gap matrix and next work order. It proposes `users.phone_number`, normalized-email uniqueness, account/email proof snapshots, concrete registration/state/proof/410 responses, migration preflight, package dependencies and required tests. Those exact physical/API details remain a technical proposal for human review; the confirmed directions are not permission to guess a migration winner or change Q6.
+
+Source inventory correction: this checkout contains no source frontend, although Maven declares a frontend resource location and historical delivery notes describe one. Do not treat generated target assets as source or promise a working shell from this backend-only plan.
+
+## 2. Existing implementation versus target
+
+| Boundary | Existing code / earlier contract | Confirmed target and required amendment |
+|---|---|---|
+| Registration | Separate pending attempts; official User created only after exact-attempt email proof and credential confirmation | Create official User at successful registration, email unverified, with distinguishable applicant state and no Company/membership. Design a compatible replacement for pending promotion. |
+| Sign-in | New employer applicant cannot sign in until email promotion | Permit credential-based restricted sign-in before email proof; prevent every forbidden service effect. |
+| Uniqueness | Official User email unique; pending claims may duplicate identifiers; employer phone unique only when verified; Candidate phones separate/nonunique | Enforce email and normalized declared phone uniqueness across existing accounts, including unverified accounts and Candidate contact data. Design data ownership, all-write-path enforcement and collision migration. |
+| Proof | Account/attempt-bound email plus delivered SMS OTP | Email only; retain 24-hour email expiry, 60-second resend, replacement, single use, exact binding and applicable email abuse controls. Never fabricate phone verification. |
+| Legal preparation | Provisional edits, uploads and submission/correction require email and phone | Require actual email proof, legal/document/declaration completeness and current scoped authority; no phone gate. |
+| Recruiter activation | Invitation acceptance may precede personal proof; subsequent enhanced operations require email/phone | Require actual email proof before valid matching-email acceptance activates RECRUITER. Invitation determines Company; registration name grants nothing. |
+| Owner assignment | Initial legal submission atomically creates Company/Owner/attempt | Preserve; Company starts PENDING, membership starts ACTIVE OWNER, recruitment waits for VERIFIED Company and existing permissions. |
+| Existing enrolled accounts | Personal phone gate can block onboarding/operations; production SMS adapter fails closed | Remove phone gate for these accounts; keep actual email, Company, membership, User and permission checks and existing proof/history. |
+| Unrelated legacy accounts | Scoped rollout; historical flags do not prove mailbox ownership | Preserve scope; this amendment does not newly enroll all legacy accounts or backfill genuine email proof. |
+
+## 3. Persistence and migration boundaries
+
+The current `V2026.10.18.73__employer_onboarding.sql` contains pending registrations, personal employer state, phone challenge fields, private legal documents, retained attempts and decision delivery. It remains immutable history.
+
+Prepare a new migration/API proposal addressing:
+
+1. Official unverified account creation with atomic identity reservation and applicant state. Preserve existing password hashing, opaque username/full-name mapping and Candidate login compatibility unless explicitly amended.
+2. Pending attempts already issued before rollout are retained and inactive; old proof routes return 410 and applicants register afresh, as confirmed in Q14. Do not bulk-promote attempts, pick an account winner, merge data or discard private state.
+3. One canonical account phone is confirmed in Q11; the concrete proposal places it on User. Audit all current Candidate/employer values and write paths. Same-User differing values, invalid phones and cross-User collisions block conversion; phone-less existing Users remain valid. Candidate updates target the shared source under Q16.
+4. Account-bound email proof that no longer performs pending-to-User promotion. Proof alone must not issue a session, reveal another claimant's information or activate control of credentials supplied by someone else.
+5. Existing phone proof/challenge history. Preserve old records; remove active SMS dependencies and OTP-only configuration through source changes and a reviewed compatibility plan, not by editing old migrations.
+6. Current tokens/refresh sessions and persisted eligibility. Do not rely on token claims or UI controls alone, mass-revoke sessions or treat historical auto-verified flags as genuine mailbox evidence.
+
+Identifier reservations survive email-proof expiry. Manual support is the selected route for disputed declared phone numbers; actors, evidence, audit and recovery outcomes remain undefined and must be reviewed before production. No automatic release, transfer or account takeover is authorized.
+
+Q6 (already-ACTIVE Recruiter to new-Company Owner): **—; deferred**. This contract defines no new transition or mandatory departure path and authorizes no change to current one-active-membership constraints.
+
+## 4. API/client amendment work
+
+The table below identifies affected existing routes. The 410 retirement direction is confirmed; exact replacement registration/state/proof details are proposed in the current implementation plan and are not implemented.
+
+| Current route | Required design / target behavior |
 |---|---|
-| Pending employer registration | Separate table with UUID attempt ID, hashed continuation secret, normalized email, password hash, full name, gender, proposed phone, Company name/address, proof state, timestamps and optimistic version. Multiple pending attempts may claim one email; they are not official Users. Password confirmation is checked and discarded. |
-| Email verification challenge | Random single-use secret stored as a hash, purpose and exact account/registration binding, exact normalized email, expiry, consumed state and resend timestamp. A new issuance replaces prior proof. No secret in query-string logging or application logs. |
-| Personal employer-verification record | User-scoped record with actual mailbox-proof timestamp, normalized proposed phone, phone-verification timestamp and applicant origin. A unique partial index on verified normalized phone prevents simultaneous ownership. Official User email remains globally unique. |
-| Phone challenge | Account/phone-bound code digest protected with a server-side secret, expiry, failed-attempt count, resend timestamp and version/row lock. Store neither plaintext OTP nor a digest vulnerable to offline enumeration without a secret. |
-| Provisional Company information | User-scoped editable data after successful email promotion; retain before complete legal submission without creating a Company or membership. |
-| Private legal document | New table for immutable document bytes, SHA-256, original filename, allowed media type, size, uploader and upload timestamp. Proposed initial limit: 10 MiB; PDF, JPEG or PNG. Private download endpoint checks current Company Owner or Platform Staff authority. No public document URL. |
-| Legal submission attempt | Company ID, submitter ID, immutable submitted Company/address/MST/position snapshot, legal/authorized-representative selection, declaration version/text, acceptance time, document ID, review decision/reason/reviewer/time and attempt version. One pending attempt per Company. Earlier attempts remain readable by authorized parties. |
-| Decision delivery intent | Scoped table for committed decision ID, recipient User/email snapshot, delivery state, attempts and next-attempt time. A unique decision/event identity makes retries idempotent. Pending delivery never changes a committed verification decision. |
+| `POST /api/employer-registrations` | Replace pending-attempt-only success with immediate official-account registration. Define response, identity conflicts, delivery failure behavior and old-client transition; retain the eight requested inputs and discard password confirmation. |
+| `POST /api/employer-registrations/{id}/email/resend` and `/email/verify` | Retire with 410, retain inactive pending records and require fresh registration (Q14). New proof uses the authenticated account-bound routes. |
+| `POST /api/auth/login`, refresh and `GET /api/auth/me` | Permit restricted employer sign-in before email proof; expose sufficient stage/capability information without granting Company role or unrestricted Candidate access. Preserve portal/session contracts. |
+| `GET /api/me/employer-onboarding`, `/email/send`, `/email/verify` | Define restricted-account access and state responses without requiring phone enrollment or promoting another account. Preserve existing member proof binding. |
+| `/api/me/employer-onboarding/phone/send` and `/phone/verify` | Return 410 under normal authentication without delivery/enrollment/write effects (Q14). No fake OTP/proof or automatic phone-verified flag. |
+| `PUT /api/me/employer-onboarding/company`, document upload, initial submission and correction | Replace email-plus-phone gate with actual email proof plus relevant legal/authorization/version checks. Preserve retained evidence, immutable MST and atomic Company/Owner/attempt creation. |
+| Existing recipient invitation acceptance | Add actual email-proof prerequisite before membership activation for the scoped onboarding journey; preserve recipient/secret, expiry/revocation, Company and membership safeguards. |
+| Existing recruitment operations | Remove personal phone requirement while retaining actual email proof and all current Company/User/membership/operation gates. |
 
-The private-document proposal stores bytes in PostgreSQL to avoid selecting a new external storage service. It requires size limits, authenticated streaming and deployment capacity review; it is a proposal, not a claim that existing certificate URLs are private or immutable. Existing URL-only dossiers remain historical data and must not be presented as newly retained document bytes.
+Preserve the existing response envelope, platform USER role, public/staff portal separation and unrelated Candidate APIs. Duplicate-identifier errors must not reveal another account's profile or Company. A concrete proposal must define response/error compatibility and migration timing before implementation.
 
-Retention timing, deletion, abandoned-registration cleanup and document disposal require a separate reviewed policy before production release. This proposal does not choose indefinite retention or silently schedule deletion.
+## 5. Unaffected technical choices
 
-## 3. Proposed additive API contracts
+- Keep feature-first MVC, Spring Data JPA and PostgreSQL; introduce no dependency or shared architecture through this amendment.
+- Store legal document bytes privately in PostgreSQL with the previously confirmed 10 MiB limit, PDF/JPEG/PNG byte-signature checks, SHA-256 and authenticated downloads. Retain immutable submissions/declarations/decisions and existing database evidence guards.
+- Keep PENDING/VERIFIED/REJECTED Company eligibility, with derived PENDING/CHECKED processing status and VERIFIED/REJECTED outcome. CHECKED alone grants no eligibility.
+- Keep initial Company/Owner/attempt creation atomic; preserve Owner feedback/correction before Company approval, MST immutability, Staff principal attribution and optimistic concurrency.
+- Keep scoped Resend/JDK HTTP verification/decision delivery, environment-backed credentials/origins, after-commit decision intent, bounded retry and stable provider idempotency. Provider acceptance is not mailbox arrival.
+- Keep existing frontend packaging/session conventions pending any separate approved frontend change. The target UI needs no SMS screen and must show restricted sign-in and invitation/new-Company branches. No frontend framework or token-storage migration is selected here.
 
-Preserve the existing Candidate registration/login flow and response envelope. Add a scoped employer registration journey; keep the platform role USER. No global RECRUITER role or user-entered username is introduced.
-
-| Operation | Proposed endpoint | Principal / important rule |
-|---|---|---|
-| Begin employer registration | `POST /api/employer-registrations` | Public, throttled; returns only the new attempt's opaque continuation material, never another claimant's data. |
-| Resend email proof | `POST /api/employer-registrations/{id}/email/resend` | Requires that attempt's continuation proof; 60-second cooldown. |
-| Confirm email and promote | `POST /api/employer-registrations/{id}/email/verify` | Exact-attempt email secret plus continuation/password confirmation. Atomically create at most one official User and employer record. Do not issue an authenticated session automatically. |
-| Read own onboarding stage | `GET /api/me/employer-onboarding` | Authenticated; exposes verified flags/stage and permitted next action, not verification secrets. |
-| Send/verify phone OTP | `POST /api/me/employer-onboarding/phone/send`, `POST /api/me/employer-onboarding/phone/verify` | Authenticated with actual email proof; new SMS is invalid unless delivery is accepted; 5-minute/5-attempt/60-second rules apply. |
-| Update provisional Company | `PUT /api/me/employer-onboarding/company` | Authenticated and phone verified; optimistic version required. |
-| Upload/view private legal document | `POST /api/me/employer-onboarding/documents`, `GET /api/company-verification-documents/{id}` | Upload after personal verification; private reads require ownership/current Company authority or Platform Staff. Download of an upload not yet submitted remains uploader-scoped. |
-| Submit and correct dossier | Existing Company submission/correction paths, with reviewed extended request DTOs | New-onboarding accounts require actual personal proof, complete fields, retained document and declaration. Initial Company/Owner/attempt creation is atomic; corrections retain Company/MST. |
-| Read Owner/Staff verification | Existing verification responses | Add `processingStatus` and `reviewOutcome`; retain `verificationStatus` and existing fields for compatibility. Proposed attempt/history fields require contract review. |
-
-Full name is retained verbatim in the employer record. A server-generated opaque username preserves the existing unique-username requirement, and the full name is placed in the existing display-name representation without attempting to infer Vietnamese family/given names. Existing Candidate name fields and login identifiers remain compatible; the exact mapping is part of approval.
-
-Email promotion must not activate an attacker's known password just because the mailbox owner opens an unsolicited link. Explicit completion must establish control of the correct attempt and confirm credentials; an existing official account always wins uniqueness, and no account/data merge occurs. Cross-device completion and private recovery must be documented and tested with this constraint.
-
-Request-body secrets must be redacted. Public errors must not disclose another registration's details. Verification GET links display a confirmation page; consuming proof uses POST. API errors use existing envelopes and reviewed scoped codes rather than a new platform error architecture.
-
-## 4. Authorization and existing-data proposal
-
-- Add a feature-scoped onboarding eligibility check before protected service effects. Read current persisted personal/Company state; token claims alone do not grant stage eligibility.
-- New employer applicants can only search/view jobs and perform their eligible verification/settings actions. Candidate profile/CV access is denied before any skeleton-profile creation or upload.
-- Keep Owner status, rejection feedback and correction reachable while Company approval is pending/rejected. Do not put a VERIFIED-only check in a shared helper that also protects these recovery actions.
-- An invited Recruiter can retain existing invitation acceptance behavior, but employer operations require actual personal email and phone proof. Invitation/delegation roles remain unchanged.
-- Preserve current Candidate accounts, Company identity/MST, audit records, historical contact emails and Platform Staff capability. Do not reset accounts or revoke all tokens.
-- Existing `email_verified=true` values remain historical compatibility flags, not proof for the new personal-verification record. Existing members need a personal-proof completion path before any newly gated employer operation. Whether rollout enables these gates for existing members immediately or only after a migration window remains a required explicit rollout decision.
-- Existing job-seeker-to-new-Company conversion and post-approval Candidate capability expansion stay deferred, as agreed in the product specification.
-
-## 5. Delivery integrations and frontend proposal
-
-| Area | Proposed approach | Unresolved input |
-|---|---|---|
-| Verification/decision email | Feature-scoped mailer using existing Resend HTTPS integration style and JDK HttpClient; environment-backed sender/credential and allowed verification origin. Keep invitation behavior unchanged. | Deployment sender/credentials and approved confirmation URL. |
-| SMS OTP | Feature-scoped sender with provider HTTP adapter, test fake and fail-closed behavior when unconfigured. Never log/return an OTP as a replacement for real delivery. | User must select the actual SMS provider; provider-specific adapter/credentials cannot be claimed complete before this. |
-| Decision retries | Narrow persisted delivery intent, recorded in the same decision transaction; worker sends after commit with bounded backoff and operator-visible failure. Do not expand membership-only event types silently. | Approve this scoped notification approach and retry/abuse limits. |
-| Legal documents | Private, immutable PostgreSQL-backed bytes as proposed in section 2. | Approve size/types, retention/access policy and deployment capacity. |
-| Frontend | Dependency-free HTML/CSS/JavaScript under `frontend/`, packaged as Spring static resources using existing Maven resources support; same-origin APIs. In-memory access token, explicit sign-in after email verification; no external frontend framework. | Explicit frontend selection approval; final retention/privacy wording and actual support contact. |
-
-Frontend scope covers employer registration, verification confirmation, sign-in, phone proof, Company settings, private upload/declaration, status/rejection/correction and the Staff review view. Existing job discovery is not implemented in the repository; integrating search/view remains a separate dependency rather than a fabricated working feature.
+Production retention/disposal, Staff review/dispute procedures, real support contact, aggregate email abuse limits, configured sender/origins and job-discovery integration remain required. SMS vendor selection is no longer a target prerequisite.
 
 ## 6. Implementation and verification sequence
 
-1. Review this contract; record accepted consequential choices in an ADR and synchronize the overlapping AUTH/REC requirement notes.
-2. Add migrations/models and test atomic pending-registration promotion, normalized ownership races and private claim recovery using isolated PostgreSQL.
-3. Add personal verification and gates with tests first at service and real HTTP/security seams. Verify ordinary Candidate controls and existing-session behavior.
-4. Add retained legal documents/attempts and extend initial Company/Owner and correction transactions. Preserve MST uniqueness, optimistic locking and audit rollback.
-5. Extend Staff review and derived CHECKED responses; bind reviewer identity to the authenticated principal under a reviewed header-compatibility change.
-6. Implement and test configured delivery adapters and after-commit decision retry. Test delivery failure without decision rollback.
-7. Build the approved frontend, run staged journey checks, and document deployment/configuration and unresolved production-readiness items.
-8. Run Java compilation and focused tests during development, then the full suite and required packaging check at completion. Perform Standards/Spec review and commit the completed authorized work on the current branch per the invoked implement skill.
+1. Review concrete registration/proof API and schema amendments, phone data ownership/collision inventory, outstanding-attempt migration and scoped rollout. Record actual approvals before implementing breaking changes.
+2. Implement atomic immediate registration and system-wide identifier enforcement at all relevant write boundaries. Do not silently alter unrelated Candidate behavior beyond the agreed uniqueness rule.
+3. Implement restricted sign-in and current-state backend gates together; prove old tokens/refresh and direct requests cannot bypass email proof.
+4. Remove SMS prerequisites for legal preparation, submission/correction, invitation activation and enhanced employer operations. Preserve proof history and all unrelated moderation/authorization checks.
+5. Publish the backend email-confirmation/client contract and HTTP examples; external frontend integration remains separate under Q10. Remove active OTP instructions/configuration references only when runtime changes are actually delivered.
+6. Verify the scenarios in GW-SR-REC-03 section 9 at service, real HTTP/security and PostgreSQL boundaries. Cover normalized uniqueness races and collision rollout, unverified shell/denials, email expiry/resend/replay, invitation activation, atomic Owner creation, correction/history and enrolled-account SMS removal. Preserve ordinary Candidate/legacy controls.
+7. Run documented backend tests and packaging for schema/config/build changes when implementation occurs; distinguish provider-backed and external-client checks from backend tests. This documentation-only revision does not claim those checks ran or the new journey works.
 
-The local `tdd` skill was not found. The implement skill says to use it where possible; meaningful tests can still be written before behavior changes without installing another skill or dependency.
+## 7. Historical implementation checkpoints
 
-## 7. Work already safe under confirmed scope
-
-The derived CHECKED mapping is an additive response change and needs no database migration. It can be delivered independently with a JSON contract test for Staff and Owner responses across all three stored states. Other parts of this proposal remain subject to their explicit approvals and required provider input.
-
-### Implementation checkpoint — 2026-10-18
-
-- Implemented derived `processingStatus` and `reviewOutcome` on Staff and Owner verification responses; existing `verificationStatus` remains intact.
-- Added a three-case JSON contract test covering both response types. It failed for the missing fields before implementation and passed afterward.
-- Java compilation passed. The full backend suite passed: 171 tests, zero failures/errors/skips, using the documented isolated PostgreSQL test service. Mockito required execution outside the sandbox to attach its Java agent; the initial sandbox baseline failed for that environmental reason.
-- Standards and Spec reviews found no actionable defect in the mapping slice. The Spec review explicitly confirmed that email/SMS verification, retained legal submissions and decision delivery remain unimplemented.
-- At that initial checkpoint packaging was not repeated: the slice changed no dependency, configuration or build metadata, and introduced no migration. This describes the initial slice, not the subsequent implementation.
-
-### Subsequent authorized implementation
-
-The confirmed contract is now being implemented beyond the initial mapping slice. See [backend onboarding documentation](../../backend/employer-onboarding.md) for actual APIs, compatibility, delivery configuration, migration, test boundaries and remaining production prerequisites. Real SMS delivery is not yet implemented because the provider remains unselected; tests substitute an isolated sender and production fails closed.
-
-Implementation verification: 183 backend tests passed with no failures/errors/skips; packaging, frontend syntax/DOM references, documentation links and whitespace checks passed. Final two-axis review reported no remaining actionable findings. No dependency was added. SMS integration and production-readiness inputs remain outstanding, so this checkpoint does not declare the complete production journey delivered.
+The original 2026-10-18 CHECKED mapping slice passed 171 tests. The subsequent email/SMS onboarding implementation passed 183 tests with zero failures/errors/skips and packaging/frontend syntax/DOM/link/whitespace checks, as previously recorded in [backend onboarding](../../backend/employer-onboarding.md). SMS production delivery remained unimplemented; tests used isolated delivery fakes. Those historical results cover the earlier implementation and do not validate the 2026-10-27 target.

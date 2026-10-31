@@ -27,7 +27,14 @@ public class EmployerProfile {
     @Column(name = "email_verified_at")
     private Instant emailVerifiedAt;
 
-    @Column(name = "phone")
+    @Column(name = "email_verified_email")
+    private String emailVerifiedEmail;
+
+    @Column(name = "email_challenge_email")
+    private String emailChallengeEmail;
+
+    // Historical contact only; current contact is User.phoneNumber.
+    @Column(name = "phone", insertable = false, updatable = false)
     private String phone;
 
     @Column(name = "phone_verified_at")

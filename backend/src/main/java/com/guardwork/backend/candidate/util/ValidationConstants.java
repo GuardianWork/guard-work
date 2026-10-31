@@ -6,9 +6,6 @@ package com.guardwork.backend.candidate.util;
  * referenced from validation annotations and service‑layer checks.
  */
 public final class ValidationConstants {
-    // Vietnamese phone numbers – either 0xxxxxxx or +84xxxxxxx (10 digits total)
-    public static final String PHONE_REGEX = "^(0|\\+84)[1-9][0-9]{8}$";
-
     // Simple HTTPS URL validation – we only require the scheme and a non‑empty host/path
     public static final String HTTPS_URL_REGEX = "^https://.+$";
 

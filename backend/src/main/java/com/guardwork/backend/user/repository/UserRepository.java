@@ -24,6 +24,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByEmail(String email);
 
+    @Query("SELECT count(u) > 0 FROM User u WHERE lower(trim(u.email)) = :email")
+    boolean existsByNormalizedEmail(@Param("email") String email);
+
+    boolean existsByPhoneNumber(String phoneNumber);
+
     @Modifying
     @Transactional
     @Query("UPDATE User u SET u.password = :newPassword, u.updatedAt = CURRENT_TIMESTAMP WHERE u.id = :id")

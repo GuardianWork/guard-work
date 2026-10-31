@@ -9,11 +9,13 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.guardwork.backend.candidate.dto.UpdateCandidateProfileRequest;
+import com.guardwork.backend.candidate.dto.CandidateProfileResponse;
+import com.guardwork.backend.user.AccountPhone;
 import com.guardwork.backend.candidate.util.ValidationConstants;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
-import com.guardwork.backend.candidate.util.ContactMaskingUtils;
 import jakarta.transaction.Transactional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -31,22 +33,27 @@ public class CandidateProfileService {
      * using the user's first/last name combined as the default full name.
      */
     @Transactional
-    public CandidateProfile getOrCreateProfile(Long userId) {
-        return profileRepository.findByUserId(userId)
+    public CandidateProfileResponse getOrCreateProfile(Long userId) {
+        User user = requireUser(userId);
+        CandidateProfile profile = profileRepository.findByUserId(userId)
                 .orElseGet(() -> {
-                    CandidateProfile skeleton = createSkeletonProfile(userId);
+                    CandidateProfile skeleton = createSkeletonProfile(user);
                     return profileRepository.save(skeleton);
                 });
+        return response(profile, user);
     }
 
-    private CandidateProfile createSkeletonProfile(Long userId) {
-        User user = userRepository.findById(userId)
+    private User requireUser(Long userId) {
+        return userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND"));
+    }
+
+    private CandidateProfile createSkeletonProfile(User user) {
         String defaultFullName = (user.getFirstName() != null ? user.getFirstName() : "")
                 + " "
                 + (user.getLastName() != null ? user.getLastName() : "");
         CandidateProfile profile = new CandidateProfile();
-        profile.setUserId(userId);
+        profile.setUserId(user.getId());
         profile.setFullName(defaultFullName.trim());
         profile.setSkills(List.of());
         profile.setPublic(true);
@@ -57,13 +64,20 @@ public class CandidateProfileService {
      * Updates a candidate profile based on the supplied request payload.
      */
     @Transactional
-    public CandidateProfile updateProfile(Long userId, UpdateCandidateProfileRequest request) {
+    public CandidateProfileResponse updateProfile(Long userId, UpdateCandidateProfileRequest request) {
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND"));
+        String phone;
+        try {
+            phone = AccountPhone.normalize(request.phoneNumber());
+        } catch (IllegalArgumentException invalidPhone) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_PHONE_NUMBER");
+        }
         CandidateProfile profile = profileRepository.findByUserId(userId)
-                .orElseGet(() -> createSkeletonProfile(userId));
+                .orElseGet(() -> createSkeletonProfile(user));
 
         // ----- Simple scalar fields -----
         profile.setFullName(request.fullName());
-        profile.setPhoneNumber(request.phoneNumber());
         profile.setAvatarUrl(request.avatarUrl());
         profile.setExperienceSummary(request.experienceSummary());
         profile.setEducationSummary(request.educationSummary());
@@ -95,18 +109,23 @@ public class CandidateProfileService {
             profile.setSkills(cleaned);
         }
 
-        return profileRepository.save(profile);
+        user.setPhoneNumber(phone);
+        try {
+            // Flush here so a racing claim rolls back this entire profile transaction.
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException conflict) {
+            if (String.valueOf(conflict.getMostSpecificCause().getMessage()).contains("uq_users_phone_number")) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "40930 IDENTIFIER_UNAVAILABLE: Contact information is unavailable");
+            }
+            throw conflict;
+        }
+        return response(profileRepository.save(profile), user);
     }
 
-    /**
-     * Utility that can be used by future employer‑facing services to mask contact info.
-     */
-    public static void applyMaskIfUnverified(CandidateProfile profile, boolean employerVerified) {
-        if (!employerVerified) {
-            // Mask email and phone. Email is stored in the User entity – not directly here,
-            // but we expose a hook for future use.
-            profile.setPhoneNumber(ContactMaskingUtils.maskPhone(profile.getPhoneNumber()));
-            // Note: email masking would be performed on the User object elsewhere.
-        }
+    private CandidateProfileResponse response(CandidateProfile profile, User user) {
+        return new CandidateProfileResponse(profile.getId(), profile.getUserId(), profile.getFullName(),
+                profile.getAvatarUrl(), user.getPhoneNumber(), profile.getSkills(), profile.getExperienceSummary(),
+                profile.getEducationSummary(), profile.isPublic(), profile.getCreatedAt(), profile.getUpdatedAt());
     }
 }

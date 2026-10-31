@@ -1,10 +1,7 @@
 # [GW-SR-REC-02] Company onboarding, ownership, and Recruiter access
 
-> Unified registration coordination (2026-10-28): the user explicitly approved
-> [GW-SR-AUTH-03 and its implementation contract](../auth/unified-registration-implementation-contract.md) with “Approve”.
-> Company setup follows shared registration and complete atomic multipart dossier submission; new Users need actual account-email proof before initial Company submission or first invitation acceptance. Invitations still require matching normalized account email, explicit acceptance and existing secret/state/expiry/Company checks. One active membership, current authority and immediate revocation remain unchanged. Legacy Users retain their email exemption; phone proof and applicant Candidate restrictions are retired. This later scoped approval supersedes conflicting earlier wording below; historical approval evidence remains intact.
-
-> Employer onboarding coordination (2026-10-18): the user approved [GW-SR-REC-03](company-onboarding-verification-enhancement-spec.md) and confirmed its implementation contract. Its new-applicant path supersedes automatic email proof, unrestricted Candidate capability, separate Company-email input and mutable-only dossier handling for enrolled employer applicants. Ordinary Candidate registration and legacy Company compatibility remain scoped as documented; CHECKED is derived from existing Company eligibility states. SMS integration, production retention and legacy rollout remain unresolved. See [implementation details](../../backend/employer-onboarding.md).
+> Employer onboarding coordination (2026-10-27): the user confirmed the email-only amendment to [GW-SR-REC-03](company-onboarding-verification-enhancement-spec.md) (Q1–Q5/Q7–Q9). Its target creates restricted official accounts at registration, permits sign-in before actual email proof, enforces email/declared-phone uniqueness across existing accounts, removes SMS prerequisites, and requires email proof before Company preparation/submission or Recruiter invitation acceptance. Company name alone grants no membership; initial complete submission creates PENDING Company and ACTIVE OWNER atomically. Recruitment still requires VERIFIED Company and existing authorization. The already-ACTIVE Recruiter-to-new-Owner case (Q6) is deferred; no membership-constraint change is authorized. Remove SMS gates for already-enrolled accounts without newly enrolling unrelated legacy accounts. Global phone enforcement needs a concrete Candidate/employer data and collision-migration design. Code still implements the earlier journey; see [implementation inventory](../../backend/employer-onboarding.md). Retained evidence, CHECKED mapping and moderation safeguards remain in force.
+> Follow-up Q10–Q17 confirms one shared canonical account phone and eligible Candidate contact edits, backend-only delivery, coordinated client upgrade, account retention on initial email-submission failure, 410 retirement of old pending-proof/SMS routes, blocking conversion on unresolved phone conflicts and authenticated email confirmation. See the [current gap and implementation proposal](company-onboarding-email-only-implementation-plan.md); its exact physical/API details await technical review. Q6 remains deferred.
 
 | Field | Value |
 |---|---|
@@ -15,7 +12,7 @@
 | **File** | `company-membership-mvp-spec.md` |
 | **Version** | 0.3.1 |
 | **Date** | 2026-10-08 |
-| **Last Updated** | 2026-10-28 |
+| **Last Updated** | 2026-10-27 |
 | **Owner** | Thinh |
 | **Approver** | Thinh |
 | **Lifecycle** | Draft |

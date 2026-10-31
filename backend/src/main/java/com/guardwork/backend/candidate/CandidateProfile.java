@@ -42,7 +42,8 @@ public class CandidateProfile {
     @Column(name = "avatar_url", length = 512)
     private String avatarUrl;
 
-    @Column(name = "phone_number", length = 20)
+    // Historical contact only; current contact is User.phoneNumber.
+    @Column(name = "phone_number", length = 20, insertable = false, updatable = false)
     private String phoneNumber;
 
     @Convert(converter = SkillsJsonConverter.class)

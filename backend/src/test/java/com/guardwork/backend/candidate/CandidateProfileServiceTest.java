@@ -1,6 +1,7 @@
 package com.guardwork.backend.candidate;
 
 import com.guardwork.backend.candidate.dto.UpdateCandidateProfileRequest;
+import com.guardwork.backend.candidate.dto.CandidateProfileResponse;
 import com.guardwork.backend.candidate.util.ValidationConstants;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
@@ -58,9 +59,10 @@ class CandidateProfileServiceTest {
         void returnsExistingProfileWhenFound() {
             when(profileRepository.findByUserId(sampleUser.getId()))
                     .thenReturn(Optional.of(existingProfile));
+            when(userRepository.findById(sampleUser.getId())).thenReturn(Optional.of(sampleUser));
 
-            CandidateProfile result = profileService.getOrCreateProfile(sampleUser.getId());
-            assertSame(existingProfile, result);
+            CandidateProfileResponse result = profileService.getOrCreateProfile(sampleUser.getId());
+            assertEquals(existingProfile.getId(), result.id());
             verify(profileRepository, never()).save(any());
         }
 
@@ -78,9 +80,9 @@ class CandidateProfileServiceTest {
                         return saved;
                     });
 
-            CandidateProfile result = profileService.getOrCreateProfile(sampleUser.getId());
-            assertNotNull(result.getId());
-            assertEquals("John Doe", result.getFullName());
+            CandidateProfileResponse result = profileService.getOrCreateProfile(sampleUser.getId());
+            assertNotNull(result.id());
+            assertEquals("John Doe", result.fullName());
             assertTrue(result.isPublic());
             verify(profileRepository).save(any(CandidateProfile.class));
         }
@@ -93,9 +95,10 @@ class CandidateProfileServiceTest {
 
         @BeforeEach
         void initRequest() {
+            when(userRepository.findByIdForUpdate(sampleUser.getId())).thenReturn(Optional.of(sampleUser));
             request = new UpdateCandidateProfileRequest(
                     "Jane Doe",
-                    "0123456789",
+                    "0901234567",
                     "https://example.com/avatar.png",
                     List.of("Kotlin", "Docker"),
                     "5 years",
@@ -111,13 +114,15 @@ class CandidateProfileServiceTest {
             when(profileRepository.save(any(CandidateProfile.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
-            CandidateProfile updated = profileService.updateProfile(sampleUser.getId(), request);
-            assertEquals("Jane Doe", updated.getFullName());
-            assertEquals("0123456789", updated.getPhoneNumber());
-            assertEquals("https://example.com/avatar.png", updated.getAvatarUrl());
-            assertEquals(List.of("Kotlin", "Docker"), updated.getSkills());
-            assertEquals("5 years", updated.getExperienceSummary());
-            assertEquals("BS Computer Science", updated.getEducationSummary());
+            CandidateProfileResponse updated = profileService.updateProfile(sampleUser.getId(), request);
+            assertEquals("Jane Doe", updated.fullName());
+            assertEquals("+84901234567", updated.phoneNumber());
+            assertEquals("+84901234567", sampleUser.getPhoneNumber());
+            assertNull(existingProfile.getPhoneNumber());
+            assertEquals("https://example.com/avatar.png", updated.avatarUrl());
+            assertEquals(List.of("Kotlin", "Docker"), updated.skills());
+            assertEquals("5 years", updated.experienceSummary());
+            assertEquals("BS Computer Science", updated.educationSummary());
             assertTrue(updated.isPublic());
         }
 
@@ -125,13 +130,11 @@ class CandidateProfileServiceTest {
         void createsSkeletonWhenProfileMissing() {
             when(profileRepository.findByUserId(sampleUser.getId()))
                     .thenReturn(Optional.empty());
-            when(userRepository.findById(sampleUser.getId()))
-                    .thenReturn(Optional.of(sampleUser));
             when(profileRepository.save(any(CandidateProfile.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
 
-            CandidateProfile updated = profileService.updateProfile(sampleUser.getId(), request);
-            assertEquals("Jane Doe", updated.getFullName());
+            CandidateProfileResponse updated = profileService.updateProfile(sampleUser.getId(), request);
+            assertEquals("Jane Doe", updated.fullName());
             verify(profileRepository).save(any(CandidateProfile.class));
         }
     }
@@ -141,8 +144,6 @@ class CandidateProfileServiceTest {
     class GuardClauses {
         @Test
         void throwsWhenUserNotFoundDuringSkeletonCreation() {
-            when(profileRepository.findByUserId(anyLong()))
-                    .thenReturn(Optional.empty());
             when(userRepository.findById(anyLong()))
                     .thenReturn(Optional.empty());
 
@@ -154,10 +155,11 @@ class CandidateProfileServiceTest {
 
         @Test
         void throwsWhenSkillExceedsMaxLength() {
+            when(userRepository.findByIdForUpdate(sampleUser.getId())).thenReturn(Optional.of(sampleUser));
             String longSkill = "a".repeat(ValidationConstants.MAX_SKILL_LENGTH + 1);
             var request = new UpdateCandidateProfileRequest(
                     "John Doe",
-                    "0123456789",
+                    "0901234567",
                     "https://example.com/avatar.png",
                     List.of(longSkill),
                     null, null, null);
@@ -173,12 +175,13 @@ class CandidateProfileServiceTest {
 
         @Test
         void throwsWhenTooManySkills() {
+            when(userRepository.findByIdForUpdate(sampleUser.getId())).thenReturn(Optional.of(sampleUser));
             List<String> manySkills = java.util.stream.IntStream.range(0, ValidationConstants.MAX_SKILLS + 1)
                     .mapToObj(i -> "Skill" + i)
                     .toList();
             var request = new UpdateCandidateProfileRequest(
                     "John Doe",
-                    "0123456789",
+                    "0901234567",
                     "https://example.com/avatar.png",
                     manySkills,
                     null, null, null);

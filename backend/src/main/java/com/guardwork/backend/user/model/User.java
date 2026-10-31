@@ -38,6 +38,9 @@ public class User {
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
+    @Column(name = "phone_number", unique = true, length = 20)
+    private String phoneNumber;
+
     @Column(nullable = false, length = 255)
     private String password;
 
