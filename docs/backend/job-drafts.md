@@ -268,3 +268,11 @@ There is no current public job search/listing or server content cache. Future in
 Use the existing isolated PostgreSQL tests. If another branch owns the default test database, create a separate database matching `backend_test_db_<suffix>` in that test PostgreSQL instance and select it with `BACKEND_TEST_DATABASE_URL`. Do not reset another branch's database or disable the test database safety guard.
 
 Frontend handoff: [Staff job hiding and history integration](staff-job-management-frontend-integration.md) includes request/response examples, version sourcing, state handling, errors and acceptance checks.
+
+## Public search
+
+`GET /api/jobs/search` provides the public, anonymous backend search for UC-CAN-07.
+
+Supported canonical filters: `keyword`, `location`, `employmentType`, `workArrangement`, `deadline`, `salaryMin`, `salaryMax`, `page`, `size`. No pagination aliases are supported in this iteration. Text matching is case-insensitive but not diacritic-insensitive in this iteration.
+
+Results contain only `PUBLISHED`, non-suspended postings with future or absent approved deadlines, belonging to verified, non-banned Companies. Responses use `PageResponse<PublicDetail>` and set `Cache-Control: no-store`. The contract is pending approval in `docs/software-requirements/can/job-search-spec.md`.

@@ -6,7 +6,7 @@
 | :--- | :--- | :--- | :--- |
 | **UC-CAN-01** Cập nhật hồ sơ cá nhân | Hồ sơ | Cao | |
 | **UC-CAN-03** Tải lên hồ sơ xin việc mới | CV | Cao | |
-| **UC-CAN-07** Tìm kiếm tin tuyển dụng | Tìm kiếm | Cao | Tác nhân: Khách hoặc Ứng viên. Đã bao gồm việc lọc kết quả (từ khóa, địa điểm, ngành nghề, mức lương, kinh nghiệm, hình thức làm việc) |
+| **UC-CAN-07** Tìm kiếm tin tuyển dụng | Tìm kiếm | Cao | Tác nhân: Khách hoặc Ứng viên. Đã bao gồm việc lọc kết quả (từ khóa, địa điểm, ngành nghề, mức lương, hình thức làm việc) |
 | **UC-CAN-09** Xem chi tiết tin tuyển dụng | Tìm kiếm | Cao | Tác nhân: Khách hoặc Ứng viên |
 | **UC-CAN-11** Điền thông tin ứng tuyển | Ứng tuyển | Cao | Đã bao gồm tự động điền từ hồ sơ cá nhân và chọn / đính kèm hồ sơ xin việc |
 | **UC-CAN-13** Xem danh sách tin tuyển dụng đã ứng tuyển | Ứng tuyển | Cao | Có lọc theo trạng thái và tìm theo tên công việc / công ty |
@@ -40,12 +40,12 @@
 ## Tìm kiếm tin tuyển dụng
 
 - **Tác nhân:** Khách hoặc Ứng viên
-- **Mô tả:** Cho phép tác nhân tìm kiếm các tin tuyển dụng trên hệ thống theo từ khóa, ngành nghề, địa điểm, mức lương và các tiêu chí lọc khác.
+- **Mô tả:** Cho phép tác nhân tìm kiếm các tin tuyển dụng trên hệ thống theo từ khóa, ngành nghề, địa điểm, mức lương và các tiêu chí lọc khác (tìm kiếm không phân biệt chữ hoa/thường và dấu).
 - **Pre-condition:** Tác nhân truy cập vào hệ thống.
 - **Post-condition:** Hệ thống hiển thị danh sách các tin tuyển dụng phù hợp với điều kiện tìm kiếm.
 - **Luồng sự kiện:**
   - **Luồng chính:**
-    1. Tác nhân nhập từ khóa tìm kiếm và/hoặc lựa chọn các bộ lọc (địa điểm, ngành nghề, mức lương, kinh nghiệm, hình thức làm việc).
+    1. Tác nhân nhập từ khóa tìm kiếm và/hoặc lựa chọn các bộ lọc (địa điểm, ngành nghề, mức lương, hình thức làm việc).
     2. Tác nhân nhấn nút "Tìm kiếm".
     3. Hệ thống tiếp nhận và kiểm tra tính hợp lệ của tiêu chí tìm kiếm.
     4. Hệ thống truy vấn cơ sở dữ liệu để lấy các tin tuyển dụng đang hoạt động thỏa mãn điều kiện.
@@ -414,7 +414,7 @@
 |---|---|---|
 | **EC-CAN-JOB-01** | **Xung đột thời gian hết hạn công việc** | Tin tuyển dụng hết hạn, bị ẩn hoặc bị xóa ngay trong khoảng thời gian giữa lúc ứng viên xem danh sách và nhấn xem chi tiết.<br>$\rightarrow$ **Xử lý:** Khi tác nhân chọn xem chi tiết, hệ thống kiểm tra trạng thái tin. Nếu tin không còn khả dụng, hiển thị thông báo *"Tin tuyển dụng này không còn tồn tại hoặc đã hết hạn nộp hồ sơ"* kèm gợi ý các công việc tương tự (luồng thay thế 2a). |
 | **EC-CAN-JOB-02** | **Ký tự đặc biệt & SQL/RSQL Injection** | Tác nhân nhập các chuỗi ký tự tấn công (như `' OR '1'='1`, `<script>`) vào ô tìm kiếm từ khóa.<br>$\rightarrow$ **Xử lý:** Hệ thống kiểm tra tính hợp lệ của tiêu chí tìm kiếm (bước 3), sanitize toàn bộ input, sử dụng Prepared Statements / Parameterized Queries khi truy vấn cơ sở dữ liệu và escape các ký tự đặc biệt. |
-| **EC-CAN-JOB-03** | **Phân trang với offset quá lớn** | Client truyền tham số phân trang bất thường như `page=999999`.<br>$\rightarrow$ **Xử lý:** Giới hạn tham số `page` và `size` tối đa (vd: max `pageSize=100`, max `totalPages=500`). Nếu vượt quá, tự động trả về trang cuối cùng hợp lệ hoặc lỗi `400 Bad Request`. |
+| **EC-CAN-JOB-03** | **Phân trang với offset quá lớn** | Client truyền tham số phân trang bất thường như `page=999999`.<br>$\rightarrow$ **Xử lý:** Hệ thống chuẩn hóa phân trang theo triển khai hiện tại: `page < 0` trở về `0`; `size` mặc định `5`, tối đa `20` (giá trị `<= 0` trở thành `5`, lớn hơn `20` trở thành `20`); `page * size` được bảo vệ khỏi tràn số nguyên. Nếu vượt quá số trang hiện có, trả về trang rỗng hợp lệ thay vì lỗi. |
 | **EC-CAN-JOB-04** | **Bộ lọc giá trị vô lý** | Ứng viên chọn mức lương tối thiểu cao hơn mức lương tối đa (`salary_min = 5000` > `salary_max = 2000`).<br>$\rightarrow$ **Xử lý:** Frontend tự động điều chỉnh khoảng slider hợp lệ; backend tự chuẩn hóaswap 2 giá trị hoặc phản hồi lỗi `400 Invalid Filter Criteria`. |
 
 ---

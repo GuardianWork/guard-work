@@ -23,7 +23,8 @@ public class DraftContent {
       Map.ofEntries(
           Map.entry("title", 200),
           Map.entry("description", 10000),
-          Map.entry("location", 1000));
+          Map.entry("location", 1000),
+          Map.entry("industry", 100));
   private final ObjectMapper json;
 
   public DraftContent(ObjectMapper json) {
