@@ -249,4 +249,20 @@ BEGIN
 END;
 $$;
 
+-- Seed demo CV library metadata for the candidate portal screens.
+INSERT INTO candidate_cvs (id, candidate_id, file_name, file_size, content_type, public_id, is_default, created_at, updated_at)
+SELECT gen_random_uuid(), cp.id, 'Nguyen_Van_An_CV.pdf', 204800, 'application/pdf',
+    'candidates/' || cp.id || '/cvs/demo-default', true, now(), now()
+FROM candidate_profiles cp JOIN users u ON u.id = cp.user_id
+WHERE u.username = 'demo_candidate'
+ON CONFLICT (public_id) DO NOTHING;
+
+INSERT INTO candidate_cvs (id, candidate_id, file_name, file_size, content_type, public_id, is_default, created_at, updated_at)
+SELECT gen_random_uuid(), cp.id, 'GuardianWork_Portfolio.docx', 128000,
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'candidates/' || cp.id || '/cvs/demo-portfolio', false, now(), now()
+FROM candidate_profiles cp JOIN users u ON u.id = cp.user_id
+WHERE u.username = 'demo_candidate'
+ON CONFLICT (public_id) DO NOTHING;
+
 COMMIT;
