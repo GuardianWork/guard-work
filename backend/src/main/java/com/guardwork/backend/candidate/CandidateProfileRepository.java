@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
  * Spring Data JPA repository for {@link CandidateProfile}.
  */
 @Repository
-public interface CandidateProfileRepository extends JpaRepository<CandidateProfile, UUID> {
+public interface CandidateProfileRepository extends JpaRepository<CandidateProfile, java.util.UUID> {
     /**
      * Find a candidate profile by the associated user id.
      */

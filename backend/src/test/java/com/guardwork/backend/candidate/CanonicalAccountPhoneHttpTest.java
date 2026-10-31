@@ -52,11 +52,12 @@ class CanonicalAccountPhoneHttpTest {
                 .andExpect(status().isGone());
         assertThat(database.queryForObject("SELECT phone_number FROM candidate_profiles WHERE user_id=?", String.class, account.id())).isEqualTo(oldPhone);
         assertThat(database.queryForMap("SELECT phone,phone_verified_at FROM employer_profiles WHERE user_id=?", account.id())).isEqualTo(history);
-        putProfile(account, "Cleared", null).andExpect(status().isOk()).andExpect(jsonPath("$.data.phoneNumber").isEmpty());
-        assertThat(database.queryForObject("SELECT phone_number FROM users WHERE id=?", String.class, account.id())).isNull();
+        putProfile(account, "Cleared", null).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.phoneNumber").value(OnboardingSecrets.phone(newPhone)));
+        assertThat(database.queryForObject("SELECT phone_number FROM users WHERE id=?", String.class, account.id()))
+                .isEqualTo(OnboardingSecrets.phone(newPhone));
         http.perform(get(PATH).header("Authorization", account.token())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.phoneNumber").isEmpty());
-        // A frozen historical verified phone does not reserve the released current contact.
+                .andExpect(jsonPath("$.data.phoneNumber").value(OnboardingSecrets.phone(newPhone)));
         putProfile(account(), "Reused", oldPhone).andExpect(status().isOk());
     }
 
@@ -69,7 +70,7 @@ class CanonicalAccountPhoneHttpTest {
         putProfile(owner, "Owner", number).andExpect(status().isOk());
         putProfile(other, "Original", original).andExpect(status().isOk());
         putProfile(other, "Must roll back", OnboardingSecrets.phone(number)).andExpect(status().isConflict())
-                .andExpect(jsonPath("$.message").value("40930 IDENTIFIER_UNAVAILABLE: Contact information is unavailable"));
+                .andExpect(jsonPath("$.message").value("The requested phone number is already used by another account."));
         for (String invalid : List.of("", "0123456789", "0241234567", "+840901234567")) {
             putProfile(other, "Invalid", invalid).andExpect(status().isBadRequest());
         }

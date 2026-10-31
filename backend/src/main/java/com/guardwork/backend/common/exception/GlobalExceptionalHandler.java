@@ -49,6 +49,7 @@ public class GlobalExceptionalHandler {
 
         return ErrorApiResponse.builder()
                 .message("Invalid Request Data")
+                .status(errorCode.getCode())
                 .detailMessage(errorCode.getDetailedMessage())
                 .errors(errors)
                 .build();

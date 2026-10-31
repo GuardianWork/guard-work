@@ -26,7 +26,7 @@ public record UpdateCandidateProfileRequest(
         String avatarUrl,
 
         @Size(max = ValidationConstants.MAX_SKILLS, message = "At most {max} skills are allowed")
-        List<@Size(min = 1, max = ValidationConstants.MAX_SKILL_LENGTH, message = "Each skill must be non‑blank and at most {max} characters")
+        List<@Size(max = ValidationConstants.MAX_SKILL_LENGTH, message = "Each skill must be at most {max} characters")
         String> skills,
 
         List<@Valid ExperienceEntry> experience,

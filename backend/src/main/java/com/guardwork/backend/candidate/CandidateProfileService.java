@@ -10,11 +10,13 @@ import com.guardwork.backend.candidate.util.ContactMaskingUtils;
 import com.guardwork.backend.candidate.util.ValidationConstants;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
+import com.guardwork.backend.user.AccountPhone;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -34,7 +36,7 @@ public class CandidateProfileService {
         User user = requireUser(userId);
         CandidateProfile profile = profileRepository.findByUserId(userId)
                 .orElseGet(() -> profileRepository.save(createSkeletonProfile(user)));
-        profile.setEmail(user.getEmail());
+        attachAccountContact(profile, user);
         return profile;
     }
 
@@ -43,15 +45,18 @@ public class CandidateProfileService {
      */
     @Transactional
     public CandidateProfile updateProfile(Long userId, UpdateCandidateProfileRequest request) {
-        User user = requireUser(userId);
+        // Lock the account first so a racing phone claim serializes before profile writes.
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         CandidateProfile profile = profileRepository.findByUserId(userId)
                 .orElseGet(() -> createSkeletonProfile(user));
 
-        // Account email is derived from User so the profile cannot drift from the login identity.
+        // Account email and phone are derived from User so the profile cannot drift from the login identity.
         profile.setEmail(user.getEmail());
-        profile.setFullName(request.fullName());
-        profile.setPhoneNumber(request.phoneNumber());
-        profile.setAvatarUrl(request.avatarUrl());
+        profile.setFullName(normalizeFullName(request.fullName()));
+        if (request.avatarUrl() != null) {
+            profile.setAvatarUrl(request.avatarUrl());
+        }
         if (request.isPublic() != null) {
             profile.setPublic(request.isPublic());
         }
@@ -64,7 +69,39 @@ public class CandidateProfileService {
         if (request.education() != null) {
             profile.setEducation(request.education());
         }
-        return profileRepository.save(profile);
+
+        if (request.phoneNumber() != null) {
+            user.setPhoneNumber(normalizePhone(request.phoneNumber()));
+        }
+        try {
+            // Flush before the profile write so a racing claim rolls back this entire transaction.
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException conflict) {
+            if (String.valueOf(conflict.getMostSpecificCause().getMessage()).contains("uq_users_phone_number")) {
+                throw new AppException(ErrorCode.IDENTIFIER_UNAVAILABLE);
+            }
+            throw conflict;
+        }
+        CandidateProfile saved = profileRepository.save(profile);
+        attachAccountContact(saved, user);
+        return saved;
+    }
+
+    private static String normalizePhone(String value) {
+        try {
+            return AccountPhone.normalize(value);
+        } catch (IllegalArgumentException invalidPhone) {
+            throw new AppException(ErrorCode.INVALID_PHONE_NUMBER);
+        }
+    }
+
+    private static String normalizeFullName(String value) {
+        return value.trim().replaceAll("\\s+", " ");
+    }
+
+    private static void attachAccountContact(CandidateProfile profile, User user) {
+        profile.setEmail(user.getEmail());
+        profile.setPhoneNumber(user.getPhoneNumber());
     }
 
     private User requireUser(Long userId) {
@@ -87,7 +124,7 @@ public class CandidateProfileService {
     private List<String> cleanSkills(List<String> incoming) {
         Set<String> normalized = new HashSet<>();
         List<String> cleaned = incoming.stream()
-                .map(String::trim)
+                .map(s -> s == null ? "" : s.trim())
                 .filter(s -> !s.isBlank())
                 .peek(s -> {
                     if (s.length() > ValidationConstants.MAX_SKILL_LENGTH) {

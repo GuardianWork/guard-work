@@ -21,6 +21,9 @@ public enum ErrorCode {
     INVALID_EMAIL_FORMAT(40015, "The email address you entered is not valid.", HttpStatus.BAD_REQUEST),
     INVALID_OTP(40018, "The OTP code is invalid or has expired.", HttpStatus.BAD_REQUEST),
 
+    // Candidate Profile
+    INVALID_PHONE_NUMBER(40030, "A Vietnamese mobile number is required", HttpStatus.BAD_REQUEST),
+
     // Candidate CV
     CV_CONSENT_REQUIRED(40020, "You must confirm the CV privacy notice before uploading.", HttpStatus.BAD_REQUEST),
     INVALID_CV_FILE_FORMAT(40021, "Only PDF, DOC, and DOCX files up to 10 MB are accepted.", HttpStatus.BAD_REQUEST),
@@ -46,6 +49,7 @@ public enum ErrorCode {
 
     // --- CONFLICT (409) ---
     DUPLICATE_CV(40902, "This CV has already been registered.", HttpStatus.CONFLICT),
+    IDENTIFIER_UNAVAILABLE(40930, "The requested phone number is already used by another account.", HttpStatus.CONFLICT),
     APPLICATION_ALREADY_SUBMITTED(40903, "You have already applied to this job.", HttpStatus.CONFLICT),
     JOB_NOT_ACCEPTING_APPLICATIONS(40904, "This job posting is no longer accepting applications.", HttpStatus.CONFLICT),
 
