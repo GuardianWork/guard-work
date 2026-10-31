@@ -77,7 +77,7 @@ class JobMigrationCompatibilityTest {
           + "VALUES (?,'email@example.vn',repeat('a',64),now(),now()+interval '24 hours')", user);
       var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
           .target("2026.10.30.85").load();
-      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(4);
       assertThat(database.queryForObject("SELECT secret_hash IS NULL AND consumed_at IS NOT NULL "
           + "AND failed_attempts=0 FROM " + schema + ".user_email_verification WHERE user_id=?", Boolean.class, user)).isTrue();
       assertThat(database.queryForObject("SELECT email_verified FROM " + schema + ".users WHERE id=?", Boolean.class, user)).isFalse();

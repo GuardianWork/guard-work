@@ -1,7 +1,8 @@
 package com.guardwork.backend.candidate;
 
 import com.guardwork.backend.candidate.dto.UpdateCandidateProfileRequest;
-import com.guardwork.backend.candidate.dto.CandidateProfileResponse;
+import com.guardwork.backend.candidate.dto.ExperienceEntry;
+import com.guardwork.backend.candidate.dto.EducationEntry;
 import com.guardwork.backend.auth.security.UserPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,22 +45,21 @@ class CandidateProfileControllerTest {
 
     private final UserPrincipal testPrincipal = new UserPrincipal(1L, "testuser", "test@example.com", "USER");
 
-    private CandidateProfileResponse sampleProfile() {
+    private CandidateProfile sampleProfile() {
         CandidateProfile profile = new CandidateProfile();
         profile.setId(UUID.randomUUID());
         profile.setUserId(testPrincipal.getId());
+        profile.setEmail(testPrincipal.getEmail());
         profile.setFullName("John Doe");
         profile.setAvatarUrl("https://example.com/avatar.png");
-        profile.setPhoneNumber("+84901234567");
+        profile.setPhoneNumber("0123456789");
         profile.setSkills(List.of("Kotlin", "Docker"));
-        profile.setExperienceSummary("5 years");
-        profile.setEducationSummary("BS Computer Science");
+        profile.setExperience(List.of(new ExperienceEntry("Acme", "Dev", "2019-01", "2024-01", "5 years experience")));
+        profile.setEducation(List.of(new EducationEntry("State Uni", "BSc", "2014", "2018", "Computer Science")));
         profile.setPublic(true);
         profile.setCreatedAt(java.time.Instant.now());
         profile.setUpdatedAt(java.time.Instant.now());
-        return new CandidateProfileResponse(profile.getId(), profile.getUserId(), profile.getFullName(),
-                profile.getAvatarUrl(), profile.getPhoneNumber(), profile.getSkills(), profile.getExperienceSummary(),
-                profile.getEducationSummary(), profile.isPublic(), profile.getCreatedAt(), profile.getUpdatedAt());
+        return profile;
     }
 
 
@@ -73,17 +73,18 @@ class CandidateProfileControllerTest {
 
     @Test
     void getProfile_returnsMappedResponse() throws Exception {
-        CandidateProfileResponse profile = sampleProfile();
+        CandidateProfile profile = sampleProfile();
         when(profileService.getOrCreateProfile(anyLong())).thenReturn(profile);
 
         try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
             mockedSecurity.when(SecurityUtils::getCurrentUserId).thenReturn(testPrincipal.getId());
-            mockMvc.perform(get("/api/v1/candidates/profile"))
+            mockMvc.perform(get("/api/candidates/profile"))
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.status").value("200"))
-                    .andExpect(jsonPath("$.data.fullName").value(profile.fullName()))
-                    .andExpect(jsonPath("$.data.avatarUrl").value(profile.avatarUrl()))
+                    .andExpect(jsonPath("$.data.email").value(testPrincipal.getEmail()))
+                    .andExpect(jsonPath("$.data.fullName").value(profile.getFullName()))
+                    .andExpect(jsonPath("$.data.avatarUrl").value(profile.getAvatarUrl()))
                     .andExpect(jsonPath("$.data.skills[0]").value("Kotlin"))
                     .andExpect(jsonPath("$.data.isPublic").value(true));
         }
@@ -91,18 +92,18 @@ class CandidateProfileControllerTest {
 
     @Test
     void updateProfile_returnsUpdatedResponse() throws Exception {
-        CandidateProfileResponse sample = sampleProfile();
-        CandidateProfileResponse updated = new CandidateProfileResponse(sample.id(), sample.userId(), "Jane Doe",
-                sample.avatarUrl(), "+84987654321", sample.skills(), sample.experienceSummary(),
-                sample.educationSummary(), false, sample.createdAt(), sample.updatedAt());
+        CandidateProfile updated = sampleProfile();
+        updated.setFullName("Jane Doe");
+        updated.setPhoneNumber("0987654321");
+        updated.setPublic(false);
 
         UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
                 "Jane Doe",
                 "0987654321",
                 "https://example.com/new-avatar.png",
                 List.of("Java", "Spring"),
-                "6 years",
-                "MSc Computer Science",
+                List.of(new ExperienceEntry("Corp", "Engineer", "2020-01", null, "6 years")),
+                List.of(new EducationEntry("Uni", "MSc", "2015", "2018", "Computer Science")),
                 false
         );
 
@@ -111,15 +112,36 @@ class CandidateProfileControllerTest {
 
         try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
             mockedSecurity.when(SecurityUtils::getCurrentUserId).thenReturn(testPrincipal.getId());
-            mockMvc.perform(put("/api/v1/candidates/profile")
+            mockMvc.perform(put("/api/candidates/profile")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                     .andExpect(jsonPath("$.status").value("200"))
                     .andExpect(jsonPath("$.data.fullName").value("Jane Doe"))
-                    .andExpect(jsonPath("$.data.phoneNumber").value("+84987654321"))
+                    .andExpect(jsonPath("$.data.phoneNumber").value("0987654321"))
                     .andExpect(jsonPath("$.data.isPublic").value(false));
+        }
+    }
+
+    @Test
+    void updateProfile_rejectsInvalidNestedExperience() throws Exception {
+        UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
+                "Jane Doe",
+                null,
+                null,
+                null,
+                List.of(new ExperienceEntry("", "Engineer", "2020-01", null, null)),
+                null,
+                null
+        );
+
+        try (MockedStatic<SecurityUtils> mockedSecurity = org.mockito.Mockito.mockStatic(SecurityUtils.class)) {
+            mockedSecurity.when(SecurityUtils::getCurrentUserId).thenReturn(testPrincipal.getId());
+            mockMvc.perform(put("/api/candidates/profile")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest());
         }
     }
 }

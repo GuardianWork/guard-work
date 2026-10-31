@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -23,14 +24,14 @@ import java.util.Map;
 public class GlobalExceptionalHandler {
 
     @ExceptionHandler(AppException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ErrorApiResponse handleAppException(AppException ex) {
-        log.error("AppException occurred: {}", ex.getMessage(), ex);
-        return ErrorApiResponse.builder()
-                .message(ex.getErrorCode().getDetailedMessage())
-                .status(ex.getErrorCode().getCode())
-                .detailMessage(ex.getMessage())
-                .build();
+    public ResponseEntity<ErrorApiResponse> handleAppException(AppException ex) {
+        log.warn("AppException occurred: {}", ex.getMessage());
+        return ResponseEntity.status(ex.getErrorCode().getStatusCode())
+                .body(ErrorApiResponse.builder()
+                        .message(ex.getErrorCode().getDetailedMessage())
+                        .status(ex.getErrorCode().getCode())
+                        .detailMessage(ex.getMessage())
+                        .build());
     }
 
     @ExceptionHandler(value = BindException.class)
@@ -48,6 +49,7 @@ public class GlobalExceptionalHandler {
 
         return ErrorApiResponse.builder()
                 .message("Invalid Request Data")
+                .status(errorCode.getCode())
                 .detailMessage(errorCode.getDetailedMessage())
                 .errors(errors)
                 .build();

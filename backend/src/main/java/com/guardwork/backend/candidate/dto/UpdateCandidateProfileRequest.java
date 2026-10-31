@@ -3,6 +3,7 @@ package com.guardwork.backend.candidate.dto;
 import java.util.List;
 
 import com.guardwork.backend.candidate.util.ValidationConstants;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -25,10 +26,12 @@ public record UpdateCandidateProfileRequest(
         String avatarUrl,
 
         @Size(max = ValidationConstants.MAX_SKILLS, message = "At most {max} skills are allowed")
-        List<@Size(min = 1, max = ValidationConstants.MAX_SKILL_LENGTH, message = "Each skill must be non‑blank and at most {max} characters")
+        List<@Size(max = ValidationConstants.MAX_SKILL_LENGTH, message = "Each skill must be at most {max} characters")
         String> skills,
 
-        String experienceSummary,
-        String educationSummary,
+        List<@Valid ExperienceEntry> experience,
+
+        List<@Valid EducationEntry> education,
+
         Boolean isPublic
 ) {}

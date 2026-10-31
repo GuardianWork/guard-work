@@ -34,9 +34,11 @@ SELECT username, email, first_name, last_name,
 FROM demo_accounts
 ON CONFLICT (username) DO NOTHING;
 
-INSERT INTO candidate_profiles (user_id, full_name, skills, experience_summary, education_summary, is_public)
-SELECT id, 'Nguyễn Văn An', '["Java", "Spring Boot", "PostgreSQL"]'::jsonb,
-    'Sinh viên thực tập phát triển phần mềm.', 'Sinh viên ngành Công nghệ thông tin.', false
+INSERT INTO candidate_profiles (user_id, full_name, phone_number, skills, experience, education, is_public)
+SELECT id, 'Nguyễn Văn An', '0900000001', '["Java", "Spring Boot", "PostgreSQL"]'::jsonb,
+    '[{"company":"GuardWork Demo","role":"Thực tập sinh phát triển phần mềm","startDate":"2025-01","endDate":null,"description":"Sinh viên thực tập phát triển phần mềm."}]'::jsonb,
+    '[{"institution":"Đại học GuardWork","degree":"Cử nhân Công nghệ thông tin","startYear":"2021","endYear":"2025","description":"Sinh viên ngành Công nghệ thông tin."}]'::jsonb,
+    false
 FROM users WHERE username = 'demo_candidate'
 ON CONFLICT (user_id) DO NOTHING;
 
@@ -246,5 +248,21 @@ BEGIN
     END LOOP;
 END;
 $$;
+
+-- Seed demo CV library metadata for the candidate portal screens.
+INSERT INTO candidate_cvs (id, candidate_id, file_name, file_size, content_type, public_id, is_default, created_at, updated_at)
+SELECT gen_random_uuid(), cp.id, 'Nguyen_Van_An_CV.pdf', 204800, 'application/pdf',
+    'candidates/' || cp.id || '/cvs/demo-default', true, now(), now()
+FROM candidate_profiles cp JOIN users u ON u.id = cp.user_id
+WHERE u.username = 'demo_candidate'
+ON CONFLICT (public_id) DO NOTHING;
+
+INSERT INTO candidate_cvs (id, candidate_id, file_name, file_size, content_type, public_id, is_default, created_at, updated_at)
+SELECT gen_random_uuid(), cp.id, 'GuardianWork_Portfolio.docx', 128000,
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'candidates/' || cp.id || '/cvs/demo-portfolio', false, now(), now()
+FROM candidate_profiles cp JOIN users u ON u.id = cp.user_id
+WHERE u.username = 'demo_candidate'
+ON CONFLICT (public_id) DO NOTHING;
 
 COMMIT;
