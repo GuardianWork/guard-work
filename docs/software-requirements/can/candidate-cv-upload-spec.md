@@ -64,7 +64,7 @@ Out of scope:
   UC-CAN-05 and UC-CAN-06; they are not part of this upload specification's request/response contract.
 - renaming, editing, or replacing an existing CV;
 - copying a CV into an application snapshot (covered by
-  [`application-submission-spec.md`](../app/application-submission-spec.md));
+  [`application-submission-spec.md`](application-submission-spec.md));
 - recruiter access to a Candidate's library CV; recruiters read the application copy through a
   separately approved application workflow;
 - OCR, virus scanning, or automatic detection of sensitive data inside the file.
