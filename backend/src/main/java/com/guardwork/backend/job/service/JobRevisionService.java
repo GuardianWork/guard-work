@@ -39,7 +39,7 @@ public class JobRevisionService {
     if(request.expectedJobVersion()==null || request.expectedJobVersion()<0)throw DraftContent.invalid("expectedJobVersion");
     if(!job.getVersion().equals(request.expectedJobVersion()))throw JobSubmissionService.conflict("40022 CONCURRENT_MODIFICATION: Reload current versions");
     expiry.reconcile(job);
-    if(Set.of("CLOSED","EXPIRED").contains(job.getStatus()))throw JobSubmissionService.conflict("40978 JOB_STATE_CONFLICT: Terminal job cannot create a draft");
+    if(Set.of("CLOSED","EXPIRED","SUSPENDED").contains(job.getStatus()))throw JobSubmissionService.conflict("40978 JOB_STATE_CONFLICT: Terminal job cannot create a draft");
     if(drafts.working(job)!=null)throw JobSubmissionService.conflict("40979 WORKING_REVISION_EXISTS: Job already has a working revision");
     var revision=new JobRevision();revision.setJobId(jobId);revision.setRevisionNumber(latest.getRevisionNumber()+1);
     revision.setSourceRevisionId(source.getId());revision.setContent(source.getContent());revision.setState("DRAFT");

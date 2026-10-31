@@ -5,12 +5,12 @@
 | Specification ID | GW-SR-ADM |
 | Project | GuardWork |
 | File | `docs/feat/staff/spec.md` |
-| Version | 1.5.0 — add scoped personal activity-history draft |
+| Version | 1.5.0 — scoped GW-93 job hiding and event history |
 | Status | Draft |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-10-30 |
-| Product source | Retained UC-11–21 from GW-81; session-confirmed personal-history addition UC-22 |
+| Last updated | 2026-10-31 |
+| Product source | Retained UC-11–21 in [usecase.md](usecase.md), scoped by GW-81 |
 
 ## 1. Purpose and scope
 
@@ -79,6 +79,8 @@ Former `ADM-REP-02–07` described review locks, resolution concurrency, sanctio
 
 ### 3.2 UC-13–14 — Hide Job Posting and View History
 
+GW-93 scoped approval (2026-10-31): the requesting maintainer approved the focused [Staff job management contract](../../software-requirements/adm/staff-job-management-contract.md), including API, additive schema, visibility and concurrency boundaries. This section is implemented under that approval; the rest of this document retains its Draft status.
+
 Preconditions: hiding requires a public `PUBLISHED` posting; history requires an authorized posting context. Postconditions: successful hiding produces `SUSPENDED` and removes public visibility; history inspection changes nothing.
 
 | ID | Requirement |
@@ -92,7 +94,7 @@ Preconditions: hiding requires a public `PUBLISHED` posting; history requires an
 | ADM-JOB-07 | The Staff shall be able to view recorded posting-history events, including time, actor, action, status, and reason where available, and return to the posting. |
 | ADM-JOB-08 | History inspection shall not edit events or content. Empty history and retrieval failure shall be displayed distinctly. |
 
-This scope does not add job closure, physical deletion, a new publication state, or access to unrelated applicant data and Company communications.
+Beyond the focused contract’s approved `SUSPENDED` extension, this scope adds no further publication states, job closure, physical deletion, or access to unrelated applicant data and Company communications.
 
 ### 3.3 UC-15–17 — Company Verification
 
@@ -200,7 +202,7 @@ Enhanced retained-submission decisions create persisted email intents for the su
 
 ### 4.2 Not yet implemented or specified
 
-The repository does not currently provide the Staff report-list/detail, job hiding/history/restoration, or account lookup/ban/unban interfaces described here. Existing session/authentication helpers do not establish those complete workflows. UC-21 remains a use-case draft; its detailed requirements, publication eligibility, concurrency, and failure recovery must be aligned before implementation.
+The repository does not currently provide the Staff report-list/detail, job restoration, or account lookup/ban/unban interfaces described here. GW-93 adds job hiding and posting-event history under its separately approved focused contract. Existing session/authentication helpers do not establish those complete workflows. UC-21 remains a use-case draft; its detailed requirements, publication eligibility, concurrency, and failure recovery must be aligned before implementation.
 
 Older versions of this draft contained proposed report-resolution, account, job, and audit-search endpoints, SQL schemas, Redis keys, Kafka topics, and search integrations. They are not treated as implemented or approved contracts in this revision. No deployed API removal, schema migration, dependency change, or architecture selection is authorized by their removal from the active draft. Concrete contracts for unimplemented capabilities must be proposed and approved separately.
 
@@ -264,7 +266,7 @@ These boundaries are explicit gaps, not permission to bypass the stated outcomes
 
 UC-21 verification scenarios remain pending detailed specification alignment; its draft flow does not establish an approved implementation contract.
 
-GW-81 changes the implemented verification role/routes and their tests. The other scenarios guide future implementation verification; tests for unimplemented Staff features are not claimed to pass.
+GW-81 changes the implemented verification role/routes and their tests. GW-93 adds verification for UC-13/UC-14 under the focused contract. The remaining scenarios guide future implementation verification; tests for unimplemented Staff features are not claimed to pass.
 
 ## 7. Related documents
 

@@ -220,8 +220,8 @@ public class JobPublicationService {
     if (company.isBanned()) throw JobDraftService.notFound();
     var job = jobs.lock(id, company.getId()).orElseThrow(JobDraftService::notFound);
     entities.refresh(job);
-    if (job.isStaffSuspended()) throw JobDraftService.notFound();
-    if (job.getPublishedRevisionId() == null) throw JobDraftService.notFound();
+    if (job.getPublishedRevisionId() == null || "SUSPENDED".equals(job.getStatus()))
+      throw JobDraftService.notFound();
     var revision =
         revisions
             .findById(job.getPublishedRevisionId())

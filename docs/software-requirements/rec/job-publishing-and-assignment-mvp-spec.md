@@ -6,14 +6,16 @@
 | Project | GuardWork |
 | Module | Job Publishing and Assignments |
 | File | `job-publishing-and-assignment-mvp-spec.md` |
-| Version | 0.2.0 |
-| Date / Last Updated | 2026-10-30 |
+| Version | 0.3.0 |
+| Date / Last Updated | 2026-10-31 |
 | Owner | Thinh |
 | Named human approver | Thinh (retained from baseline) |
 | Status | Approved |
 | Ticket / branch | GW-78 / `GW-78-implement-job-publishing-and-assignment` |
 
 ## Change note
+
+GW-93 adds the explicitly user-approved Staff suspension and posting-event history extension documented in [GW-SR-ADM-JOB-93](../adm/staff-job-management-contract.md). Other GW-78 requirements and the original approval metadata remain unchanged.
 
 GW-89 updates JP78-012 and JP78-013 to use one complete description, keep six required publishing inputs, and make headcount and compensation optional. The user approved this behavior in the GW-89 discussion. The companion implementation-focused specification remains Draft under the repository requirements process.
 
@@ -24,6 +26,8 @@ Deliver backend Company job drafting, responsibility management, revision submis
 Reopening, archiving, metrics, Platform Removal/appeals, search/discovery, Applications, interviews, offers and Company Admin capabilities are separate work. Existing Applications must eventually remain unaffected by closing/expiry; GW-78 introduces no Application storage, APIs, acceptance claims or synthetic metrics.
 
 The broader [Job Publishing draft](../../feat/recruiters/job-publishing-spec.md) is background. This focused draft records the GW-78 interview's narrower scope and explicit changes: Owner responsibility may replace a Recruiter assignment; authorship grants no continuing access; Company Admin is excluded; and retained pending reviews may complete after closure/expiry without reopening. It does not silently amend the broader draft or other approved specifications.
+
+GW-93 approved extension (2026-10-31): [Staff hiding and event history](../adm/staff-job-management-contract.md) adds `SUSPENDED`, public content hiding, and Staff history without enabling restoration. It governs suspension-specific lifecycle behavior; GW-78 behavior for existing states is retained.
 
 ## 2. Domain model and lifecycles
 

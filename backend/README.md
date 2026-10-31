@@ -342,38 +342,21 @@ job independently. Set `jobs.expiry.worker-enabled=false` to disable scheduling;
 Tests disable scheduling and control the Clock explicitly. No schema migration or
 new dependency accompanies moderation, public details, or expiry.
 
-### Staff account management (GW-92)
 
-See the [frontend integration guide](../docs/backend/staff-account-management.md)
-for request/response examples, screen flow, and error/session handling.
+### Staff Job Posting hiding and history
 
-UC-18–20 use `/api/staff/accounts/users` and `/api/staff/accounts/companies` for
-search, `/{id}` for detail, and `POST /{id}/ban` or `POST /{id}/unban` for enforcement.
-Search accepts literal `q`, zero-based `page`, and `size` 1–100 (default 20), sorted
-by descending ID. DTOs expose only the identifying fields, effective state,
-active ban, and action eligibility in the
-[account contract](../docs/software-requirements/adm/account-management-spec.md).
-Ban accepts a required `reason` and optional future `expiresAt`; null means permanent.
-Unban requires a `reason`. Staff cannot ban themselves. Company roles grant no
-Platform authority. The repository contains backend APIs only; no Staff UI is delivered here.
+UC-13/UC-14 add `PUT /api/staff/jobs/{jobId}/hide` and
+`GET /api/staff/jobs/{jobId}/history` for active Platform Staff. A current job version
+and a trimmed 1–1000 code-point reason are required to suspend a public posting.
+The change and both audit records commit atomically; history is read-only and
+paginated independently of revision history. Suspended content is unavailable on
+the public job endpoint; Company authoring/lifecycle actions cannot restore it.
+Pending review decisions preserve suspension.
 
-Apply `V2026.10.30.92__account_enforcement.sql` and
-`V2026.10.30.93__allow_managed_account_bans.sql` before starting the new application.
-Stop old application instances/token issuers during deployment. User access JWTs now
-carry `sessionVersion`; legacy tokens without it use zero until invalidated. Every
-authenticated request checks current persisted state and version. Database failure
-returns 503 without trusting cached JWT state. Ban/unban atomically invalidates
-access versions and refresh tokens, retains history, and appends an audit record.
-Company actions invalidate all active Owner/Admin/Recruiter sessions; members may
-sign in again for permitted personal access while Company restrictions apply.
-
-Temporary expiry runs every 60 seconds and also reconciles at authentication and
-Company access boundaries. Configure `accounts.expiry.worker-enabled=false` to disable
-only the scheduler, or `accounts.expiry.poll-ms` to change its interval. Staff reads
-derive expiry without mutating state. Unban/expiry never restores old credentials,
-roles, Company verification, or suspended postings. Existing unmanaged legacy
-suspensions require separately approved reconciliation rather than invented ban history.
-
-Company bans retain publication status and set `staff_suspended` on public postings.
-Public detail excludes these postings after unban too; publication approval/resume
-cannot clear Staff suspension. Restoration is outside UC-18–20.
+Migration `V2026.10.31.86__staff_job_suspension.sql` adds `SUSPENDED` to the status
+constraint. Deploy compatible clients and stop older writers; rollback requires
+reviewed treatment of suspended rows. Public job details send `Cache-Control:
+no-store`; existing responses cached before rollout may require invalidation.
+See [job workflow documentation](../docs/backend/job-drafts.md#staff-hiding-and-posting-event-history-gw-93)
+and the [approved contract](../docs/software-requirements/adm/staff-job-management-contract.md).
+No new dependency, notification channel, public search or restoration workflow is added.

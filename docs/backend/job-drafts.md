@@ -248,3 +248,23 @@ reusing the completed test runs. The authorized local `backend_db` rebuild appli
 and validated all 14 migrations and restored the five standard demo accounts.
 The separate review finding about NUL in moderation rejection reasons remains
 outside this migration/Staff integration change.
+
+
+## Staff hiding and posting-event history (GW-93)
+
+The approved [UC-13/UC-14 contract](../software-requirements/adm/staff-job-management-contract.md) adds:
+
+- `PUT /api/staff/jobs/{jobId}/hide` with `{ "expectedJobVersion": 0, "reason": "Policy violation" }`. Use the actual current job version; reasons are stripped and require 1–1000 Unicode code points. Active persisted Platform Staff authority is required; Company roles do not grant it.
+- `GET /api/staff/jobs/{jobId}/history?page=0&size=20` returns recorded posting events, newest first by timestamp and ID, using the existing page envelope and size 1–100. This differs from `/revisions`: it includes publication, responsibility, lifecycle and administrative events. Only allowlisted event fields are returned. Missing historical status/reason and system actor IDs remain null; history reads do not reconcile expiry or change business state. Empty history is a successful empty page; retrieval failure is an error.
+
+Hiding locks actor, Company and posting, checks the current version and effective public eligibility, then commits `SUSPENDED` and both attributable audit records atomically. A stale version returns 409 `40022`; a non-public job returns 409 `40978`; a missing job returns 404 `40478`. The receipt returns `jobId`, `publicationStatus`, `jobVersion`, `actorUserId`, `suspendedAt` and trimmed `reason`.
+
+Public job detail returns content-free 404 for suspended jobs and sets `Cache-Control: no-store` on successes and errors. Authorized Company reads and `status=SUSPENDED` filtering remain available; draft creation/edit/submission and pause/resume/close cannot restore the job. Retained pending reviews may complete or be withdrawn; approval keeps `SUSPENDED`. Deadline expiry does not override Staff suspension. UC-21 restoration is excluded.
+
+Migration `V2026.10.31.86__staff_job_suspension.sql` extends the job status constraint without changing committed migration history or adding tables/dependencies. Deploy clients that understand the additive private status together with this backend, and stop older writers. Rollback requires reviewed handling of suspended rows; never silently republish them. Existing audit immutability and reviewed-content protections remain active.
+
+There is no current public job search/listing or server content cache. Future integrations must exclude suspended jobs and define invalidation. Previously delivered content or responses cached before rollout cannot be recalled; operational invalidation may be needed for an existing deployment cache. No notification, applicant-data access or new public listing is introduced.
+
+Use the existing isolated PostgreSQL tests. If another branch owns the default test database, create a separate database matching `backend_test_db_<suffix>` in that test PostgreSQL instance and select it with `BACKEND_TEST_DATABASE_URL`. Do not reset another branch's database or disable the test database safety guard.
+
+Frontend handoff: [Staff job hiding and history integration](staff-job-management-frontend-integration.md) includes request/response examples, version sourcing, state handling, errors and acceptance checks.
