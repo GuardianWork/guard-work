@@ -71,7 +71,7 @@ terminal and run Docker log/status commands in another.
 | --- | --- |
 | [`docker-compose.yml`](docker-compose.yml) | Starts PostgreSQL and the local `seed` service; supplies database credentials and read-only mounts. |
 | [`docker/dev-seed/seed.sh`](docker/dev-seed/seed.sh) | Checks the enable flag, waits for Flyway migrations, runs the SQL, and prints the account table after successful seeding. |
-| [`docker/dev-seed/seed.sql`](docker/dev-seed/seed.sql) | Inserts demo accounts, Candidate/employer profiles, a Company, and memberships in one transaction. |
+| [`docker/dev-seed/seed.sql`](docker/dev-seed/seed.sql) | Inserts demo accounts, Candidate/employer profiles, a Company, memberships and GW-93 job scenarios in one transaction. |
 | [`.env.example`](.env.example) | Documents local database settings and `GUARDWORK_DEV_SEED_ENABLED`. |
 
 Edit `seed.sql` to change fixture definitions; existing rows are preserved on reruns,
@@ -142,7 +142,7 @@ do not fabricate phone proof.
 These are direct local fixtures, so no OTP or email delivery is needed. They preserve
 the platform/Company role separation in GW-SR-AUTH-01 and GW-SR-REC-02; available
 operations still depend on implemented APIs. The certificate URL is a placeholder;
-no legal dossier, real document, job posting, CV file, or verification delivery is created.
+no legal dossier, real document, CV file, or verification delivery is created. Synthetic Job Postings and their histories are included for GW-93 testing.
 
 Each `docker compose up -d` reruns an exited seed service and inserts missing fixtures.
 It preserves existing passwords, statuses, Company state, profiles, and membership history;
@@ -360,3 +360,51 @@ no-store`; existing responses cached before rollout may require invalidation.
 See [job workflow documentation](../docs/backend/job-drafts.md#staff-hiding-and-posting-event-history-gw-93)
 and the [approved contract](../docs/software-requirements/adm/staff-job-management-contract.md).
 No new dependency, notification channel, public search or restoration workflow is added.
+
+
+### GW-93 development Job Postings
+
+The existing local seed now creates nine Vietnamese demo jobs under `GW-DEMO-LOCAL-001`.
+They use synthetic content/history, Owner Responsibility and an assignment to the
+existing active `demo_recruiter` membership when eligible. No notification or mail
+is sent. These are development fixtures, not evidence of real review/delivery.
+
+| Fixture marker | Initial Job Posting state | Manual check |
+| --- | --- | --- |
+| `GW93-HIDE-READY` | `PUBLISHED` | Public content is readable; Staff can hide it with current version and reason. |
+| `GW93-PUBLISHED-EDIT` | `PUBLISHED` | A second revision is pending; pending content must not replace public approved content. |
+| `GW93-SUSPENDED` | `SUSPENDED` | Public GET returns 404; Staff history retains actor and reason. |
+| `GW93-SUSPENDED-EDIT` | `SUSPENDED` | A second revision is pending; approving it must keep the posting hidden. |
+| `GW93-PAUSED` | `PAUSED` | Public details remain readable with applications unavailable; hide returns conflict. |
+| `GW93-CLOSED` | `CLOSED` | Public details remain readable; hide/resume are unavailable. |
+| `GW93-EXPIRED` | `EXPIRED` | Past approved deadline, no applications, system expiry actor is null. |
+| `GW93-DRAFT` | `DRAFT` | Private incomplete draft; absent from submitted-revision Staff queues. |
+| `GW93-PENDING` | `DRAFT` | First revision is `PENDING_REVIEW`; Staff can inspect/decide it; no public content yet. |
+
+Start the backend to apply committed Flyway migrations, then run:
+
+```bash
+docker compose up -d seed
+docker compose logs --tail 80 seed
+```
+
+The output lists each fixture marker, actual job/revision IDs, current states and
+version tokens. IDs are allocated by PostgreSQL; do not assume a fixed ID.
+Use `demo_staff` / `GuardWork123!` in the Staff portal, or `demo_owner` and
+`demo_recruiter` with the same initial password in the public portal. Existing
+passwords are preserved, so use changed credentials when applicable.
+
+For Staff navigation, request `GET /api/staff/job-revisions?status=ALL`; the default
+queue shows only pending revisions. Use the printed `job_id` for public details and
+posting history, and reload a Staff revision for its current `jobVersion` before
+hiding. See the [frontend integration guide](../docs/backend/staff-job-management-frontend-integration.md).
+
+Reruns identify jobs by the stable `developmentFixture` marker in their immutable
+`JOB_CREATED` facts, create only missing fixtures, and preserve all existing
+content, versions, reviews, assignments and manual hide/pause/close actions. They
+never restore a removed Recruiter membership or reset Company/account restrictions.
+Fresh public deadlines are 30 days from the initial seed run; reruns do not extend
+them. The expired scenario starts one day in the past. If a demo Owner/Staff/Company
+is no longer eligible, creating missing jobs fails atomically with a clear error
+rather than overriding its state. Duplicate or foreign fixture markers fail as
+identifier collisions. No schema migration or dependency is added.
