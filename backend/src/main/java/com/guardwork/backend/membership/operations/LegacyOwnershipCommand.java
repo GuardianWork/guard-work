@@ -283,7 +283,7 @@ public class LegacyOwnershipCommand {
   }
 
   private void requireActiveApplicant(User user) {
-    if (!"ACTIVE".equals(user.getStatus())) throw refused("Applicant account unavailable");
+    if (!user.allowsNormalAccess()) throw refused("Applicant account unavailable");
   }
 
   private void requireUnassigned(Company company, Long applicant) {

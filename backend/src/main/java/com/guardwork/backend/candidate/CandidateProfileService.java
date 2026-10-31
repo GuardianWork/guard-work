@@ -10,13 +10,12 @@ import com.guardwork.backend.candidate.util.ContactMaskingUtils;
 import com.guardwork.backend.candidate.util.ValidationConstants;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
-import com.guardwork.backend.user.AccountPhone;
+import com.guardwork.backend.account.service.AccountIdentityService;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -26,6 +25,7 @@ public class CandidateProfileService {
 
     CandidateProfileRepository profileRepository;
     UserRepository userRepository;
+    AccountIdentityService identity;
 
     /**
      * Returns the existing profile for the given user, or creates a skeleton one
@@ -34,6 +34,7 @@ public class CandidateProfileService {
     @Transactional
     public CandidateProfile getOrCreateProfile(Long userId) {
         User user = requireUser(userId);
+        AccountIdentityService.requireEligible(user);
         CandidateProfile profile = profileRepository.findByUserId(userId)
                 .orElseGet(() -> profileRepository.save(createSkeletonProfile(user)));
         attachAccountContact(profile, user);
@@ -48,12 +49,12 @@ public class CandidateProfileService {
         // Lock the account first so a racing phone claim serializes before profile writes.
         User user = userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        AccountIdentityService.requireEligible(user);
         CandidateProfile profile = profileRepository.findByUserId(userId)
                 .orElseGet(() -> createSkeletonProfile(user));
 
         // Account email and phone are derived from User so the profile cannot drift from the login identity.
         profile.setEmail(user.getEmail());
-        profile.setFullName(normalizeFullName(request.fullName()));
         if (request.avatarUrl() != null) {
             profile.setAvatarUrl(request.avatarUrl());
         }
@@ -70,42 +71,24 @@ public class CandidateProfileService {
             profile.setEducation(request.education());
         }
 
-        if (request.phoneNumber() != null) {
-            user.setPhoneNumber(normalizePhone(request.phoneNumber()));
-        }
-        try {
-            // Flush before the profile write so a racing claim rolls back this entire transaction.
-            userRepository.saveAndFlush(user);
-        } catch (DataIntegrityViolationException conflict) {
-            if (String.valueOf(conflict.getMostSpecificCause().getMessage()).contains("uq_users_phone_number")) {
-                throw new AppException(ErrorCode.IDENTIFIER_UNAVAILABLE);
-            }
-            throw conflict;
-        }
+        // Preserve dev's optional-field semantics on the Candidate form; account settings can clear phone.
+        identity.update(user, request.firstName(), request.lastName(),
+                request.phoneNumber() == null ? user.getPhoneNumber() : request.phoneNumber());
         CandidateProfile saved = profileRepository.save(profile);
         attachAccountContact(saved, user);
         return saved;
     }
 
-    private static String normalizePhone(String value) {
-        try {
-            return AccountPhone.normalize(value);
-        } catch (IllegalArgumentException invalidPhone) {
-            throw new AppException(ErrorCode.INVALID_PHONE_NUMBER);
-        }
-    }
-
-    private static String normalizeFullName(String value) {
-        return value.trim().replaceAll("\\s+", " ");
-    }
-
     private static void attachAccountContact(CandidateProfile profile, User user) {
         profile.setEmail(user.getEmail());
+        profile.setFirstName(user.getFirstName());
+        profile.setLastName(user.getLastName());
+        profile.setFullName(user.fullName());
         profile.setPhoneNumber(user.getPhoneNumber());
     }
 
     private User requireUser(Long userId) {
-        return userRepository.findById(userId)
+        return userRepository.findByIdForUpdate(userId)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
     }
 

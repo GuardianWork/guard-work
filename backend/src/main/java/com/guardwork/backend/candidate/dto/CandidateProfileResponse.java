@@ -11,6 +11,8 @@ public record CandidateProfileResponse(
         Long userId,
         String email,
         String fullName,
+        String firstName,
+        String lastName,
         String avatarUrl,
         String phoneNumber,
         List<String> skills,

@@ -36,7 +36,7 @@ class Gw85RebaseMigrationTest {
             long actor = database.queryForObject("INSERT INTO " + schema
                     + ".users(first_name,last_name,username,email,password,role,email_verified) "
                     + "VALUES ('Existing','User','existing_user','existing@example.vn','fixture','USER',true) RETURNING id", Long.class);
-            database.update("INSERT INTO " + schema + ".candidate_profiles(user_id,full_name,phone_number) VALUES (?,'Existing User','0901234567')", actor);
+            database.update("INSERT INTO " + schema + ".candidate_profiles(user_id,phone_number) VALUES (?,'0901234567')", actor);
             var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
                     .outOfOrder(true).load();
             assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);

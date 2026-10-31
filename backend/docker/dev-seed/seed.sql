@@ -34,8 +34,8 @@ SELECT username, email, first_name, last_name,
 FROM demo_accounts
 ON CONFLICT (username) DO NOTHING;
 
-INSERT INTO candidate_profiles (user_id, full_name, phone_number, skills, experience, education, is_public)
-SELECT id, 'Nguyễn Văn An', '0900000001', '["Java", "Spring Boot", "PostgreSQL"]'::jsonb,
+INSERT INTO candidate_profiles (user_id, phone_number, skills, experience, education, is_public)
+SELECT id, '0900000001', '["Java", "Spring Boot", "PostgreSQL"]'::jsonb,
     '[{"company":"GuardWork Demo","role":"Thực tập sinh phát triển phần mềm","startDate":"2025-01","endDate":null,"description":"Sinh viên thực tập phát triển phần mềm."}]'::jsonb,
     '[{"institution":"Đại học GuardWork","degree":"Cử nhân Công nghệ thông tin","startYear":"2021","endYear":"2025","description":"Sinh viên ngành Công nghệ thông tin."}]'::jsonb,
     false

@@ -411,3 +411,16 @@ them. The expired scenario starts one day in the past. If a demo Owner/Staff/Com
 is no longer eligible, creating missing jobs fails atomically with a clear error
 rather than overriding its state. Duplicate or foreign fixture markers fail as
 identifier collisions. No schema migration or dependency is added.
+
+### Own account control (GW-95)
+
+See [account-control integration and rollout](../docs/backend/account-control.md) for
+personal settings, verified-email password changes, temporary deactivation and pending
+deletion requests with secure recovery. Migration `V2026.10.31.94__own_account_control.sql`
+adds voluntary lifecycle independently of Staff bans and removes duplicate Candidate names.
+Candidate clients must replace writable `fullName` with `firstName`/`lastName` in the same
+rollout; account and profile now share identity. Stop old writers before migration.
+No permanent erasure or Staff deletion processor is delivered.
+
+Frontend implementers: use the [GW-95 integration guide](../docs/backend/account-control-frontend-integration.md)
+for payloads, settings/recovery screens, lifecycle errors, token clearing and coordinated Candidate client migration.

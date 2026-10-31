@@ -29,7 +29,7 @@ public class CompanyAccessService {
 
   public User requireActiveUser(Long actorId) {
     User actor = enforcement.lockUser(actorId);
-    if (!"ACTIVE".equals(actor.getStatus())) {
+    if (!actor.allowsNormalAccess()) {
       throw new ResponseStatusException(
           HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
     }
