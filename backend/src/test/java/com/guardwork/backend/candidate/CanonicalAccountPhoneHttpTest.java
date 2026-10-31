@@ -113,7 +113,8 @@ class CanonicalAccountPhoneHttpTest {
         String number = phone();
         putProfile(employer, "Allowed", number).andExpect(status().isOk());
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", employer.id());
-        putProfile(employer, "Blocked", phone()).andExpect(status().isForbidden());
+        // GW-92 rejects inactive bearer credentials before the profile controller runs.
+        putProfile(employer, "Blocked", phone()).andExpect(status().isUnauthorized());
         assertThat(database.queryForObject("SELECT phone_number FROM users WHERE id=?", String.class, employer.id()))
                 .isEqualTo(OnboardingSecrets.phone(number));
     }
