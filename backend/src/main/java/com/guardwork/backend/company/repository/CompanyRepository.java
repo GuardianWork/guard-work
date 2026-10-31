@@ -20,6 +20,8 @@ public interface CompanyRepository extends JpaRepository<Company, Long>, org.spr
     @Query("SELECT c FROM Company c WHERE c.id = :id")
     Optional<Company> findByIdForUpdate(@Param("id") Long id);
 
+    boolean existsByOwnerUserId(Long ownerUserId);
+
     Optional<Company> findByTaxCode(String taxCode);
 
     boolean existsByEmail(String email);

@@ -172,7 +172,7 @@ public class JobApplicationService {
     private User requireActiveUser(Long userId, boolean lock) {
         User user = (lock ? users.findByIdForUpdate(userId) : users.findById(userId))
                 .orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
-        if (!"ACTIVE".equals(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new AppException(ErrorCode.ACCOUNT_SUSPENDED);
         }
         return user;

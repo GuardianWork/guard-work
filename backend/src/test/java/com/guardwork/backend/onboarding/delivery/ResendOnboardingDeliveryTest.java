@@ -46,6 +46,22 @@ class ResendOnboardingDeliveryTest {
         verifyNoInteractions(http);
     }
 
+    @Test void lifecycleMailNamesTheSpecificActionInVietnamese() throws Exception {
+        acceptedProvider();
+        var purposes = java.util.Map.of("DEACTIVATE", "tạm ngừng tài khoản", "DELETE", "gửi yêu cầu xóa tài khoản",
+                "REACTIVATE", "kích hoạt lại tài khoản", "CANCEL_DELETION", "hủy yêu cầu xóa tài khoản");
+        for (var purpose : purposes.entrySet()) {
+            clearInvocations(http);
+            assertThat(adapter().accountActionEmail("user@example.vn", "012345", purpose.getKey())).isTrue();
+            var request = ArgumentCaptor.forClass(HttpRequest.class);
+            verify(http).send(request.capture(), any(HttpResponse.BodyHandler.class));
+            var payload = json.readTree(body(request.getValue()));
+            assertThat(payload.path("subject").asText()).contains(purpose.getValue());
+            assertThat(payload.path("text").asText()).contains(purpose.getValue(), "012345", "10 phút")
+                    .doesNotContain("Mã xác thực email của bạn");
+        }
+    }
+
     ResendOnboardingDelivery adapter() {
         return new ResendOnboardingDelivery(json, "GuardWork <mail@example.vn>", "test-credential", http);
     }

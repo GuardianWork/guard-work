@@ -48,8 +48,15 @@ public class CandidateProfile {
     @Transient
     private String email;
 
-    @Column(name = "full_name", nullable = false, length = 150)
+    // Projection only: User owns personal identity; no duplicate profile-name storage.
+    @Transient
     private String fullName;
+
+    @Transient
+    private String firstName;
+
+    @Transient
+    private String lastName;
 
     @Column(name = "avatar_url", length = 512)
     private String avatarUrl;

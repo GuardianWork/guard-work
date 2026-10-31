@@ -621,3 +621,7 @@ For this amendment, an inactive account's bearer token is treated as unauthentic
 still returns the existing 403 suspension response. Anonymous recovery and public
 reads retain their existing access rules. This replaces the previous service-level
 403 expectation for inactive bearer tokens; callers should require sign-in again.
+
+## GW-95 scoped amendment (2026-10-31)
+
+The requesting human explicitly approved [own account control](account-control-spec.md) and its linked implementation contract in session. Platform USER password changes additionally require verified email and invalidate all existing sessions. Account and Candidate profile use canonical User first/last names and phone; Candidate writes replace fullName with firstName/lastName in a coordinated client rollout. Voluntary closure/recovery is independent of Staff bans. Deletion remains pending without erasure or Staff finalization. See the linked contract for scope, migration and approval provenance.

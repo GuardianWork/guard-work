@@ -13,6 +13,11 @@ import org.springframework.web.server.ResponseStatusException;
 @Order(-1)
 @RestControllerAdvice(assignableTypes = CandidateProfileController.class)
 public class CandidateProfileErrorHandler {
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> malformed() {
+        return ResponseEntity.badRequest().body(new ApiResponse<>(400,"40001 INVALID_INPUT",null));
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<ApiResponse<Void>> expected(ResponseStatusException error) {
         return ResponseEntity.status(error.getStatusCode())

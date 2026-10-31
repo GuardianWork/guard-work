@@ -36,6 +36,7 @@ public class AuthService {
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,128}$");
 
     private final com.guardwork.backend.staff.service.AccountEnforcementService enforcement;
+    private final com.guardwork.backend.audit.service.AuditService audit;
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
@@ -49,7 +50,9 @@ public class AuthService {
                        PasswordResetTokenRepository passwordResetTokenRepository,
                        JwtService jwtService,
                        PasswordEncoder passwordEncoder, CompanyMembershipRepository memberships, CompanyRepository companies,
-                       com.guardwork.backend.staff.service.AccountEnforcementService enforcement) {
+                       com.guardwork.backend.staff.service.AccountEnforcementService enforcement,
+                       com.guardwork.backend.audit.service.AuditService audit) {
+        this.audit = audit;
         this.enforcement = enforcement;
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
@@ -117,7 +120,7 @@ public class AuthService {
         User user = enforcement.lockUser(userOpt.get().getId());
         if (!passwordEncoder.matches(request.password(), user.getPassword()))
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40101 INVALID_CREDENTIALS");
-        if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
 
@@ -185,7 +188,7 @@ public class AuthService {
         if (token.isRevoked())
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40104 REVOKED_REFRESH_TOKEN");
 
-        if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
 
@@ -232,7 +235,7 @@ public class AuthService {
     public CurrentUserResponse getCurrentUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40401 USER_NOT_FOUND: User not found"));
-        if (!"ACTIVE".equals(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
         return new CurrentUserResponse(
@@ -262,16 +265,20 @@ public class AuthService {
             throw badRequest("40002 WEAK_PASSWORD: password must be 8-128 characters with at least one uppercase letter, one lowercase letter, and one digit");
         }
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40401 USER_NOT_FOUND: User not found"));
-
-        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
+        User user = enforcement.lockUser(userId);
+        if (!user.allowsNormalAccess()) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40304 ACCOUNT_SUSPENDED");
+        if ("USER".equals(user.getRole()) && !user.isEmailVerified())
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40335 EMAIL_VERIFICATION_REQUIRED");
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword()))
             throw badRequest("40001 INVALID_INPUT: Current password does not match");
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        if ("USER".equals(user.getRole())) {
+            enforcement.invalidate(user);
+            audit.recordLog(userId, "ACCOUNT_PASSWORD_CHANGED", "USER", userId.toString(), null, null, null, null, null);
+        } else {
+            // GW-95 does not change Staff password-session policy.
+            refreshTokenRepository.revokeAllForUser(userId, Instant.now());
         }
-
-        userRepository.updatePassword(userId, passwordEncoder.encode(request.newPassword()));
-        // Invalidate all refresh tokens on password change
-        refreshTokenRepository.revokeAllForUser(userId, Instant.now());
         log.debug("event=auth_password_change outcome=password_updated_sessions_revoked");
     }
 

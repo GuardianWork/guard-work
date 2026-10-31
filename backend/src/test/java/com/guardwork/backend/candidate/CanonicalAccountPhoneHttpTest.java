@@ -75,7 +75,7 @@ class CanonicalAccountPhoneHttpTest {
             putProfile(other, "Invalid", invalid).andExpect(status().isBadRequest());
         }
         http.perform(get(PATH).header("Authorization", other.token())).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.fullName").value("Original"))
+                .andExpect(jsonPath("$.data.fullName").value("Original Nguyễn"))
                 .andExpect(jsonPath("$.data.phoneNumber").value(OnboardingSecrets.phone(original)));
         Account fresh = account();
         putProfile(fresh, "Must not create a profile", number).andExpect(status().isConflict());
@@ -122,7 +122,7 @@ class CanonicalAccountPhoneHttpTest {
 
     ResultActions putProfile(Account account, String name, String phone) throws Exception {
         Map<String, Object> request = new HashMap<>();
-        request.put("fullName", name); request.put("phoneNumber", phone); request.put("skills", List.of("Java"));
+        request.put("firstName", name); request.put("lastName", "Nguyễn"); request.put("phoneNumber", phone); request.put("skills", List.of("Java"));
         return http.perform(put(PATH).header("Authorization", account.token()).contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(request)));
     }

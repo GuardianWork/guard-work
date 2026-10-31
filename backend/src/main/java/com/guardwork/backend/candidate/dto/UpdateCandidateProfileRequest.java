@@ -14,9 +14,8 @@ import jakarta.validation.constraints.Size;
  * Validation rules are defined in {@link com.guardwork.backend.candidate.util.ValidationConstants}.
  */
 public record UpdateCandidateProfileRequest(
-        @NotBlank(message = "Full name must not be blank")
-        @Size(max = 150, message = "Full name must be at most 150 characters")
-        String fullName,
+        @NotBlank @Size(max = 100) String firstName,
+        @NotBlank @Size(max = 100) String lastName,
 
         // Validated and normalized at the shared account-contact service boundary.
         String phoneNumber,
@@ -34,4 +33,9 @@ public record UpdateCandidateProfileRequest(
         List<@Valid EducationEntry> education,
 
         Boolean isPublic
-) {}
+) {
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    public void rejectUnknown(String field, Object value) {
+        throw new IllegalArgumentException("Unsupported Candidate field");
+    }
+}

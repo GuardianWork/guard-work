@@ -66,7 +66,7 @@ class AuthServiceTest {
                 passwordEncoder,
                 org.mockito.Mockito.mock(com.guardwork.backend.membership.repository.CompanyMembershipRepository.class),
                 org.mockito.Mockito.mock(com.guardwork.backend.company.repository.CompanyRepository.class),
-                enforcement
+                enforcement, org.mockito.Mockito.mock(com.guardwork.backend.audit.service.AuditService.class)
         );
         org.springframework.test.util.ReflectionTestUtils.setField(authService, "entityManager", entities);
     }
@@ -239,19 +239,19 @@ class AuthServiceTest {
     @Test
     void changePassword_ValidCurrentPassword_Success() {
         User user = createSampleUser(1L, "an_nguyen", "an@example.com", "OldPassword123", "USER", "ACTIVE");
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(enforcement.lockUser(1L)).thenReturn(user);
 
         ChangePasswordRequest request = new ChangePasswordRequest("OldPassword123", "NewPassword456");
         authService.changePassword(1L, request);
 
-        verify(userRepository).updatePassword(eq(1L), any());
-        verify(refreshTokenRepository).revokeAllForUser(eq(1L), any(Instant.class));
+        assertThat(passwordEncoder.matches("NewPassword456", user.getPassword())).isTrue();
+        verify(enforcement).invalidate(user);
     }
 
     @Test
     void changePassword_WrongCurrentPassword_ThrowsBadRequest() {
         User user = createSampleUser(1L, "an_nguyen", "an@example.com", "OldPassword123", "USER", "ACTIVE");
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(enforcement.lockUser(1L)).thenReturn(user);
 
         ChangePasswordRequest request = new ChangePasswordRequest("WrongCurrent123", "NewPassword456");
 

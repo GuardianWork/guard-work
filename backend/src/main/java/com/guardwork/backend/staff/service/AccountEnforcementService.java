@@ -46,7 +46,7 @@ public class AccountEnforcementService {
 
   public User authenticate(Long id, long version) {
     User user=lockUser(id);
-    if (!"ACTIVE".equals(user.getStatus()) || user.getSessionVersion()!=version)
+    if (!user.allowsNormalAccess() || user.getSessionVersion()!=version)
       throw error(HttpStatus.UNAUTHORIZED,"40100 UNAUTHORIZED: Session invalidated");
     return user;
   }

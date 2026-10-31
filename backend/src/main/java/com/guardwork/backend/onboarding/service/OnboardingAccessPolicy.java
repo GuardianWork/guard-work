@@ -40,7 +40,7 @@ public class OnboardingAccessPolicy {
     private User currentActiveUser(Long actor) {
         var user = users.findById(actor).orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED,
                 "40100 UNAUTHORIZED: Authentication required"));
-        if (!"ACTIVE".equals(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
         return user;

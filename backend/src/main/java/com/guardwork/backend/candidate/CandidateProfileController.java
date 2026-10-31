@@ -50,6 +50,8 @@ public class CandidateProfileController {
                 profile.getUserId(),
                 profile.getEmail(),
                 profile.getFullName(),
+                profile.getFirstName(),
+                profile.getLastName(),
                 profile.getAvatarUrl(),
                 profile.getPhoneNumber(),
                 profile.getSkills(),
