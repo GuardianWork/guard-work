@@ -197,7 +197,7 @@
     7. Hệ thống kiểm tra tính hợp lệ của dữ liệu nhập:
       - *Họ tên*: kiểu chuỗi, bắt buộc, tối đa 150 ký tự.
       - *Email*: kiểu chuỗi, định dạng email chuẩn.
-      - *Số điện thoại*: kiểu chuỗi, định dạng 0xxxxxxxxx, tối đa 10 ký tự.
+      - *Số điện thoại*: kiểu chuỗi, chấp nhận 0xxxxxxxxx hoặc +84xxxxxxxxx, tối đa 10 ký tự.
       - *Thư giới thiệu*: kiểu chuỗi, tùy chọn, tối đa 1000 ký tự.
       - *Hồ sơ đính kèm*: phải có ít nhất 1 tệp hồ sơ xin việc hợp lệ được chọn.
     8. Hệ thống tạo bản ghi đơn ứng tuyển mới với trạng thái "Đã nộp", sao chép tệp hồ sơ đính kèm thành bản lưu riêng gắn với đơn ứng tuyển (không phụ thuộc vào tệp trong danh sách hồ sơ của ứng viên) và thông báo ứng tuyển thành công.

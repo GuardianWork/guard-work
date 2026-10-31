@@ -1,6 +1,5 @@
 package com.guardwork.backend.application;
 
-import com.guardwork.backend.application.dto.ApplicationFormResponse;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
 import com.guardwork.backend.application.dto.SubmitApplicationRequest;
 import com.guardwork.backend.application.model.ApplicationSnapshot;
@@ -117,63 +116,6 @@ class JobApplicationServiceTest {
     private CandidateCvService.CandidateCvSnapshot snapshot() {
         return new CandidateCvService.CandidateCvSnapshot(
                 cvId, "applications/abc/cv/snapshot.pdf", "CLOUDINARY", "CV.pdf", PDF, 2048L, "image");
-    }
-
-    @Nested
-    @DisplayName("form")
-    class Form {
-
-        @Test
-        void returnsProfileDefaultCvAndAvailability() {
-            when(users.findById(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
-            when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
-            when(jobs.applicationContext(JOB_ID)).thenReturn(availableJob());
-            when(cvs.findByCandidateIdOrderByCreatedAtDesc(candidateId))
-                    .thenReturn(List.of(cv(false), cv(true)));
-            when(applications.existsByCandidateIdAndJobId(candidateId, JOB_ID)).thenReturn(false);
-
-            ApplicationFormResponse response = service.form(USER_ID, JOB_ID);
-
-            assertEquals(JOB_ID, response.job().id());
-            assertEquals("Backend Engineer", response.job().title());
-            assertEquals("Acme", response.job().companyName());
-            assertEquals("Nguyễn Văn An", response.profile().fullName());
-            assertEquals(cvId, response.defaultCvId());
-            assertEquals(2, response.cvs().size());
-            assertTrue(response.missingProfileFields().isEmpty());
-            assertEquals(false, response.alreadyApplied());
-        }
-
-        @Test
-        void reportsMissingProfileFields() {
-            profile.setFullName(" ");
-            profile.setEmail(null);
-            profile.setPhoneNumber(null);
-            when(users.findById(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
-            when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
-            when(jobs.applicationContext(JOB_ID)).thenReturn(availableJob());
-            when(cvs.findByCandidateIdOrderByCreatedAtDesc(candidateId)).thenReturn(List.of());
-            when(applications.existsByCandidateIdAndJobId(candidateId, JOB_ID)).thenReturn(true);
-
-            ApplicationFormResponse response = service.form(USER_ID, JOB_ID);
-
-            assertEquals(List.of("fullName", "email", "phoneNumber"), response.missingProfileFields());
-            assertNull(response.defaultCvId());
-            assertTrue(response.alreadyApplied());
-        }
-
-        @Test
-        void rejectsUnavailableJob() {
-            when(users.findById(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
-            when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
-            when(jobs.applicationContext(JOB_ID)).thenReturn(new JobPublicationService.ApplicationContext(
-                    JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
-                    Instant.parse("2026-11-30T17:00:00Z"), false, "EXPIRED"));
-
-            AppException failure = assertThrows(AppException.class, () -> service.form(USER_ID, JOB_ID));
-
-            assertEquals(ErrorCode.JOB_NOT_ACCEPTING_APPLICATIONS, failure.getErrorCode());
-        }
     }
 
     @Nested

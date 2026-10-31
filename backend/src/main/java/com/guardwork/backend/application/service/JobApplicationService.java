@@ -1,10 +1,8 @@
 package com.guardwork.backend.application.service;
 
 import com.guardwork.backend.application.dto.ApplicationCvOption;
-import com.guardwork.backend.application.dto.ApplicationFormResponse;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
-import com.guardwork.backend.application.dto.JobSummary;
-import com.guardwork.backend.application.dto.ProfilePrefill;
+import com.guardwork.backend.application.dto.JobApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.SubmitApplicationRequest;
 import com.guardwork.backend.application.model.ApplicationSnapshot;
 import com.guardwork.backend.application.model.JobApplication;
@@ -55,43 +53,6 @@ public class JobApplicationService {
     Clock clock;
 
     @Transactional
-    public ApplicationFormResponse form(Long userId, Long jobId) {
-        requireActiveUser(userId, false);
-        CandidateProfile profile = profiles.getOrCreateProfile(userId);
-        JobPublicationService.ApplicationContext job = requireAvailableJob(jobId);
-
-        List<CandidateCv> candidateCvs = cvs.findByCandidateIdOrderByCreatedAtDesc(profile.getId());
-        UUID defaultCvId = candidateCvs.stream()
-                .filter(CandidateCv::isDefault)
-                .map(CandidateCv::getId)
-                .findFirst()
-                .orElse(null);
-
-        List<String> missingFields = new ArrayList<>();
-        if (profile.getFullName() == null || profile.getFullName().isBlank()) {
-            missingFields.add("fullName");
-        }
-        if (profile.getEmail() == null || profile.getEmail().isBlank()) {
-            missingFields.add("email");
-        }
-        if (profile.getPhoneNumber() == null || profile.getPhoneNumber().isBlank()) {
-            missingFields.add("phoneNumber");
-        }
-
-        return new ApplicationFormResponse(
-                new JobSummary(job.jobId(), job.title(), job.companyId(), job.companyName(), job.deadline()),
-                new ProfilePrefill(profile.getFullName(), profile.getEmail(), profile.getPhoneNumber()),
-                candidateCvs.stream()
-                        .map(cv -> new ApplicationCvOption(
-                                cv.getId(), cv.getFileName(), cv.getContentType(), cv.getFileSize(), cv.isDefault()))
-                        .toList(),
-                defaultCvId,
-                List.copyOf(missingFields),
-                applications.existsByCandidateIdAndJobId(profile.getId(), jobId)
-        );
-    }
-
-    @Transactional
     public JobApplicationResponse submit(Long userId, SubmitApplicationRequest request) {
         requireActiveUser(userId, true);
         validate(request);
@@ -110,7 +71,7 @@ public class JobApplicationService {
 
         String fullName = request.fullName().strip();
         String email = request.email().strip();
-        String phoneNumber = request.phoneNumber().strip();
+        String phoneNumber = normalizeApplicationPhone(request.phoneNumber());
         String coverLetter = normalizeCoverLetter(request.coverLetter());
         var appliedAt = clock.instant();
 
@@ -169,6 +130,30 @@ public class JobApplicationService {
         );
     }
 
+    @Transactional
+    public java.util.List<JobApplicationSummaryResponse> list(Long userId) {
+        User user = requireActiveUser(userId, false);
+        if (!"ACTIVE".equals(user.getStatus())) {
+            throw new AppException(ErrorCode.ACCOUNT_SUSPENDED);
+        }
+        CandidateProfile profile = profiles.getOrCreateProfile(userId);
+        UUID candidateId = profile.getId();
+        return applications.findByCandidateIdOrderByAppliedAtDesc(candidateId).stream()
+                .map(application -> {
+                    ApplicationSnapshot snapshot = snapshots.findById(application.getId()).orElseThrow(
+                            () -> new IllegalStateException("Missing application snapshot"));
+                    return new JobApplicationSummaryResponse(
+                            application.getId(),
+                            application.getJobId(),
+                            snapshot.getJobTitle(),
+                            snapshot.getCompanyName(),
+                            application.getStatus(),
+                            application.getAppliedAt(),
+                            snapshot.getCvFileName());
+                })
+                .toList();
+    }
+
     private User requireActiveUser(Long userId, boolean lock) {
         User user = (lock ? users.findByIdForUpdate(userId) : users.findById(userId))
                 .orElseThrow(() -> new AppException(ErrorCode.UNAUTHENTICATED));
@@ -213,8 +198,9 @@ public class JobApplicationService {
                 || !request.email().strip().contains("@")) {
             throw invalid("email");
         }
-        if (request.phoneNumber() == null
-                || !request.phoneNumber().strip().matches("^0[0-9]{9}$")) {
+        String phone = request.phoneNumber() == null ? null : request.phoneNumber().strip();
+        if (phone == null || !phone.matches("^(0|\\+84)[0-9]{9}$")
+                || !normalizeApplicationPhone(phone).matches("^0[0-9]{9}$")) {
             throw invalid("phoneNumber");
         }
         if (request.coverLetter() != null && request.coverLetter().strip().length() > 1000) {
@@ -223,6 +209,14 @@ public class JobApplicationService {
         if (request.cvId() == null) {
             throw invalid("cvId");
         }
+    }
+
+    private static String normalizeApplicationPhone(String value) {
+        String phone = value.strip();
+        if (phone.startsWith("+84")) {
+            phone = "0" + phone.substring(3);
+        }
+        return phone;
     }
 
     private static String normalizeCoverLetter(String value) {
