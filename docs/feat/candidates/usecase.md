@@ -34,6 +34,7 @@
 - Thêm mới UC-CAN-20, 21, 22, 23; ưu tiên của các use case mới là đề xuất, cần xác nhận lại.
 - Hồ sơ đã nộp được sao chép thành bản lưu riêng gắn với đơn ứng tuyển (cập nhật UC-CAN-11, UC-CAN-05 và EC-CAN-CV-04).
 - Bổ sung edge case EC-CAN-LAW-01 đến 03 cho UC-CAN-22.
+- Cập nhật UC-CAN-01: email chỉ đọc từ tài khoản (không cập nhật qua hồ sơ); họ tên được phép có khoảng trắng; số điện thoại lưu dạng +84 và hiển thị dạng 0xxxxxxxxx; bổ sung ảnh đại diện và trạng thái công khai vào phạm vi cập nhật; ngày kết thúc/mô tả của kinh nghiệm và học vấn là tùy chọn.
 
 ---
 ## Tìm kiếm tin tuyển dụng
@@ -103,7 +104,7 @@
 ## Cập nhật hồ sơ cá nhân
 
 - **Tác nhân:** Ứng viên
-- **Mô tả:** Cho phép ứng viên cập nhật thông tin trong hồ sơ cá nhân bao gồm họ tên, số điện thoại, kỹ năng chuyên môn, kinh nghiệm làm việc và trình độ học vấn.
+- **Mô tả:** Cho phép ứng viên cập nhật thông tin trong hồ sơ cá nhân bao gồm họ tên, số điện thoại, ảnh đại diện, kỹ năng chuyên môn, kinh nghiệm làm việc, trình độ học vấn và trạng thái công khai hồ sơ.
 - **Pre-condition:** Ứng viên đã đăng nhập và đang ở trang Hồ sơ cá nhân.
 - **Post-condition:** Thông tin hồ sơ cá nhân được cập nhật và lưu vào hệ thống.
 - **Luồng sự kiện:**
@@ -113,12 +114,13 @@
     3. Ứng viên chỉnh sửa các trường thông tin cần thiết.
     4. Ứng viên nhấn "Lưu".
     5. Hệ thống kiểm tra tính hợp lệ của dữ liệu mới:
-      - *Email*: kiểu chuỗi, định dạng chuẩn theo quy định, tối đa 50 ký tự.
-      - *Họ tên*: kiểu chuỗi, không chứa khoảng trắng, tối đa 150 ký tự.
-      - *Số điện thoại*: kiểu chuỗi, phải định dạng theo 0xxxxxxxxx, tối đa 10 ký tự.
+      - *Họ tên*: kiểu chuỗi, không được để trống, tối đa 150 ký tự (cho phép khoảng trắng giữa các từ).
+      - *Số điện thoại*: kiểu chuỗi, tùy chọn; phải là số di động Việt Nam hợp lệ (0xxxxxxxxx hoặc +84xxxxxxxxx).
+      - *Ảnh đại diện*: đường dẫn HTTPS hợp lệ, tối đa 512 ký tự.
       - *Kỹ năng chuyên môn*: kiểu danh sách ký tự, tối đa 20 mục, mỗi mục dài 1-30 ký tự.
-      - *Kinh nghiệm làm việc*: kiểu đối tượng, tất cả các trường dữ liệu đều không được trống.
-      - *Trình độ học vấn*: kiểu đối tượng, tất cả các trường dữ liệu đều không được trống.
+      - *Kinh nghiệm làm việc*: kiểu đối tượng, bắt buộc có tên công ty, vị trí và ngày bắt đầu; ngày kết thúc và mô tả có thể để trống.
+      - *Trình độ học vấn*: kiểu đối tượng, bắt buộc có tên trường, bằng cấp và năm bắt đầu; năm kết thúc và mô tả có thể để trống.
+      - *Trạng thái công khai*: cho phép nhà tuyển dụng xem hồ sơ (bật/tắt).
     6. Hệ thống chỉ cập nhật dữ liệu được yêu cầu vào hồ sơ; dữ liệu khác giữ nguyên.
     7. Hệ thống thông báo cập nhật thành công.
   - **Luồng thay thế:**
