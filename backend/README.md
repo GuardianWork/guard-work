@@ -349,7 +349,10 @@ UC-13/UC-14 add `PUT /api/staff/jobs/{jobId}/hide` and
 `GET /api/staff/jobs/{jobId}/history` for active Platform Staff. A current job version
 and a trimmed 1–1000 code-point reason are required to suspend a public posting.
 The change and both audit records commit atomically; history is read-only and
-paginated independently of revision history. Suspended content is unavailable on
+paginated independently of revision history. Both the Company-enforcement
+`staff_suspended` flag and the individual Staff
+`SUSPENDED` status hide content on the public job endpoint. Company unban or ban
+expiry preserves posting suspension. Suspended content is unavailable on
 the public job endpoint; Company authoring/lifecycle actions cannot restore it.
 Pending review decisions preserve suspension.
 

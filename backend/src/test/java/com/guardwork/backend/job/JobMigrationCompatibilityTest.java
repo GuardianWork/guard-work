@@ -22,7 +22,7 @@ class JobMigrationCompatibilityTest {
     var admin = new JdbcTemplate(dataSource);
     try {
       Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
-          .target("2026.10.30.85").load().migrate();
+          .target("2026.10.30.93").load().migrate();
       try (var connection = dataSource.getConnection()) {
         String originalSchema = connection.getSchema();
         try {
@@ -39,7 +39,8 @@ class JobMigrationCompatibilityTest {
           database.update("UPDATE job_postings SET status='PUBLISHED',published_revision_id=?,approved_deadline='2099-12-01T00:00:00Z' WHERE id=?",revision,job);
           database.update("INSERT INTO job_audit_events(company_id,job_id,actor_user_id,event_type,created_at,facts) VALUES (?,?,?,'JOB_CREATED',now(),'{\"ownerResponsible\":true}')", company, job, user);
           String original = database.queryForObject("SELECT content::text FROM job_posting_revisions WHERE id=?",String.class,revision);
-          var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load();
+          var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+              .target("2026.10.31.86").load();
           assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
           upgrade.validate();
           assertThat(database.queryForObject("SELECT status FROM job_postings WHERE id=?",String.class,job)).isEqualTo("PUBLISHED");
@@ -74,8 +75,9 @@ class JobMigrationCompatibilityTest {
       database.update("INSERT INTO " + schema
           + ".user_email_verification(user_id,email,secret_hash,issued_at,expires_at) "
           + "VALUES (?,'email@example.vn',repeat('a',64),now(),now()+interval '24 hours')", user);
-      var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load();
-      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(2);
+      var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema)
+          .target("2026.10.30.85").load();
+      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
       assertThat(database.queryForObject("SELECT secret_hash IS NULL AND consumed_at IS NOT NULL "
           + "AND failed_attempts=0 FROM " + schema + ".user_email_verification WHERE user_id=?", Boolean.class, user)).isTrue();
       assertThat(database.queryForObject("SELECT email_verified FROM " + schema + ".users WHERE id=?", Boolean.class, user)).isFalse();
@@ -104,8 +106,8 @@ class JobMigrationCompatibilityTest {
           + ".user_notifications(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) "
           + "VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Baseline',now())", event, user, company);
       var upgrade = Flyway.configure().dataSource(dataSource).schemas(schema).defaultSchema(schema).load();
-      // Upgrade jobs, account-email proof storage, code attempts and Staff suspension.
-      assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(4);
+      // Upgrade to the current release; retained-data assertions must survive future migrations.
+      upgrade.migrate();
       upgrade.validate();
       assertThat(database.queryForObject("SELECT role FROM " + schema + ".users WHERE username='baseline_staff'", String.class))
           .isEqualTo("STAFF");

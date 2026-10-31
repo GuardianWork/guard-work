@@ -117,7 +117,8 @@ class JobStaffManagementHttpTest {
       org.assertj.core.api.Assertions.assertThatThrownBy(()->management.hide(actor,1L,
           new com.guardwork.backend.job.service.StaffJobManagementService.HideRequest(0L,"x"),null,null))
         .isInstanceOf(org.springframework.web.server.ResponseStatusException.class).hasMessageContaining("40304");
-      http.perform(get("/api/staff/jobs/1/history").header("Authorization",staff)).andExpect(status().isForbidden());
+      // Inactive accounts are rejected by authentication before Staff authorization.
+      http.perform(get("/api/staff/jobs/1/history").header("Authorization",staff)).andExpect(status().isUnauthorized());
       database.update("UPDATE users SET status='ACTIVE',role='USER' WHERE id=?",actor);
       http.perform(get("/api/staff/jobs/1/history").header("Authorization",staff)).andExpect(status().isForbidden());
     }
