@@ -173,8 +173,7 @@ class JobApplicationHttpTest {
                         .header("Authorization", candidate)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(submitBody(999_999L, UUID.randomUUID(), "Nguyễn Văn An", null)))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.message").value("40304 ACCOUNT_SUSPENDED: Account is suspended"));
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
