@@ -263,8 +263,8 @@ class JobApplicationHttpTest {
 
     UUID profile(long user) {
         return database.queryForObject("""
-                INSERT INTO candidate_profiles(user_id,full_name,phone_number)
-                VALUES (?,'Nguyễn Văn An','0901234567') RETURNING id
+                INSERT INTO candidate_profiles(user_id,phone_number)
+                VALUES (?,'0901234567') RETURNING id
                 """, UUID.class, user);
     }
 

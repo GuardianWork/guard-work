@@ -626,3 +626,7 @@ Candidate-role authorization, and the standardized error body.
 |---|---|---|
 | 2026-10-31 | User | Confirmed spaces in full name, read-only account email, canonical `+84` phone storage, and standard success envelope. |
 | Pending | chiko | Formal approval of this specification. |
+
+## GW-95 account identity amendment (approved in session 2026-10-31)
+
+Own account control makes User firstName/lastName authoritative on both account settings and Candidate profile. Profile writes replace fullName with firstName/lastName; responses retain a derived fullName and add structured names. Remove duplicate persisted profile full_name; preserve structured experience/education, account-derived email, optional-field preservation and current /api/candidates/profile routing. The coordinated Candidate client/schema change is recorded in the [account-control contract](../auth/account-control-implementation-contract.md). Historical application/CV snapshots remain unchanged.

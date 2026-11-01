@@ -98,7 +98,7 @@ class CandidateProfileControllerTest {
         updated.setPublic(false);
 
         UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
-                "Jane Doe",
+                "Jane", "Doe",
                 "0987654321",
                 "https://example.com/new-avatar.png",
                 List.of("Java", "Spring"),
@@ -127,7 +127,7 @@ class CandidateProfileControllerTest {
     @Test
     void updateProfile_rejectsInvalidNestedExperience() throws Exception {
         UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
-                "Jane Doe",
+                "Jane", "Doe",
                 null,
                 null,
                 null,

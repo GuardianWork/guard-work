@@ -35,10 +35,13 @@ public class AccountEmailVerificationService {
     private final CompanyAccessService access;
     private final OnboardingDelivery delivery;
     private final Clock clock;
+    private final com.guardwork.backend.audit.service.AuditService audit;
     private final TransactionTemplate issuance;
 
     public AccountEmailVerificationService(UserEmailVerificationRepository proofs, CompanyAccessService access,
-            OnboardingDelivery delivery, Clock clock, PlatformTransactionManager transactions) {
+            OnboardingDelivery delivery, Clock clock, PlatformTransactionManager transactions,
+            com.guardwork.backend.audit.service.AuditService audit) {
+        this.audit = audit;
         this.proofs = proofs;
         this.access = access;
         this.delivery = delivery;
@@ -104,6 +107,7 @@ public class AccountEmailVerificationService {
                 return false;
             }
             user.setEmailVerified(true);
+            audit.recordLog(actorId, "ACCOUNT_EMAIL_VERIFIED", "USER", actorId.toString(), null, null, null, null, null);
             proof.setSecretHash(null);
             proof.setConsumedAt(now);
             proofs.saveAndFlush(proof);
@@ -129,13 +133,13 @@ public class AccountEmailVerificationService {
     private record Issued(String email, Instant nextRequestAt, Instant expiresAt) {}
 
     public static boolean isRecruitingEmailEligible(User user) {
-        return "ACTIVE".equals(user.getStatus())
+        return user.allowsNormalAccess()
                 && user.isEmailVerified();
     }
 
     /** Call with the current persisted User already held by the business transaction's actor lock. */
     public static void requireRecruitingEmailEligible(User user) {
-        if (!"ACTIVE".equals(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
         if (!isRecruitingEmailEligible(user)) {

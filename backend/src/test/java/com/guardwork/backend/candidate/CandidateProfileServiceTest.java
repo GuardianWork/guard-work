@@ -42,6 +42,9 @@ class CandidateProfileServiceTest {
 
     @BeforeEach
     void setUp() {
+        service = new CandidateProfileService(profileRepository, userRepository,
+                new com.guardwork.backend.account.service.AccountIdentityService(userRepository,
+                        mock(com.guardwork.backend.audit.service.AuditService.class)));
         user = new User();
         user.setId(1L);
         user.setFirstName("John");
@@ -62,7 +65,7 @@ class CandidateProfileServiceTest {
 
         @Test
         void returnsExistingWhenFound() {
-            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
 
             CandidateProfile result = service.getOrCreateProfile(user.getId());
@@ -74,7 +77,7 @@ class CandidateProfileServiceTest {
 
         @Test
         void createsSkeletonWhenMissing() {
-            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
             when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -90,7 +93,7 @@ class CandidateProfileServiceTest {
 
         @Test
         void throwsWhenUserMissing() {
-            when(userRepository.findById(anyLong())).thenReturn(Optional.empty());
+            when(userRepository.findByIdForUpdate(anyLong())).thenReturn(Optional.empty());
 
             AppException ex = assertThrows(AppException.class,
                     () -> service.getOrCreateProfile(999L));
@@ -109,7 +112,7 @@ class CandidateProfileServiceTest {
             when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
             UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
-                    "Jane Doe",
+                    "Jane", "Doe",
                     " 0901234567 ",
                     "https://example.com/avatar.png",
                     List.of("Java", "Spring"),
@@ -139,7 +142,7 @@ class CandidateProfileServiceTest {
             when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
             UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
-                    "John Doe",
+                    "John", "Doe",
                     null,
                     null,
                     List.of("Java", "  java  ", "", "Spring", "Java"),
@@ -159,7 +162,7 @@ class CandidateProfileServiceTest {
             when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
             UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
-                    "John Doe",
+                    "John", "Doe",
                     null,
                     null,
                     null,
@@ -179,7 +182,7 @@ class CandidateProfileServiceTest {
         void validatesSkillLength() {
             String longSkill = "a".repeat(ValidationConstants.MAX_SKILL_LENGTH + 1);
             UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
-                    "John Doe",
+                    "John", "Doe",
                     null,
                     null,
                     List.of(longSkill),
@@ -201,7 +204,7 @@ class CandidateProfileServiceTest {
             List<String> many = java.util.stream.IntStream.range(0, ValidationConstants.MAX_SKILLS + 1)
                     .mapToObj(i -> "Skill" + i).toList();
             UpdateCandidateProfileRequest request = new UpdateCandidateProfileRequest(
-                    "John Doe",
+                    "John", "Doe",
                     null,
                     null,
                     many,
