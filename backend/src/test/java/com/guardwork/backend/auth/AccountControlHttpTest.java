@@ -57,6 +57,21 @@ class AccountControlHttpTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test void duplicatePhonePreservesEstablishedErrorAndRollsBackIdentity() throws Exception {
+        JsonNode owner=account(false);
+        JsonNode other=account(false);
+        String phone="09%08d".formatted(Math.floorMod(UUID.randomUUID().getLeastSignificantBits(),100_000_000));
+        request(owner,"/api/me/account",Map.of("firstName","Owner","lastName","Nguyễn","phoneNumber",phone),true)
+                .andExpect(status().isOk());
+        request(other,"/api/me/account",Map.of("firstName","Must roll back","lastName","Changed","phoneNumber",phone),true)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(40930))
+                .andExpect(jsonPath("$.message").value("The requested phone number is already used by another account."));
+        http.perform(get("/api/me/account").header("Authorization",auth(other)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.fullName").value("Minh Nguyễn"));
+        assertThat(db.queryForObject("SELECT phone_number FROM users WHERE id=?",String.class,id(other))).isNull();
+    }
+
     @Test void passwordRequiresVerificationAndInvalidatesAccessAndRefresh() throws Exception {
         JsonNode user=account(false);
         var body=Map.of("currentPassword",PASSWORD,"newPassword","NewPassword123!");

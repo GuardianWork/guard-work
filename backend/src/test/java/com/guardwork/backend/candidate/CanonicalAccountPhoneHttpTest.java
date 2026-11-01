@@ -70,6 +70,7 @@ class CanonicalAccountPhoneHttpTest {
         putProfile(owner, "Owner", number).andExpect(status().isOk());
         putProfile(other, "Original", original).andExpect(status().isOk());
         putProfile(other, "Must roll back", OnboardingSecrets.phone(number)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(40930))
                 .andExpect(jsonPath("$.message").value("The requested phone number is already used by another account."));
         for (String invalid : List.of("", "0123456789", "0241234567", "+840901234567")) {
             putProfile(other, "Invalid", invalid).andExpect(status().isBadRequest());

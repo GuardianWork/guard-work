@@ -151,6 +151,10 @@ Success returns `data.selfServiceState: "ACTIVE"` and no tokens. Clear the form 
 
 ## 7. Error handling and UI checks
 
+Duplicate-phone errors from account and Candidate updates preserve the established
+error response: HTTP 409, numeric `status: 40930` and the existing descriptive
+`message`. Read that code from `status`; it is not a prefix in the message.
+
 | HTTP / message prefix | Meaning and UI behavior |
 |---|---|
 | 400 / 40001 | Invalid input, missing acknowledgement or incorrect current password on a closure/settings action; preserve editable form state and ask for correction. |

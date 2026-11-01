@@ -71,7 +71,7 @@ class CandidateCvMigrationTest {
 
     UUID profile(long user) {
         return database.queryForObject(
-                "INSERT INTO candidate_profiles(user_id,full_name) VALUES (?,'Nguyễn Văn An') RETURNING id",
+                "INSERT INTO candidate_profiles(user_id) VALUES (?) RETURNING id",
                 UUID.class, user);
     }
 

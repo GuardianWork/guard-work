@@ -2,6 +2,8 @@ package com.guardwork.backend.account.service;
 
 import com.guardwork.backend.audit.service.AuditService;
 import com.guardwork.backend.auth.Portal;
+import com.guardwork.backend.common.exception.AppException;
+import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.user.AccountPhone;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
@@ -32,7 +34,7 @@ public class AccountIdentityService {
         try { users.saveAndFlush(user); }
         catch(DataIntegrityViolationException conflict) {
             if(String.valueOf(conflict.getMostSpecificCause().getMessage()).contains("uq_users_phone_number"))
-                throw new ResponseStatusException(HttpStatus.CONFLICT,"40930 IDENTIFIER_UNAVAILABLE: Contact information is unavailable");
+                throw new AppException(ErrorCode.IDENTIFIER_UNAVAILABLE);
             throw conflict;
         }
         audit.recordLog(user.getId(),"ACCOUNT_DETAILS_UPDATED","USER",user.getId().toString(),null,

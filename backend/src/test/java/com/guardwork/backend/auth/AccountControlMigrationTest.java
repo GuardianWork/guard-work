@@ -17,7 +17,7 @@ class AccountControlMigrationTest {
         String schema="own_account_"+UUID.randomUUID().toString().replace("-","");
         var db=new JdbcTemplate(source);
         try {
-            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("2026.10.31.86").load().migrate();
+            Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("2026.10.31.90").load().migrate();
             long user=db.queryForObject("INSERT INTO "+schema+".users(first_name,last_name,username,email,password,status) VALUES ('Account','Name','legacy','legacy@test.invalid','hash','BANNED') RETURNING id",Long.class);
             db.update("INSERT INTO "+schema+".candidate_profiles(user_id,full_name,is_public) VALUES (?,'Conflicting profile',false)",user);
             var upgrade=Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).load();
