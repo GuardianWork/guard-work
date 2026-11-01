@@ -13,7 +13,7 @@ public record SubmitApplicationRequest(
         @NotNull @Positive Long jobId,
         @NotBlank @Size(max = 150) String fullName,
         @NotBlank @Email @Size(max = 255) String email,
-        @NotBlank @Pattern(regexp = "^0[0-9]{9}$") String phoneNumber,
+        @NotBlank @Pattern(regexp = "^(0|\\+84)[0-9]{9}$") String phoneNumber,
         @Size(max = 1000) String coverLetter,
         @NotNull UUID cvId
 ) {}

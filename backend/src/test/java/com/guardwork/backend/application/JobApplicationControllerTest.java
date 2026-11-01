@@ -2,11 +2,7 @@ package com.guardwork.backend.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guardwork.backend.application.controller.JobApplicationController;
-import com.guardwork.backend.application.dto.ApplicationCvOption;
-import com.guardwork.backend.application.dto.ApplicationFormResponse;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
-import com.guardwork.backend.application.dto.JobSummary;
-import com.guardwork.backend.application.dto.ProfilePrefill;
 import com.guardwork.backend.application.dto.SubmitApplicationRequest;
 import com.guardwork.backend.application.service.JobApplicationService;
 import com.guardwork.backend.common.exception.AppException;
@@ -59,28 +55,6 @@ class JobApplicationControllerTest {
     private SubmitApplicationRequest validRequest() {
         return new SubmitApplicationRequest(
                 JOB_ID, "Nguyễn Văn An", "an@example.com", "0901234567", "Em quan tâm", CV_ID);
-    }
-
-    @Test
-    void formUsesAuthenticatedCandidate() throws Exception {
-        when(applicationService.form(USER_ID, JOB_ID)).thenReturn(new ApplicationFormResponse(
-                new JobSummary(JOB_ID, "Backend Engineer", 20L, "Acme",
-                        Instant.parse("2026-11-30T17:00:00Z")),
-                new ProfilePrefill("Nguyễn Văn An", "an@example.com", "0901234567"),
-                List.of(new ApplicationCvOption(CV_ID, "CV.pdf", "application/pdf", 2048L, true)),
-                CV_ID,
-                List.of(),
-                false
-        ));
-
-        try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
-            security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
-            mockMvc.perform(get("/api/candidate/applications/form").param("jobId", JOB_ID.toString()))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.job.title").value("Backend Engineer"))
-                    .andExpect(jsonPath("$.data.defaultCvId").value(CV_ID.toString()))
-                    .andExpect(jsonPath("$.data.alreadyApplied").value(false));
-        }
     }
 
     @Test

@@ -43,7 +43,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class JobApplicationHttpTest {
 
     private static final String APPLICATIONS = "/api/candidate/applications";
-    private static final String FORM = APPLICATIONS + "/form";
     private static final String PDF = "application/pdf";
 
     @Autowired WebApplicationContext context;
@@ -69,16 +68,6 @@ class JobApplicationHttpTest {
         UUID cv = cv(profile);
         long company = company();
         Job job = publishedJob(company, userId);
-
-        http.perform(get(FORM).param("jobId", Long.toString(job.id())).header("Authorization", candidate))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.job.title").value("Backend Engineer"))
-                .andExpect(jsonPath("$.data.profile.fullName").value("Nguyễn Văn An"))
-                .andExpect(jsonPath("$.data.profile.email").value(email(userId)))
-                .andExpect(jsonPath("$.data.profile.phoneNumber").value(accountPhone))
-                .andExpect(jsonPath("$.data.cvs[0].id").value(cv.toString()))
-                .andExpect(jsonPath("$.data.defaultCvId").value(cv.toString()))
-                .andExpect(jsonPath("$.data.alreadyApplied").value(false));
 
         JsonNode submitted = mapper.readTree(http.perform(post(APPLICATIONS)
                         .header("Authorization", candidate)
@@ -114,10 +103,6 @@ class JobApplicationHttpTest {
                 "SELECT count(*) FROM application_snapshots WHERE application_id=?", Long.class, application))
                 .isEqualTo(1);
         assertThat(storage.has(copiedKey)).isTrue();
-
-        http.perform(get(FORM).param("jobId", Long.toString(job.id())).header("Authorization", candidate))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.alreadyApplied").value(true));
 
         http.perform(post(APPLICATIONS)
                         .header("Authorization", candidate)
@@ -155,7 +140,6 @@ class JobApplicationHttpTest {
 
     @Test
     void unauthenticatedRequestsAreRejected() throws Exception {
-        http.perform(get(FORM).param("jobId", "1")).andExpect(status().isUnauthorized());
         http.perform(post(APPLICATIONS)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(submitBody(1L, UUID.randomUUID(), "Nguyễn Văn An", null)))

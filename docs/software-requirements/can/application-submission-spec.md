@@ -87,12 +87,12 @@ foreign key to `candidate_cvs`.
 
 ## 3. Functional requirements
 
-### 3.1 Form prefill
+### 3.1 Form prefill (frontend-assembled; no backend endpoint)
 
 | ID | Requirement |
 |---|---|
 | APP-001 | The system **shall** derive the Candidate identity from the authenticated principal. A request payload **shall not** be able to select another Candidate. |
-| APP-002 | The system **shall** reject the form request when the authenticated account is not `ACTIVE`. |
+| APP-002 | Prefill is frontend-only. The backend rejects submission when the authenticated account cannot be settled as `ACTIVE`; in the normal JWT flow this is reported as `40100`. |
 | APP-003 | The system **shall** return the current profile full name, account email and phone number as prefill values. |
 | APP-004 | The system **shall** return the Candidate's CV options and identify the default CV when one exists. |
 | APP-005 | The system **shall** report profile fields that are missing or blank so the client can ask the Candidate to complete them. |
@@ -106,7 +106,7 @@ foreign key to `candidate_cvs`.
 | APP-010 | The system **shall** require `jobId`, `fullName`, `email`, `phoneNumber` and `cvId`. `coverLetter` is optional. |
 | APP-011 | The system **shall** trim submitted text before validation and snapshotting. A blank cover letter **shall** be stored as `null`. |
 | APP-012 | The system **shall** validate the phone number as exactly ten digits beginning with `0`. |
-| APP-013 | The system **shall** validate the email as a non-blank value containing `@`, with a maximum length of 255. |
+| APP-013 | The system **shall** validate the email as a non-blank value in standard email format containing `@`, with a maximum length of 255. |
 | APP-014 | The system **shall** require the referenced CV to belong to the authenticated Candidate. |
 | APP-015 | The system **shall** verify the source CV object still exists and has an allowed PDF, DOC or DOCX format and a positive size no greater than 10 MB. |
 | APP-016 | The system **shall** copy the CV to an independent application storage key before committing the application. |
@@ -177,11 +177,21 @@ key so later CV deletion cannot fail or mutate the snapshot.
 
 ## 5. API specification
 
-Base path: `/api/v1/candidate/applications`. All endpoints require an authenticated Candidate.
+Base path: `/api/candidate/applications`. All endpoints require an authenticated Candidate.
 
-### 5.1 `GET /api/v1/candidate/applications/form?jobId={jobId}`
+### 5.1 Prefill (frontend-only)
 
-Returns the prefill form. `jobId` is required and must be a positive Job Posting identity.
+There is no backend form endpoint. The client assembles prefill values from the existing
+candidate profile and CV endpoints, normalizes phone numbers to `0xxxxxxxxx` when needed, and
+submits them through `POST /api/candidate/applications`.
+
+- `APP-GAP-06`: Backend no longer exposes a dedicated application form prefill endpoint.
+
+### 5.1 Candidate application list
+
+#### `GET /api/candidate/applications`
+
+Returns the authenticated Candidate's submitted applications in `appliedAt DESC` order.
 
 **Response `200 OK`**
 
@@ -189,36 +199,21 @@ Returns the prefill form. `jobId` is required and must be a positive Job Posting
 {
   "status": 200,
   "message": "Success",
-  "data": {
-    "job": {
-      "id": 42,
-      "title": "Backend Engineer",
-      "companyId": 7,
+  "data": [
+    {
+      "id": "0f5f0a36-5d1f-4a5d-9f49-6e4a8f0c7b11",
+      "jobId": 42,
+      "jobTitle": "Backend Engineer",
       "companyName": "Công ty Ánh Dương",
-      "deadline": "2026-12-01T12:00:00Z"
-    },
-    "profile": {
-      "fullName": "Nguyễn Văn An",
-      "email": "an@example.vn",
-      "phoneNumber": "0901234567"
-    },
-    "cvs": [
-      {
-        "id": "550e8400-e29b-41d4-a716-446655440000",
-        "fileName": "CV.pdf",
-        "contentType": "application/pdf",
-        "fileSize": 204800,
-        "isDefault": true
-      }
-    ],
-    "defaultCvId": "550e8400-e29b-41d4-a716-446655440000",
-    "missingProfileFields": [],
-    "alreadyApplied": false
-  }
+      "status": "SUBMITTED",
+      "appliedAt": "2026-10-30T09:00:00Z",
+      "cvFileName": "CV.pdf"
+    }
+  ]
 }
 ```
 
-### 5.2 `POST /api/v1/candidate/applications`
+### 5.2 `POST /api/candidate/applications`
 
 Submits the application.
 
@@ -242,7 +237,7 @@ Submits the application.
 | `jobId` | Required, positive. |
 | `fullName` | Required, non-blank, max 150. |
 | `email` | Required, valid email format, max 255. |
-| `phoneNumber` | Required, exactly `0` plus nine digits. |
+| `phoneNumber` | Required; accepts `0xxxxxxxxx` or `+84xxxxxxxxx` and is normalized to `0xxxxxxxxx`. |
 | `coverLetter` | Optional, max 1,000 after trim. |
 | `cvId` | Required, owned by the authenticated Candidate. |
 
@@ -281,8 +276,8 @@ Submits the application.
 
 | Error code | HTTP | Constant | Trigger |
 |---|---|---|---|
-| `40100` | 401 | `UNAUTHENTICATED` | Missing or invalid access token. |
-| `40304` | 403 | `ACCOUNT_SUSPENDED` | Authenticated account is not `ACTIVE`. |
+| `40100` | 401 | `UNAUTHENTICATED` | Missing/invalid access token; suspended accounts are normally rejected here by JWT enforcement. |
+| `40021` | 400 | `INVALID_CV_FILE_FORMAT` | CV asset has an invalid or unverified PDF, DOC or DOCX format or size. |
 | `40405` | 404 | `CV_NOT_FOUND` | CV does not exist or belongs to another Candidate. |
 | `40478` | 404 | `JOB_NOT_FOUND` | Job is missing, unpublished or belongs to a banned Company. |
 | `40903` | 409 | `APPLICATION_ALREADY_SUBMITTED` | Candidate already applied to the Job Posting. |
@@ -307,9 +302,10 @@ Submits the application.
 | EC-CAN-APP-03 | No durable application event/outbox and no Kafka delivery. | Deferred by the approved scope; the application is still persisted atomically. |
 | APP-GAP-01 | No recruiter list/detail, status transition or download endpoint. | Separate recruiter workflow. |
 | APP-GAP-02 | No `application_status_events` history table. | Separate workflow; status values are reserved only. |
-| APP-GAP-03 | No candidate application list endpoint (UC-CAN-13). | Separate candidate workflow. |
+| APP-GAP-03 | Candidate application list endpoint is now available for read-only tracking. Full filtering/search remains separate UC-CAN-13 work. | Partially implemented. |
 | APP-GAP-04 | No notification to Candidate or Recruiter (UC-CAN-14). | Depends on EC-CAN-APP-03 and notification workflow. |
 | APP-GAP-05 | No frontend form. | No frontend exists in this repository. |
+| APP-GAP-06 | No backend form prefill endpoint. | Prefill is assembled by the frontend from profile and CV endpoints. |
 
 ## 10. Verification
 
