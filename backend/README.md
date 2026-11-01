@@ -293,6 +293,9 @@ envelopes before the catch-all maps unexpected exceptions to a generic HTTP 500.
 See [private Job Posting drafts](../docs/backend/job-drafts.md) for the Company job APIs,
 content bounds, eligibility, single migration, and notification compatibility.
 
+See [Recruiter Application listing](../docs/backend/recruiter-application-listing.md)
+for its access rules, query parameters, privacy boundary, and response contract.
+
 ## Database
 
 - Schema managed via Flyway: `src/main/resources/db/migration` (`V{version}__{description}.sql`).

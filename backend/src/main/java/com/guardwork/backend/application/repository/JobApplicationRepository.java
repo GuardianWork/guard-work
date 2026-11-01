@@ -2,6 +2,10 @@ package com.guardwork.backend.application.repository;
 
 import com.guardwork.backend.application.model.JobApplication;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,4 +18,34 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication, 
     Optional<JobApplication> findByCandidateIdAndJobId(UUID candidateId, Long jobId);
 
     List<JobApplication> findByCandidateIdOrderByAppliedAtDesc(UUID candidateId);
+
+    @Query(value = """
+            SELECT a.id AS id, s.full_name AS "candidateName", a.status AS status,
+                   a.applied_at AS "appliedAt"
+            FROM applications a
+            JOIN application_snapshots s ON s.application_id = a.id
+            WHERE a.company_id = :companyId AND a.job_id = :jobId
+              AND (CAST(:search AS text) IS NULL OR
+                   unaccent(LOWER(s.full_name)) LIKE
+                   unaccent(LOWER(CONCAT('%', :search, '%'))) ESCAPE '\\')
+              AND (CAST(:status AS text) IS NULL OR a.status = :status)
+            ORDER BY a.applied_at DESC, a.id DESC
+            """,
+            countQuery = """
+                    SELECT count(*)
+                    FROM applications a
+                    JOIN application_snapshots s ON s.application_id = a.id
+                    WHERE a.company_id = :companyId AND a.job_id = :jobId
+                      AND (CAST(:search AS text) IS NULL OR
+                           unaccent(LOWER(s.full_name)) LIKE
+                           unaccent(LOWER(CONCAT('%', :search, '%'))) ESCAPE '\\')
+                      AND (CAST(:status AS text) IS NULL OR a.status = :status)
+                    """,
+            nativeQuery = true)
+    Page<RecruiterApplicationProjection> findRecruiterList(
+            @Param("companyId") Long companyId,
+            @Param("jobId") Long jobId,
+            @Param("search") String search,
+            @Param("status") String status,
+            Pageable pageable);
 }

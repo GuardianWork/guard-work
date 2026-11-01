@@ -3,6 +3,7 @@ package com.guardwork.backend.application.service;
 import com.guardwork.backend.application.dto.ApplicationCvOption;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
 import com.guardwork.backend.application.dto.JobApplicationSummaryResponse;
+import com.guardwork.backend.application.dto.RecruiterApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.SubmitApplicationRequest;
 import com.guardwork.backend.application.model.ApplicationSnapshot;
 import com.guardwork.backend.application.model.JobApplication;
@@ -16,7 +17,15 @@ import com.guardwork.backend.candidate.cvs.CandidateCvService;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.job.service.JobPublicationService;
+import com.guardwork.backend.job.model.JobPosting;
+import com.guardwork.backend.job.repository.JobAssignmentRepository;
+import com.guardwork.backend.job.repository.JobPostingRepository;
+import com.guardwork.backend.membership.model.CompanyRole;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
+import com.guardwork.backend.membership.service.CompanyAccessService;
+import com.guardwork.backend.company.model.VerificationStatus;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
 import lombok.AccessLevel;
@@ -50,6 +59,9 @@ public class JobApplicationService {
     CandidateCvService cvService;
     JobPublicationService jobs;
     CompanyMembershipRepository memberships;
+    CompanyAccessService companyAccess;
+    JobPostingRepository jobPostings;
+    JobAssignmentRepository assignments;
     JobApplicationRepository applications;
     ApplicationSnapshotRepository snapshots;
     Clock clock;
@@ -158,6 +170,87 @@ public class JobApplicationService {
                             snapshot.getCvFileName());
                 })
                 .toList();
+    }
+
+    @Transactional
+    public com.guardwork.backend.common.PageResponse<RecruiterApplicationSummaryResponse> listForCompany(
+            Long userId, Long jobId, String search, String status, int page, int size) {
+        if (jobId == null || jobId <= 0) {
+            throw invalidRequest("jobId");
+        }
+
+        var access = companyAccess.findCurrentCompanyAccess(userId);
+        if (access == null) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "40302 NOT_COMPANY_MEMBER: Active Company membership required");
+        }
+        if (access.membership().getRole() == CompanyRole.ADMIN) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "40303 INSUFFICIENT_COMPANY_ROLE: Owner or Recruiter required");
+        }
+        if (access.membership().getRole() == CompanyRole.OWNER
+                && !userId.equals(access.company().getOwnerUserId())) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "40303 INSUFFICIENT_COMPANY_ROLE: Company Owner required");
+        }
+        if (access.membership().getRole() != CompanyRole.OWNER
+                && access.membership().getRole() != CompanyRole.RECRUITER) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "40303 INSUFFICIENT_COMPANY_ROLE: Owner or Recruiter required");
+        }
+        if (access.company().getVerificationStatus() != VerificationStatus.VERIFIED) {
+            throw new ResponseStatusException(
+                    HttpStatus.FORBIDDEN, "40305 COMPANY_NOT_VERIFIED: Company must be verified");
+        }
+
+        JobPosting job = jobPostings.lock(jobId, access.company().getId())
+                .orElseThrow(JobApplicationService::listingNotFound);
+        if (job.isStaffSuspended() || "SUSPENDED".equals(job.getStatus())) {
+            throw listingNotFound();
+        }
+        if (access.membership().getRole() == CompanyRole.RECRUITER
+                && assignments.current(jobId).stream().noneMatch(assignment ->
+                        assignment.getCompanyId().equals(access.company().getId())
+                                && assignment.getMembershipId().equals(access.membership().getId())
+                                && assignment.getMembershipJoinedAt().equals(access.membership().getJoinedAt()))) {
+            throw listingNotFound();
+        }
+
+        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
+            throw invalidRequest("pagination");
+        }
+        String normalizedSearch = normalizeSearch(search);
+        if (status != null && !"SUBMITTED".equals(status)) {
+            throw invalidRequest("status");
+        }
+
+        var applicationsPage = applications.findRecruiterList(
+                access.company().getId(), jobId, normalizedSearch, status,
+                PageRequest.of(page, size, Sort.unsorted()));
+        var content = applicationsPage.getContent().stream()
+                .map(application -> new RecruiterApplicationSummaryResponse(
+                        application.getId(), application.getCandidateName(),
+                        application.getStatus(), application.getAppliedAt()))
+                .toList();
+        return com.guardwork.backend.common.PageResponse.of(applicationsPage, content);
+    }
+
+    private static ResponseStatusException invalidRequest(String field) {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "40001 INVALID_INPUT: Invalid " + field);
+    }
+
+    private static String normalizeSearch(String search) {
+        if (search == null) return null;
+        String normalized = search.strip();
+        if (normalized.isEmpty()) return null;
+        if (normalized.codePointCount(0, normalized.length()) > 150) {
+            throw invalidRequest("search");
+        }
+        return normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    private static ResponseStatusException listingNotFound() {
+        return new ResponseStatusException(HttpStatus.NOT_FOUND, "40478 JOB_NOT_FOUND: Job not found");
     }
 
     private User requireActiveUser(Long userId, boolean lock) {
