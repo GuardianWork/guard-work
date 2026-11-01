@@ -424,3 +424,19 @@ No permanent erasure or Staff deletion processor is delivered.
 
 Frontend implementers: use the [GW-95 integration guide](../docs/backend/account-control-frontend-integration.md)
 for payloads, settings/recovery screens, lifecycle errors, token clearing and coordinated Candidate client migration.
+
+### User reports and Staff inspection (GW-99)
+
+Active public Users submit multipart reports through `POST /api/reports`. Staff
+list/filter/detail and private evidence downloads use `/api/staff/reports`.
+Inspection changes no processing status and applies no sanction. See the
+[integration guide](../docs/backend/user-reports.md) and
+[scoped contract](../docs/software-requirements/adm/user-report-intake-contract.md).
+
+Apply additive migrations `V2026.11.01.99__user_report_intake.sql` and
+`V2026.11.01.100__user_report_evidence.sql` before deployment. Reports, private
+evidence and safe audit entries commit together. Evidence accepts up to three PDF,
+PNG or JPEG files of at most 5 MiB each, with matching signatures/media types.
+Only the exact report-intake servlet has a 16 MiB request allowance; default
+Company multipart limits stay at 10 MiB per file and 11 MiB per request. No
+dependency, external storage, report adjudication or notification channel is added.

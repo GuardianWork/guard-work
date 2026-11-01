@@ -5,11 +5,11 @@
 | Specification ID | GW-SR-ADM |
 | Project | GuardWork |
 | File | `docs/feat/staff/spec.md` |
-| Version | 1.5.0 — scoped GW-93 job hiding and event history |
+| Version | 1.6.0 — scoped GW-99 report intake and inspection |
 | Status | Draft |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-10-31 |
+| Last updated | 2026-11-01 |
 | Product source | Retained UC-11–21 in [usecase.md](usecase.md), scoped by GW-81 |
 
 ## 1. Purpose and scope
@@ -64,6 +64,11 @@ The source UC 13 used `PUBLISHING` in its precondition and `PUBLISHED` in altern
 ## 3. Functional requirements
 
 ### 3.1 UC-11–12 — View Reports
+
+GW-99 scoped approval (2026-11-01): the requesting maintainer approved the
+[report intake and inspection contract](../../software-requirements/adm/user-report-intake-contract.md),
+including authenticated User submission, private evidence and additive persistence.
+This approval covers the focused contract; report adjudication remains excluded.
 
 Preconditions: the common conditions hold; details require an existing accessible report. Postcondition: list/details are displayed without changing report state or applying sanctions.
 
@@ -200,9 +205,14 @@ The service checks non-pending state before version mismatch, so a previously co
 
 Enhanced retained-submission decisions create persisted email intents for the submitting user, processed by the existing delivery worker. Provider acceptance is not proof of mailbox arrival. Missing configuration or exhausted retries remain operational failures; legacy dossiers without an enhanced attempt do not currently create an intent. See [onboarding delivery documentation](../../backend/employer-onboarding.md).
 
-### 4.2 Not yet implemented or specified
+### 4.2 Implemented scope and remaining gaps
 
-The repository does not currently provide the Staff report-list/detail, job restoration, or account lookup/ban/unban interfaces described here. GW-93 adds job hiding and posting-event history under its separately approved focused contract. Existing session/authentication helpers do not establish those complete workflows. UC-21 remains a use-case draft; its detailed requirements, publication eligibility, concurrency, and failure recovery must be aligned before implementation.
+GW-99 adds User report intake, Staff report-list/detail and private evidence under
+its focused approved contract. GW-92 implements account lookup/ban/unban, and GW-93
+implements job hiding and posting-event history. UC-21 restoration remains a
+use-case draft; publication eligibility, concurrency and visibility recovery need
+a focused approved contract. Browser UI and deployed end-to-end readiness are not
+established by backend implementation alone.
 
 Older versions of this draft contained proposed report-resolution, account, job, and audit-search endpoints, SQL schemas, Redis keys, Kafka topics, and search integrations. They are not treated as implemented or approved contracts in this revision. No deployed API removal, schema migration, dependency change, or architecture selection is authorized by their removal from the active draft. Concrete contracts for unimplemented capabilities must be proposed and approved separately.
 
