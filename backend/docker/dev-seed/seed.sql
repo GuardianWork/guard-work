@@ -265,4 +265,114 @@ FROM candidate_profiles cp JOIN users u ON u.id = cp.user_id
 WHERE u.username = 'demo_candidate'
 ON CONFLICT (public_id) DO NOTHING;
 
+
+-- Integrated optional companion seed for job-search filter verification.
+DO $$
+DECLARE
+    company_id_value BIGINT;
+    owner_id_value BIGINT;
+    staff_id_value BIGINT;
+    fixture_count INTEGER;
+    job_id_value BIGINT;
+    revision_id_value BIGINT;
+    deadline_value TIMESTAMPTZ;
+    content_value JSONB;
+BEGIN
+    SELECT c.id, c.owner_user_id INTO STRICT company_id_value, owner_id_value
+    FROM companies c WHERE c.tax_code = 'GW-DEMO-LOCAL-001';
+    SELECT id INTO STRICT staff_id_value FROM users WHERE username = 'demo_staff';
+
+    IF NOT EXISTS (SELECT 1 FROM users WHERE id = owner_id_value AND status = 'ACTIVE' AND email_verified) THEN
+        RAISE EXCEPTION 'Demo owner is not eligible for seeding search fixtures.';
+    END IF;
+
+    -- Fixture 1: remote Java backend role.
+    SELECT count(*) INTO fixture_count
+    FROM job_audit_events WHERE facts ->> 'developmentFixture' = 'SEARCH-FILTER-REMOTE-JAVA';
+    IF fixture_count = 0 THEN
+        deadline_value := now() + interval '45 days';
+        content_value := jsonb_build_object(
+            'title', 'Lap trinh vien Java backend',
+            'description', E'Phat trien API Spring Boot, thiet ke PostgreSQL va tu dong hoa kiem thu.\n\nPhu hop ung vien co kinh nghiem Java, Spring Boot, PostgreSQL va giao tiep tieng Anh.',
+            'employmentType', 'FULL_TIME', 'workArrangement', 'REMOTE',
+            'location', 'Ha Noi, Viet Nam',
+            'deadline', to_char(deadline_value AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+            'headcount', 2,
+            'compensation', jsonb_build_object('disclosed', true, 'minimum', 15000000,
+                'maximum', 25000000, 'currency', 'VND', 'payPeriod', 'MONTH')
+        );
+        INSERT INTO job_postings(company_id, creator_user_id, status, owner_responsible, created_at, updated_at)
+        VALUES (company_id_value, owner_id_value, 'DRAFT', true, now(), now()) RETURNING id INTO job_id_value;
+        INSERT INTO job_posting_revisions(job_id, revision_number, content, state, creator_user_id,
+            submitter_user_id, submitted_at, reviewer_user_id, decided_at, version, created_at)
+        VALUES (job_id_value, 1, content_value, 'APPROVED', owner_id_value, owner_id_value,
+            now() - interval '1 hour', staff_id_value, now(), 2, now())
+        RETURNING id INTO revision_id_value;
+        UPDATE job_postings SET status = 'PUBLISHED', published_revision_id = revision_id_value,
+            approved_deadline = deadline_value, version = 2, updated_at = now() WHERE id = job_id_value;
+        INSERT INTO job_audit_events(company_id, job_id, revision_id, actor_user_id, event_type, created_at, facts)
+        VALUES (company_id_value, job_id_value, revision_id_value, owner_id_value, 'JOB_CREATED', now(),
+            jsonb_build_object('ownerResponsible', true, 'developmentFixture', 'SEARCH-FILTER-REMOTE-JAVA'));
+    END IF;
+
+    -- Fixture 2: hybrid part-time customer support role.
+    SELECT count(*) INTO fixture_count
+    FROM job_audit_events WHERE facts ->> 'developmentFixture' = 'SEARCH-FILTER-HYBRID-SUPPORT';
+    IF fixture_count = 0 THEN
+        deadline_value := now() + interval '10 days';
+        content_value := jsonb_build_object(
+            'title', 'Chuyen vien ho tro khach hang',
+            'description', E'Ho tro khach hang qua chat va dien thoai, ghi nhan yeu cau va phoi hop xu ly.',
+            'employmentType', 'PART_TIME', 'workArrangement', 'HYBRID',
+            'location', 'Da Nang, Viet Nam',
+            'deadline', to_char(deadline_value AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+            'headcount', 1,
+            'compensation', jsonb_build_object('disclosed', true, 'minimum', 5000000,
+                'maximum', 8000000, 'currency', 'VND', 'payPeriod', 'MONTH')
+        );
+        INSERT INTO job_postings(company_id, creator_user_id, status, owner_responsible, created_at, updated_at)
+        VALUES (company_id_value, owner_id_value, 'DRAFT', true, now(), now()) RETURNING id INTO job_id_value;
+        INSERT INTO job_posting_revisions(job_id, revision_number, content, state, creator_user_id,
+            submitter_user_id, submitted_at, reviewer_user_id, decided_at, version, created_at)
+        VALUES (job_id_value, 1, content_value, 'APPROVED', owner_id_value, owner_id_value,
+            now() - interval '1 hour', staff_id_value, now(), 2, now())
+        RETURNING id INTO revision_id_value;
+        UPDATE job_postings SET status = 'PUBLISHED', published_revision_id = revision_id_value,
+            approved_deadline = deadline_value, version = 2, updated_at = now() WHERE id = job_id_value;
+        INSERT INTO job_audit_events(company_id, job_id, revision_id, actor_user_id, event_type, created_at, facts)
+        VALUES (company_id_value, job_id_value, revision_id_value, owner_id_value, 'JOB_CREATED', now(),
+            jsonb_build_object('ownerResponsible', true, 'developmentFixture', 'SEARCH-FILTER-HYBRID-SUPPORT'));
+    END IF;
+
+    -- Fixture 3: internship marketing role.
+    SELECT count(*) INTO fixture_count
+    FROM job_audit_events WHERE facts ->> 'developmentFixture' = 'SEARCH-FILTER-INTERNSHIP-MARKETING';
+    IF fixture_count = 0 THEN
+        deadline_value := now() + interval '60 days';
+        content_value := jsonb_build_object(
+            'title', 'Thuc tap sinh Marketing',
+            'description', E'Ho tro quan ly fanpage, viet bai va phan tich hieu qua chien dich quang cao.',
+            'employmentType', 'INTERNSHIP', 'workArrangement', 'ONSITE',
+            'location', 'Thanh pho Ho Chi Minh, Viet Nam',
+            'deadline', to_char(deadline_value AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+            'headcount', 5,
+            'compensation', jsonb_build_object('disclosed', true, 'minimum', 2000000,
+                'maximum', 4000000, 'currency', 'VND', 'payPeriod', 'MONTH')
+        );
+        INSERT INTO job_postings(company_id, creator_user_id, status, owner_responsible, created_at, updated_at)
+        VALUES (company_id_value, owner_id_value, 'DRAFT', true, now(), now()) RETURNING id INTO job_id_value;
+        INSERT INTO job_posting_revisions(job_id, revision_number, content, state, creator_user_id,
+            submitter_user_id, submitted_at, reviewer_user_id, decided_at, version, created_at)
+        VALUES (job_id_value, 1, content_value, 'APPROVED', owner_id_value, owner_id_value,
+            now() - interval '1 hour', staff_id_value, now(), 2, now())
+        RETURNING id INTO revision_id_value;
+        UPDATE job_postings SET status = 'PUBLISHED', published_revision_id = revision_id_value,
+            approved_deadline = deadline_value, version = 2, updated_at = now() WHERE id = job_id_value;
+        INSERT INTO job_audit_events(company_id, job_id, revision_id, actor_user_id, event_type, created_at, facts)
+        VALUES (company_id_value, job_id_value, revision_id_value, owner_id_value, 'JOB_CREATED', now(),
+            jsonb_build_object('ownerResponsible', true, 'developmentFixture', 'SEARCH-FILTER-INTERNSHIP-MARKETING'));
+    END IF;
+END;
+$$;
+
 COMMIT;
