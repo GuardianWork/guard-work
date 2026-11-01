@@ -8,7 +8,7 @@
 | **File** | `application-submission-spec.md` |
 | **Version** | 0.1.0 |
 | **Date** | 2026-10-30 |
-| **Last Updated** | 2026-10-30 |
+| **Last Updated** | 2026-11-01 |
 | **Owner** | GuardWork thesis team |
 | **Named human approver** | chiko |
 | **Status** | Draft — implementation prepared; approval pending |
@@ -329,3 +329,25 @@ the project declares Java 25. The production build remains Java 25.
 |---|---|---|
 | 2026-10-30 | User | Confirmed one CV, `applications` + `application_snapshots` only, and `chiko` as named approver. |
 | Pending | chiko | Formal approval of this specification. |
+| 2026-11-01 | Requesting human user | Approved section 12 (APP-023–APP-025), including Recruiter, Admin and Owner roles. |
+
+## 12. Scoped amendment: current-company member applications
+
+Status: Approved by the requesting human user on 2026-11-01 for APP-023–APP-025 only.
+The approval status of the remainder of this specification is unchanged.
+
+The approved restriction is scoped to submission eligibility:
+
+| ID | Approved requirement |
+|---|---|
+| APP-023 | Submission shall reject an authenticated User whose current persisted Company Membership is `ACTIVE`, has Company Role `RECRUITER`, `ADMIN`, or `OWNER`, and belongs to the Job Posting's Company. Return HTTP `403` using the existing `40300` (`FORBIDDEN`) error envelope. |
+| APP-024 | An active Company Member may apply to another Company's available Job Posting. A historical `LEFT` or `REMOVED` membership shall not trigger APP-023. Existing eligibility rules still apply. |
+| APP-025 | Check membership within the submission transaction after locking the account and resolving the target Company and Job Posting, before copying a CV or writing an Application or Snapshot. Use persisted membership rather than token or client role claims. |
+
+This amendment does not change existing applications, add a dependency, or require a schema
+migration. Request and success-response shapes remain unchanged. Clients must handle the existing
+forbidden response for this new submission condition.
+
+Verification shall cover rejection for each active Company Role (`RECRUITER`, `ADMIN`, and
+`OWNER`) of the target Company without CV copy or application writes, and successful submission
+for another Company, no active membership, and historical `LEFT`/`REMOVED` membership.

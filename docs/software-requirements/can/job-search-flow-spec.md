@@ -295,3 +295,29 @@ Searches public, searchable postings.
 | NFR-03 | Invalid numeric or filter input shall return HTTP 400. |
 | NFR-04 | Empty result pages shall be successful rather than treated as failure. |
 | NFR-05 | Pagination calculations shall be guarded against integer overflow. |
+
+## 11. Scoped amendment: exclude the caller's current Company
+
+Status: Approved by the requesting human user on 2026-11-01 for GW-JOB-SEARCH-15–17 only.
+The approval status of the remainder of this specification is unchanged.
+
+| ID | Approved requirement |
+|---|---|
+| GW-JOB-SEARCH-15 | For an authenticated caller with an `ACTIVE` Company Membership in role `RECRUITER`, `ADMIN`, or `OWNER`, `GET /api/jobs/search` shall exclude postings belonging to that Company. Determine the caller from the authenticated principal and membership from current persistence, rather than client parameters or cached token roles. |
+| GW-JOB-SEARCH-16 | Apply this exclusion before pagination and to the count query so page contents, `totalElements`, and `totalPages` reflect the same filtered set. Preserve existing search filters and ordering. |
+| GW-JOB-SEARCH-17 | Anonymous callers and authenticated callers without an active membership retain existing search behavior. Historical `LEFT` and `REMOVED` memberships do not exclude postings. |
+
+This amendment affects search results only. Direct job-detail visibility and Company management
+routes retain their existing behavior. Submission remains protected by APP-023–APP-025 in
+`application-submission-spec.md`. No schema migration, dependency, query parameter, or response
+shape change is required. Search responses retain `Cache-Control: no-store`.
+
+Frontend integration: search requests made with an existing login session must use the existing
+authenticated request helper, including access-token refresh, and send `Authorization: Bearer`.
+Without that header the public endpoint treats the request as anonymous and cannot exclude the
+caller's Company. Guest searches remain public. Scope the frontend search cache by User identity
+and current membership Company/period so changes of account or membership trigger a new search.
+
+Verification shall cover each active Company Role, another Company's results, anonymous and
+non-member searches, historical memberships, membership changes after token issuance, and
+pagination/count consistency when excluded postings would otherwise occupy the first page.

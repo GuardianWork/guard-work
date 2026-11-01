@@ -33,6 +33,9 @@ public interface JobPostingRepository
               + "AND (jp.approved_deadline IS NULL OR jp.approved_deadline > :now) "
               + "AND c.verification_status = 'VERIFIED' "
               + "AND c.is_banned = FALSE "
+              + "AND NOT EXISTS (SELECT 1 FROM company_memberships cm "
+              + "WHERE cm.user_id = CAST(:callerUserId AS bigint) "
+              + "AND cm.company_id = jp.company_id AND cm.status = 'ACTIVE') "
               + "AND (CAST(:keyword AS text) IS NULL OR "
               + "unaccent(LOWER(COALESCE(r.content ->> 'title', ''))) LIKE unaccent(LOWER(CONCAT('%', :keyword, '%'))) ESCAPE '\' OR "
               + "unaccent(LOWER(COALESCE(r.content ->> 'description', ''))) LIKE unaccent(LOWER(CONCAT('%', :keyword, '%'))) ESCAPE '\' OR "
@@ -54,6 +57,9 @@ public interface JobPostingRepository
               + "AND (jp.approved_deadline IS NULL OR jp.approved_deadline > :now) "
               + "AND c.verification_status = 'VERIFIED' "
               + "AND c.is_banned = FALSE "
+              + "AND NOT EXISTS (SELECT 1 FROM company_memberships cm "
+              + "WHERE cm.user_id = CAST(:callerUserId AS bigint) "
+              + "AND cm.company_id = jp.company_id AND cm.status = 'ACTIVE') "
               + "AND (CAST(:keyword AS text) IS NULL OR "
               + "unaccent(LOWER(COALESCE(r.content ->> 'title', ''))) LIKE unaccent(LOWER(CONCAT('%', :keyword, '%'))) ESCAPE '\' OR "
               + "unaccent(LOWER(COALESCE(r.content ->> 'description', ''))) LIKE unaccent(LOWER(CONCAT('%', :keyword, '%'))) ESCAPE '\' OR "
@@ -76,5 +82,6 @@ public interface JobPostingRepository
       @Param("salaryMax") java.math.BigDecimal salaryMax,
       @Param("deadlineFilter") Instant deadlineFilter,
       @Param("now") Instant now,
+      @Param("callerUserId") Long callerUserId,
       org.springframework.data.domain.Pageable pageable);
 }

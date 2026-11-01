@@ -8,6 +8,8 @@ import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.user.AccountPhone;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -18,6 +20,8 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
@@ -49,6 +53,7 @@ class JobApplicationHttpTest {
     @Autowired ObjectMapper mapper;
     @Autowired JdbcTemplate database;
     @Autowired FakeCvStorage storage;
+    @Autowired PlatformTransactionManager transactions;
 
     MockMvc http;
 
@@ -113,6 +118,51 @@ class JobApplicationHttpTest {
         assertThat(database.queryForObject(
                 "SELECT count(*) FROM applications WHERE candidate_id=? AND job_id=?",
                 Long.class, profile, job.id())).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "RECRUITER,ACTIVE,true,true", "ADMIN,ACTIVE,true,true", "OWNER,ACTIVE,true,true",
+            "RECRUITER,ACTIVE,false,false", "ADMIN,ACTIVE,false,false", "OWNER,ACTIVE,false,false",
+            "RECRUITER,LEFT,true,false", "RECRUITER,REMOVED,true,false"
+    })
+    void submissionUsesCurrentCompanyMembership(String role, String membershipStatus,
+                                               boolean sameCompany, boolean forbidden) throws Exception {
+        // Issue the token before membership exists: eligibility must use current persistence.
+        String candidate = account();
+        long user = userId(candidate);
+        UUID candidateProfile = profile(user);
+        UUID candidateCv = cv(candidateProfile);
+        long employer = company();
+        long membershipCompany = sameCompany ? employer : company();
+        new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+            if ("OWNER".equals(role)) {
+                database.update("UPDATE companies SET owner_user_id=? WHERE id=?", user, membershipCompany);
+            }
+            database.update("""
+                    INSERT INTO company_memberships(
+                        company_id,user_id,role,status,joined_at,ended_at,ended_by_user_id)
+                    VALUES (?,?,?,?,now(),CASE WHEN ?='ACTIVE' THEN NULL ELSE now() END,
+                        CASE WHEN ?='ACTIVE' THEN NULL ELSE ? END)
+                    """, membershipCompany, user, role, membershipStatus, membershipStatus, membershipStatus, user);
+        });
+        Job job = publishedJob(employer, user);
+
+        var result = http.perform(post(APPLICATIONS)
+                .header("Authorization", candidate)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(submitBody(job.id(), candidateCv, "Nguyễn Văn An", null)));
+
+        if (forbidden) {
+            result.andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.status").value(ErrorCode.FORBIDDEN.getCode()));
+            assertThat(database.queryForObject(
+                    "SELECT count(*) FROM applications WHERE candidate_id=?", Long.class, candidateProfile))
+                    .isZero();
+            assertThat(storage.assets.keySet()).containsExactly("candidates/" + candidateProfile + "/cvs/source");
+        } else {
+            result.andExpect(status().isCreated());
+        }
     }
 
     @Test

@@ -16,6 +16,7 @@ import com.guardwork.backend.candidate.cvs.CandidateCvService;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.job.service.JobPublicationService;
+import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
 import lombok.AccessLevel;
@@ -48,6 +49,7 @@ public class JobApplicationService {
     CandidateCvRepository cvs;
     CandidateCvService cvService;
     JobPublicationService jobs;
+    CompanyMembershipRepository memberships;
     JobApplicationRepository applications;
     ApplicationSnapshotRepository snapshots;
     Clock clock;
@@ -60,6 +62,10 @@ public class JobApplicationService {
         CandidateProfile profile = profiles.getOrCreateProfile(userId);
         UUID candidateId = profile.getId();
         JobPublicationService.ApplicationContext job = requireAvailableJob(request.jobId());
+
+        if (memberships.findActiveCompanyId(userId).filter(job.companyId()::equals).isPresent()) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
 
         if (applications.existsByCandidateIdAndJobId(candidateId, request.jobId())) {
             throw new AppException(ErrorCode.APPLICATION_ALREADY_SUBMITTED);
