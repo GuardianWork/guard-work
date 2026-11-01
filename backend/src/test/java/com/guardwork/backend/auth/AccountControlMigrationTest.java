@@ -20,8 +20,10 @@ class AccountControlMigrationTest {
             Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("2026.10.31.90").load().migrate();
             long user=db.queryForObject("INSERT INTO "+schema+".users(first_name,last_name,username,email,password,status) VALUES ('Account','Name','legacy','legacy@test.invalid','hash','BANNED') RETURNING id",Long.class);
             db.update("INSERT INTO "+schema+".candidate_profiles(user_id,full_name,is_public) VALUES (?,'Conflicting profile',false)",user);
-            var upgrade=Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).load();
+            var upgrade=Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).target("2026.10.31.94").load();
             assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(1);
+            var latest=Flyway.configure().dataSource(source).schemas(schema).defaultSchema(schema).load();
+            latest.migrate();
             assertThat(db.queryForObject("SELECT first_name || ' ' || last_name FROM "+schema+".users WHERE id=?",String.class,user)).isEqualTo("Account Name");
             assertThat(db.queryForObject("SELECT status FROM "+schema+".users WHERE id=?",String.class,user)).isEqualTo("BANNED");
             assertThat(db.queryForObject("SELECT self_service_state FROM "+schema+".users WHERE id=?",String.class,user)).isEqualTo("ACTIVE");
@@ -34,7 +36,7 @@ class AccountControlMigrationTest {
             db.update("UPDATE "+schema+".account_deletion_requests SET cancelled_at=now() WHERE user_id=?",user);
             db.update(insert,user);
             assertThat(db.queryForObject("SELECT count(*) FROM "+schema+".account_deletion_requests WHERE user_id=?",Integer.class,user)).isEqualTo(2);
-            upgrade.validate();
+            latest.validate();
         } finally {db.execute("DROP SCHEMA IF EXISTS "+schema+" CASCADE");}
     }
 }
