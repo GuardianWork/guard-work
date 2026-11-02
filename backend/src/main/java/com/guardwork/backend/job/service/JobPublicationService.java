@@ -141,6 +141,7 @@ public class JobPublicationService {
             "40981 JOB_CONTENT_INVALID: " + issues.getFirst().code());
     }
     expiry.reconcile(job);
+    String previousReviewState = revision.getState();
     revision.setState(request.outcome());
     revision.setReviewerUserId(actor);
     revision.setDecidedAt(clock.instant());
@@ -168,8 +169,8 @@ public class JobPublicationService {
         "JOB_REVISION_" + request.outcome(),
         "JOB_REVISION",
         revisionId.toString(),
-        null,
-        "{\"outcome\":\"" + request.outcome() + "\"}",
+        "{\"reviewState\":\"" + previousReviewState + "\"}",
+        "{\"outcome\":\"" + request.outcome() + "\",\"reviewState\":\"" + request.outcome() + "\"}",
         reason,
         ip,
         agent);

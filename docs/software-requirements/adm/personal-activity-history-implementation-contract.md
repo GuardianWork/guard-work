@@ -8,7 +8,16 @@
 | Status | Draft — proposed; no endpoint implemented by this document |
 | Owner | GuardWork thesis team |
 | Human approver | Formal named approval pending; product decisions confirmed by requesting human on 2026-10-30 |
-| Last updated | 2026-10-30 |
+| Last updated | 2026-11-02 |
+
+## Implementation record (GW-104)
+
+The requesting human explicitly instructed implementation of this proposal on
+2026-11-02 after its Draft status was surfaced. GW-104 delivers the backend read
+endpoint and future moderation snapshot enrichment described here. Formal named
+approval metadata remains pending; this note does not promote the lifecycle status.
+See the [frontend integration guide](../../backend/personal-staff-activity-history.md)
+for the delivered API and the separate Staff frontend work.
 
 ## 1. Boundary and authority
 

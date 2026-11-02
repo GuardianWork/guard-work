@@ -440,3 +440,13 @@ PNG or JPEG files of at most 5 MiB each, with matching signatures/media types.
 Only the exact report-intake servlet has a 16 MiB request allowance; default
 Company multipart limits stay at 10 MiB per file and 11 MiB per request. No
 dependency, external storage, report adjudication or notification channel is added.
+
+### Personal Staff activity history (GW-104)
+
+Staff can query their own committed account-management, job-review and Company
+verification activity with `GET /api/staff/me/activities`. Filtering and fixed
+20-record pagination run in PostgreSQL; responses allowlist historical facts.
+See the [frontend implementation guide](../docs/backend/personal-staff-activity-history.md)
+for Vietnamese UI labels, query rules, response examples and error handling.
+No migration or dependency is added. Future job-review audits include before/after
+review states; retained historical audit records are never rewritten.
