@@ -14,11 +14,13 @@ import org.springframework.transaction.annotation.Transactional;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.model.VerificationStatus;
 
-public interface CompanyRepository extends JpaRepository<Company, Long>, CompanyRepositoryCustom {
+public interface CompanyRepository extends JpaRepository<Company, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<Company>, CompanyRepositoryCustom {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM Company c WHERE c.id = :id")
     Optional<Company> findByIdForUpdate(@Param("id") Long id);
+
+    boolean existsByOwnerUserId(Long ownerUserId);
 
     Optional<Company> findByTaxCode(String taxCode);
 

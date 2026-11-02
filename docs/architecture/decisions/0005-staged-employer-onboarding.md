@@ -5,6 +5,8 @@ date: 2026-10-18
 
 # Staged employer onboarding and retained verification evidence
 
+> Partially superseded on 2026-10-27 by [ADR 0007](0007-email-only-employer-onboarding.md): the confirmed target creates restricted official accounts at registration, uses email-only gates, requires unique declared phone/email, and requires email proof before Recruiter invitation acceptance. Existing code still follows the earlier journey below. Retained legal evidence, moderation and unaffected delivery/storage decisions remain in force. Q6 (already-ACTIVE Recruiter to new-Owner transition) remains undecided.
+
 The user approved the product journey, separate pending registration and derived CHECKED direction, then confirmed the concrete implementation contract with “chốt”. This records that human authorization; it does not select an SMS vendor or a production retention/legacy-rollout policy.
 
 Employer registrations remain separate from official Users until the applicant completes exact-attempt email proof and confirms their credentials. Official User email remains unique. Newly enrolled applicants have explicit personal-verification/onboarding state; it is not a global Recruiter role. Existing Candidate registration remains compatible.

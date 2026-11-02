@@ -1,6 +1,8 @@
 package com.guardwork.backend.candidate;
 
 import com.guardwork.backend.candidate.dto.CandidateProfileResponse;
+import com.guardwork.backend.candidate.dto.ExperienceEntry;
+import com.guardwork.backend.candidate.dto.EducationEntry;
 import com.guardwork.backend.common.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -17,7 +19,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/candidates")
+@RequestMapping("/api/candidates")
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class CandidateProfileController {
@@ -46,12 +48,15 @@ public class CandidateProfileController {
         return new CandidateProfileResponse(
                 profile.getId(),
                 profile.getUserId(),
+                profile.getEmail(),
                 profile.getFullName(),
+                profile.getFirstName(),
+                profile.getLastName(),
                 profile.getAvatarUrl(),
                 profile.getPhoneNumber(),
                 profile.getSkills(),
-                profile.getExperienceSummary(),
-                profile.getEducationSummary(),
+                profile.getExperience(),
+                profile.getEducation(),
                 profile.isPublic(),
                 profile.getCreatedAt(),
                 profile.getUpdatedAt()

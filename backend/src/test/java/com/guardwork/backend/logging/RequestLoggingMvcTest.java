@@ -186,6 +186,14 @@ class RequestLoggingMvcTest {
         }
 
         @Bean
+        com.guardwork.backend.staff.service.AccountEnforcementService enforcement() {
+            var service=org.mockito.Mockito.mock(com.guardwork.backend.staff.service.AccountEnforcementService.class);
+            var user=new com.guardwork.backend.user.model.User(); user.setRole("USER");
+            org.mockito.Mockito.when(service.authenticate(1L,0)).thenReturn(user);
+            return service;
+        }
+
+        @Bean
         JwtService jwtService() {
             return new JwtService("logging_fixture_key_at_least_32_bytes_long", 60000, 600000);
         }

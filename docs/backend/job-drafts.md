@@ -49,23 +49,20 @@ return 400. Unknown content fields are rejected, including nested compensation/q
 fields. Content must be an object, but may be empty or incomplete. Explicit nulls remain
 unset; completeness and cross-field submission checks are deferred.
 
-Narrative fields are plain text. Outer whitespace is trimmed; internal Vietnamese Unicode
-and line breaks are preserved. Lengths count Unicode code points:
+The complete Job Description is one plain-text `description`. It can include responsibilities, qualifications, experience expectations and benefits in sections. Outer whitespace is trimmed; internal Vietnamese Unicode and line breaks are preserved. Lengths count Unicode code points:
 
 | Fields | Maximum |
 | --- | --- |
 | `title` | 200 |
-| `description`, `responsibilities` | 10,000 each |
-| `requiredQualifications`, `preferredQualifications`, `experienceExpectations`, `benefits` | 5,000 each |
+| `description` | 10,000 |
 | `location` | 1,000 |
-| `applicationInstructions` | 2,000 |
 
-`headcount` is an integer 1–10,000. `employmentType` accepts FULL_TIME, PART_TIME,
+`headcount` is optional; when present it must be an integer 1–10,000. `employmentType` accepts FULL_TIME, PART_TIME,
 CONTRACT, INTERNSHIP or TEMPORARY; `workArrangement` accepts ONSITE, HYBRID or REMOTE.
 `deadline` requires an ISO-8601 offset and is normalized to the exact UTC instant; a past
 proposed deadline may be saved during drafting.
 
-`compensation` accepts `disclosed` (boolean), `minimum`, `maximum` (positive exact decimals,
+`headcount` and `compensation` may be omitted. When supplied, `compensation` accepts `disclosed` (boolean), `minimum`, `maximum` (positive exact decimals,
 precision at most 18 and scale at most 2), `currency` (VND/USD) and `payPeriod`
 (HOUR/DAY/MONTH/YEAR). Completeness, range ordering, VND whole units and consistency
 with disclosure are submission checks.
@@ -118,13 +115,11 @@ It reads the exact normalized candidate-facing content without changing either v
 
 `POST /api/companies/me/jobs/{jobId}/revisions/{revisionId}/submit` requires both
 `expectedJobVersion` and `expectedRevisionVersion` plus `confirmed: true`. Submission
-requires every narrative and content choice, strictly future deadline, verified Company
-and current responsibility. Compensation must explicitly choose disclosure; disclosed
+requires nonblank title, description, employment type, work arrangement and location, a strictly future deadline, verified Company and current responsibility. Headcount and compensation may be omitted; supplied compensation must explicitly choose disclosure; disclosed
 ranges require ordered positive bounds, currency and pay period, with whole VND amounts.
 Single-choice questions require 2–10 distinct options; other types prohibit options.
 Every question requires a UUID key, type, nonblank prompt and explicit required flag.
-Application instructions direct Candidates through GuardWork; human review checks their
-meaning rather than unreliable substring detection. Text remains plain text data.
+Candidates apply through GuardWork. The description must explain the actual job; Platform Staff review its meaning rather than relying on keyword checks. Text remains plain text data.
 
 Submission preserves the exact content and transitions only the current draft to
 PENDING_REVIEW. Both versions advance. Company/job locking serializes competing submits;
@@ -253,3 +248,31 @@ reusing the completed test runs. The authorized local `backend_db` rebuild appli
 and validated all 14 migrations and restored the five standard demo accounts.
 The separate review finding about NUL in moderation rejection reasons remains
 outside this migration/Staff integration change.
+
+
+## Staff hiding and posting-event history (GW-93)
+
+The approved [UC-13/UC-14 contract](../software-requirements/adm/staff-job-management-contract.md) adds:
+
+- `PUT /api/staff/jobs/{jobId}/hide` with `{ "expectedJobVersion": 0, "reason": "Policy violation" }`. Use the actual current job version; reasons are stripped and require 1–1000 Unicode code points. Active persisted Platform Staff authority is required; Company roles do not grant it.
+- `GET /api/staff/jobs/{jobId}/history?page=0&size=20` returns recorded posting events, newest first by timestamp and ID, using the existing page envelope and size 1–100. This differs from `/revisions`: it includes publication, responsibility, lifecycle and administrative events. Only allowlisted event fields are returned. Missing historical status/reason and system actor IDs remain null; history reads do not reconcile expiry or change business state. Empty history is a successful empty page; retrieval failure is an error.
+
+Hiding locks actor, Company and posting, checks the current version and effective public eligibility, then commits `SUSPENDED` and both attributable audit records atomically. A stale version returns 409 `40022`; a non-public job returns 409 `40978`; a missing job returns 404 `40478`. The receipt returns `jobId`, `publicationStatus`, `jobVersion`, `actorUserId`, `suspendedAt` and trimmed `reason`.
+
+Public job detail returns content-free 404 for suspended jobs and sets `Cache-Control: no-store` on successes and errors. Authorized Company reads and `status=SUSPENDED` filtering remain available; draft creation/edit/submission and pause/resume/close cannot restore the job. Retained pending reviews may complete or be withdrawn; approval keeps `SUSPENDED`. Deadline expiry does not override Staff suspension. UC-21 restoration is excluded.
+
+Migration `V2026.10.31.86__staff_job_suspension.sql` extends the job status constraint without changing committed migration history or adding tables/dependencies. Deploy clients that understand the additive private status together with this backend, and stop older writers. Rollback requires reviewed handling of suspended rows; never silently republish them. Existing audit immutability and reviewed-content protections remain active.
+
+There is no current public job search/listing or server content cache. Future integrations must exclude suspended jobs and define invalidation. Previously delivered content or responses cached before rollout cannot be recalled; operational invalidation may be needed for an existing deployment cache. No notification, applicant-data access or new public listing is introduced.
+
+Use the existing isolated PostgreSQL tests. If another branch owns the default test database, create a separate database matching `backend_test_db_<suffix>` in that test PostgreSQL instance and select it with `BACKEND_TEST_DATABASE_URL`. Do not reset another branch's database or disable the test database safety guard.
+
+Frontend handoff: [Staff job hiding and history integration](staff-job-management-frontend-integration.md) includes request/response examples, version sourcing, state handling, errors and acceptance checks.
+
+## Public search
+
+`GET /api/jobs/search` provides the public, anonymous backend search for UC-CAN-07.
+
+Supported canonical filters: `keyword`, `location`, `employmentType`, `workArrangement`, `deadline`, `salaryMin`, `salaryMax`, `page`, `size`. No pagination aliases are supported in this iteration. Text matching is case-insensitive but not diacritic-insensitive in this iteration.
+
+Results contain only `PUBLISHED`, non-suspended postings with future or absent approved deadlines, belonging to verified, non-banned Companies. Responses use `PageResponse<PublicDetail>` and set `Cache-Control: no-store`. The contract is pending approval in `docs/software-requirements/can/job-search-spec.md`.

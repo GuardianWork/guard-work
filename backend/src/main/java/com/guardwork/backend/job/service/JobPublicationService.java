@@ -35,6 +35,8 @@ public class JobPublicationService {
   private final JobExpiryService expiry;
   private final JobEligibility eligibility;
 
+  private final com.guardwork.backend.staff.service.AccountEnforcementService enforcement;
+
   public JobPublicationService(
       JobReviewQueueService reviews,
       JobPostingRepository jobs,
@@ -49,7 +51,8 @@ public class JobPublicationService {
       NotificationDispatcher dispatcher,
       Clock clock,
       JobExpiryService expiry,
-      JobEligibility eligibility) {
+      JobEligibility eligibility, com.guardwork.backend.staff.service.AccountEnforcementService enforcement) {
+    this.enforcement = enforcement;
     this.reviews = reviews;
     this.jobs = jobs;
     this.revisions = revisions;
@@ -89,7 +92,6 @@ public class JobPublicationService {
       String applicationAvailabilityReason) {}
 
   public Receipt decide(Long actor, Long revisionId, Decision request, String ip, String agent) {
-    reviews.requireStaff(actor);
     var hint =
         revisions
             .findById(revisionId)
@@ -98,10 +100,14 @@ public class JobPublicationService {
     var jobHint = jobs.findById(hint.getJobId()).orElseThrow(JobDraftService::notFound);
     var company =
         companies.findByIdForUpdate(jobHint.getCompanyId()).orElseThrow(JobDraftService::notFound);
+    reviews.requireStaff(actor);
+    enforcement.settleCompany(company);
     if (company.isBanned() && request != null && "APPROVED".equals(request.outcome()))
       throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40305 COMPANY_SUSPENDED");
     var job = jobs.lock(jobHint.getId(), company.getId()).orElseThrow(JobDraftService::notFound);
     entities.refresh(job);
+    if (job.isStaffSuspended() && request != null && "APPROVED".equals(request.outcome()))
+      throw JobSubmissionService.conflict("40992 POSTING_STAFF_SUSPENDED");
     // The unlocked lookup is only a scope pointer. Refresh after acquiring the serialization lock.
     var revision = revisions.findById(revisionId).orElseThrow(JobDraftService::notFound);
     entityRefresh(revision);
@@ -205,15 +211,46 @@ public class JobPublicationService {
     entities.refresh(revision);
   }
 
+  public record ApplicationContext(Long jobId, Long companyId, String companyName,
+      Long submittedRevisionId, String title, Instant deadline, boolean available, String reason) {}
+
+  /**
+   * Locks Company then job, reconciles expiry and returns the approved content needed by the
+   * application workflow. The lock order matches JobExpiryService and the publication service.
+   */
+  public ApplicationContext applicationContext(Long id) {
+    if(id==null || id<=0) throw JobDraftService.notFound();
+    var hint=jobs.findById(id).orElseThrow(JobDraftService::notFound);
+    var company=companies.findByIdForUpdate(hint.getCompanyId()).orElseThrow(JobDraftService::notFound);
+    if(company.isBanned())throw JobDraftService.notFound();
+    var job=jobs.lock(id,company.getId()).orElseThrow(JobDraftService::notFound);
+    entities.refresh(job);
+    if(job.getPublishedRevisionId()==null)throw JobDraftService.notFound();
+    var revision=revisions.findById(job.getPublishedRevisionId())
+        .filter(r->"APPROVED".equals(r.getState())).orElseThrow(JobDraftService::notFound);
+    expiry.reconcile(job);
+    var decoded=content.decode(revision.getContent());
+    String title=decoded.get("title")==null?null:decoded.get("title").toString();
+    String reason=!"PUBLISHED".equals(job.getStatus())?job.getStatus()
+        :company.getVerificationStatus()!=VerificationStatus.VERIFIED?"COMPANY_NOT_VERIFIED":null;
+    return new ApplicationContext(id,company.getId(),company.getName(),job.getPublishedRevisionId(),
+        title,job.getApprovedDeadline(),reason==null,reason);
+  }
+
   public PublicDetail publicDetail(Long id) {
     if (id == null || id <= 0) throw JobDraftService.notFound();
     var hint = jobs.findById(id).orElseThrow(JobDraftService::notFound);
     var company =
         companies.findByIdForUpdate(hint.getCompanyId()).orElseThrow(JobDraftService::notFound);
+    enforcement.settleCompany(company);
     if (company.isBanned()) throw JobDraftService.notFound();
     var job = jobs.lock(id, company.getId()).orElseThrow(JobDraftService::notFound);
     entities.refresh(job);
-    if (job.getPublishedRevisionId() == null) throw JobDraftService.notFound();
+    // Company enforcement and individual Staff hides use independent suspension markers.
+    if (job.getPublishedRevisionId() == null
+        || job.isStaffSuspended()
+        || "SUSPENDED".equals(job.getStatus()))
+      throw JobDraftService.notFound();
     var revision =
         revisions
             .findById(job.getPublishedRevisionId())

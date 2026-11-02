@@ -71,7 +71,7 @@ terminal and run Docker log/status commands in another.
 | --- | --- |
 | [`docker-compose.yml`](docker-compose.yml) | Starts PostgreSQL and the local `seed` service; supplies database credentials and read-only mounts. |
 | [`docker/dev-seed/seed.sh`](docker/dev-seed/seed.sh) | Checks the enable flag, waits for Flyway migrations, runs the SQL, and prints the account table after successful seeding. |
-| [`docker/dev-seed/seed.sql`](docker/dev-seed/seed.sql) | Inserts demo accounts, Candidate/employer profiles, a Company, and memberships in one transaction. |
+| [`docker/dev-seed/seed.sql`](docker/dev-seed/seed.sql) | Inserts demo accounts, Candidate/employer profiles, a Company, memberships and GW-93 job scenarios in one transaction. |
 | [`.env.example`](.env.example) | Documents local database settings and `GUARDWORK_DEV_SEED_ENABLED`. |
 
 Edit `seed.sql` to change fixture definitions; existing rows are preserved on reruns,
@@ -110,6 +110,7 @@ or email:
 | Company owner | `demo_owner` | `owner@demo.guardwork.test` | `USER` | `OWNER` |
 | Company administrator | `demo_company_admin` | `company-admin@demo.guardwork.test` | `USER` | `ADMIN` |
 | Recruiter | `demo_recruiter` | `recruiter@demo.guardwork.test` | `USER` | `RECRUITER` |
+| Email-unverified User | `demo_employer_unverified` | `employer-unverified@demo.guardwork.test` | `USER` | None |
 
 ```bash
 curl http://localhost:8080/api/auth/login \
@@ -135,11 +136,13 @@ when calling `GET /api/auth/me` to inspect the platform role and active Company 
 #### Seeded data and reruns
 
 Fixtures include a private Candidate profile, one verified demo Company, three active
-Company memberships, and employer profiles with synthetic email/phone verification.
+Company memberships, and employer profiles with synthetic email proof, plus one
+email-unverified User. Current phones are canonical User contacts; fresh fixtures
+do not fabricate phone proof.
 These are direct local fixtures, so no OTP or email delivery is needed. They preserve
 the platform/Company role separation in GW-SR-AUTH-01 and GW-SR-REC-02; available
 operations still depend on implemented APIs. The certificate URL is a placeholder;
-no legal dossier, real document, job posting, CV file, or verification delivery is created.
+no legal dossier, real document, CV file, or verification delivery is created. Synthetic Job Postings and their histories are included for GW-93 testing.
 
 Each `docker compose up -d` reruns an exited seed service and inserts missing fixtures.
 It preserves existing passwords, statuses, Company state, profiles, and membership history;
@@ -306,6 +309,13 @@ docker compose -f docker-compose.test.yml up -d --wait  # start test database on
 ./mvnw package         # build
 ```
 
+After switching branches, use `./mvnw clean test` or `./mvnw clean package` so
+removed test classes and migration resources cannot remain in `target/` and alter
+verification. If an isolated test database already applied migrations from another
+branch, use a separately named isolated test database via
+`BACKEND_TEST_DATABASE_URL`; do not repair migration history or reset a shared
+or development database to hide a build mismatch.
+
 ### Job publication and expiry
 
 Platform Staff members decide pending submitted revisions with
@@ -331,3 +341,102 @@ job independently. Set `jobs.expiry.worker-enabled=false` to disable scheduling;
 `JobExpiryService.expireDue()` is the bounded operational recovery entry point.
 Tests disable scheduling and control the Clock explicitly. No schema migration or
 new dependency accompanies moderation, public details, or expiry.
+
+
+### Staff Job Posting hiding and history
+
+UC-13/UC-14 add `PUT /api/staff/jobs/{jobId}/hide` and
+`GET /api/staff/jobs/{jobId}/history` for active Platform Staff. A current job version
+and a trimmed 1–1000 code-point reason are required to suspend a public posting.
+The change and both audit records commit atomically; history is read-only and
+paginated independently of revision history. Both the Company-enforcement
+`staff_suspended` flag and the individual Staff
+`SUSPENDED` status hide content on the public job endpoint. Company unban or ban
+expiry preserves posting suspension. Suspended content is unavailable on
+the public job endpoint; Company authoring/lifecycle actions cannot restore it.
+Pending review decisions preserve suspension.
+
+Migration `V2026.10.31.86__staff_job_suspension.sql` adds `SUSPENDED` to the status
+constraint. Deploy compatible clients and stop older writers; rollback requires
+reviewed treatment of suspended rows. Public job details send `Cache-Control:
+no-store`; existing responses cached before rollout may require invalidation.
+See [job workflow documentation](../docs/backend/job-drafts.md#staff-hiding-and-posting-event-history-gw-93)
+and the [approved contract](../docs/software-requirements/adm/staff-job-management-contract.md).
+No new dependency, notification channel, public search or restoration workflow is added.
+
+
+### GW-93 development Job Postings
+
+The existing local seed now creates nine Vietnamese demo jobs under `GW-DEMO-LOCAL-001`.
+They use synthetic content/history, Owner Responsibility and an assignment to the
+existing active `demo_recruiter` membership when eligible. No notification or mail
+is sent. These are development fixtures, not evidence of real review/delivery.
+
+| Fixture marker | Initial Job Posting state | Manual check |
+| --- | --- | --- |
+| `GW93-HIDE-READY` | `PUBLISHED` | Public content is readable; Staff can hide it with current version and reason. |
+| `GW93-PUBLISHED-EDIT` | `PUBLISHED` | A second revision is pending; pending content must not replace public approved content. |
+| `GW93-SUSPENDED` | `SUSPENDED` | Public GET returns 404; Staff history retains actor and reason. |
+| `GW93-SUSPENDED-EDIT` | `SUSPENDED` | A second revision is pending; approving it must keep the posting hidden. |
+| `GW93-PAUSED` | `PAUSED` | Public details remain readable with applications unavailable; hide returns conflict. |
+| `GW93-CLOSED` | `CLOSED` | Public details remain readable; hide/resume are unavailable. |
+| `GW93-EXPIRED` | `EXPIRED` | Past approved deadline, no applications, system expiry actor is null. |
+| `GW93-DRAFT` | `DRAFT` | Private incomplete draft; absent from submitted-revision Staff queues. |
+| `GW93-PENDING` | `DRAFT` | First revision is `PENDING_REVIEW`; Staff can inspect/decide it; no public content yet. |
+
+Start the backend to apply committed Flyway migrations, then run:
+
+```bash
+docker compose up -d seed
+docker compose logs --tail 80 seed
+```
+
+The output lists each fixture marker, actual job/revision IDs, current states and
+version tokens. IDs are allocated by PostgreSQL; do not assume a fixed ID.
+Use `demo_staff` / `GuardWork123!` in the Staff portal, or `demo_owner` and
+`demo_recruiter` with the same initial password in the public portal. Existing
+passwords are preserved, so use changed credentials when applicable.
+
+For Staff navigation, request `GET /api/staff/job-revisions?status=ALL`; the default
+queue shows only pending revisions. Use the printed `job_id` for public details and
+posting history, and reload a Staff revision for its current `jobVersion` before
+hiding. See the [frontend integration guide](../docs/backend/staff-job-management-frontend-integration.md).
+
+Reruns identify jobs by the stable `developmentFixture` marker in their immutable
+`JOB_CREATED` facts, create only missing fixtures, and preserve all existing
+content, versions, reviews, assignments and manual hide/pause/close actions. They
+never restore a removed Recruiter membership or reset Company/account restrictions.
+Fresh public deadlines are 30 days from the initial seed run; reruns do not extend
+them. The expired scenario starts one day in the past. If a demo Owner/Staff/Company
+is no longer eligible, creating missing jobs fails atomically with a clear error
+rather than overriding its state. Duplicate or foreign fixture markers fail as
+identifier collisions. No schema migration or dependency is added.
+
+### Own account control (GW-95)
+
+See [account-control integration and rollout](../docs/backend/account-control.md) for
+personal settings, verified-email password changes, temporary deactivation and pending
+deletion requests with secure recovery. Migration `V2026.10.31.94__own_account_control.sql`
+adds voluntary lifecycle independently of Staff bans and removes duplicate Candidate names.
+Candidate clients must replace writable `fullName` with `firstName`/`lastName` in the same
+rollout; account and profile now share identity. Stop old writers before migration.
+No permanent erasure or Staff deletion processor is delivered.
+
+Frontend implementers: use the [GW-95 integration guide](../docs/backend/account-control-frontend-integration.md)
+for payloads, settings/recovery screens, lifecycle errors, token clearing and coordinated Candidate client migration.
+
+### User reports and Staff inspection (GW-99)
+
+Active public Users submit multipart reports through `POST /api/reports`. Staff
+list/filter/detail and private evidence downloads use `/api/staff/reports`.
+Inspection changes no processing status and applies no sanction. See the
+[integration guide](../docs/backend/user-reports.md) and
+[scoped contract](../docs/software-requirements/adm/user-report-intake-contract.md).
+
+Apply additive migrations `V2026.11.01.99__user_report_intake.sql` and
+`V2026.11.01.100__user_report_evidence.sql` before deployment. Reports, private
+evidence and safe audit entries commit together. Evidence accepts up to three PDF,
+PNG or JPEG files of at most 5 MiB each, with matching signatures/media types.
+Only the exact report-intake servlet has a 16 MiB request allowance; default
+Company multipart limits stay at 10 MiB per file and 11 MiB per request. No
+dependency, external storage, report adjudication or notification channel is added.

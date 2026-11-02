@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.guardwork.backend.user.model.User;
 
-public interface UserRepository extends JpaRepository<User, Long> {
+public interface UserRepository extends JpaRepository<User, Long>, org.springframework.data.jpa.repository.JpaSpecificationExecutor<User> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM User u WHERE u.id = :id")
@@ -23,6 +23,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByUsername(String username);
 
     Optional<User> findByEmail(String email);
+
+    @Query("SELECT count(u) > 0 FROM User u WHERE lower(trim(u.email)) = :email")
+    boolean existsByNormalizedEmail(@Param("email") String email);
+
+    boolean existsByPhoneNumber(String phoneNumber);
 
     @Modifying
     @Transactional

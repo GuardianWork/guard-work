@@ -21,6 +21,7 @@ public class OnboardingAccessPolicy {
     @Transactional(readOnly = true)
     public void requireAccess(Long actor, String path, String method) {
         if ("GET".equals(method) && path.matches("/api/jobs/[1-9][0-9]*")) return;
+        if ("GET".equals(method) && "/api/jobs/search".equals(path)) return;
         if ("POST".equals(method) && Set.of("/api/auth/register", "/api/auth/login", "/api/auth/refresh",
                 "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password").contains(path)) return;
         var user = currentActiveUser(actor);
@@ -40,7 +41,7 @@ public class OnboardingAccessPolicy {
     private User currentActiveUser(Long actor) {
         var user = users.findById(actor).orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED,
                 "40100 UNAUTHORIZED: Authentication required"));
-        if (!"ACTIVE".equals(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
         return user;

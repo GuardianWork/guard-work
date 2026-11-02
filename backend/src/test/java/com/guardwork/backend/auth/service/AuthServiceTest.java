@@ -44,6 +44,8 @@ class AuthServiceTest {
     @Mock
     private PasswordResetTokenRepository passwordResetTokenRepository;
 
+    @Mock private com.guardwork.backend.staff.service.AccountEnforcementService enforcement;
+    @Mock private jakarta.persistence.EntityManager entities;
     private JwtService jwtService;
     private BCryptPasswordEncoder passwordEncoder;
     private AuthService authService;
@@ -63,8 +65,10 @@ class AuthServiceTest {
                 jwtService,
                 passwordEncoder,
                 org.mockito.Mockito.mock(com.guardwork.backend.membership.repository.CompanyMembershipRepository.class),
-                org.mockito.Mockito.mock(com.guardwork.backend.company.repository.CompanyRepository.class)
+                org.mockito.Mockito.mock(com.guardwork.backend.company.repository.CompanyRepository.class),
+                enforcement, org.mockito.Mockito.mock(com.guardwork.backend.audit.service.AuditService.class)
         );
+        org.springframework.test.util.ReflectionTestUtils.setField(authService, "entityManager", entities);
     }
 
     private User createSampleUser(Long id, String username, String email, String password, String role, String status) {
@@ -143,6 +147,7 @@ class AuthServiceTest {
     void login_ValidCredentials_Success() {
         User user = createSampleUser(1L, "an_nguyen", "an@example.com", "Password123", "USER", "ACTIVE");
         when(userRepository.findByUsername("an_nguyen")).thenReturn(Optional.of(user));
+        org.mockito.Mockito.lenient().when(enforcement.lockUser(1L)).thenReturn(user);
 
         LoginRequest request = new LoginRequest("an_nguyen", "Password123");
         TokenPairResponse response = authService.login(request, "127.0.0.1", "JUnit");
@@ -157,6 +162,7 @@ class AuthServiceTest {
     void login_InvalidPassword_ThrowsUnauthorized() {
         User user = createSampleUser(1L, "an_nguyen", "an@example.com", "Password123", "USER", "ACTIVE");
         when(userRepository.findByUsername("an_nguyen")).thenReturn(Optional.of(user));
+        org.mockito.Mockito.lenient().when(enforcement.lockUser(1L)).thenReturn(user);
 
         LoginRequest request = new LoginRequest("an_nguyen", "WrongPassword");
 
@@ -170,6 +176,7 @@ class AuthServiceTest {
     void login_SuspendedAccount_ThrowsForbidden() {
         User user = createSampleUser(1L, "an_nguyen", "an@example.com", "Password123", "USER", "SUSPENDED");
         when(userRepository.findByUsername("an_nguyen")).thenReturn(Optional.of(user));
+        org.mockito.Mockito.lenient().when(enforcement.lockUser(1L)).thenReturn(user);
 
         LoginRequest request = new LoginRequest("an_nguyen", "Password123");
 
@@ -195,7 +202,7 @@ class AuthServiceTest {
         when(refreshTokenRepository.findByTokenHash(tokenHash)).thenReturn(Optional.of(token));
 
         User user = createSampleUser(1L, "an_nguyen", "an@example.com", "Password123", "USER", "ACTIVE");
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(enforcement.lockUser(1L)).thenReturn(user);
 
         TokenPairResponse response = authService.refreshToken(new RefreshTokenRequest(rawToken), "127.0.0.1", "JUnit");
 
@@ -232,19 +239,19 @@ class AuthServiceTest {
     @Test
     void changePassword_ValidCurrentPassword_Success() {
         User user = createSampleUser(1L, "an_nguyen", "an@example.com", "OldPassword123", "USER", "ACTIVE");
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(enforcement.lockUser(1L)).thenReturn(user);
 
         ChangePasswordRequest request = new ChangePasswordRequest("OldPassword123", "NewPassword456");
         authService.changePassword(1L, request);
 
-        verify(userRepository).updatePassword(eq(1L), any());
-        verify(refreshTokenRepository).revokeAllForUser(eq(1L), any(Instant.class));
+        assertThat(passwordEncoder.matches("NewPassword456", user.getPassword())).isTrue();
+        verify(enforcement).invalidate(user);
     }
 
     @Test
     void changePassword_WrongCurrentPassword_ThrowsBadRequest() {
         User user = createSampleUser(1L, "an_nguyen", "an@example.com", "OldPassword123", "USER", "ACTIVE");
-        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(enforcement.lockUser(1L)).thenReturn(user);
 
         ChangePasswordRequest request = new ChangePasswordRequest("WrongCurrent123", "NewPassword456");
 

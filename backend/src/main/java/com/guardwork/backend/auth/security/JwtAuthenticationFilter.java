@@ -1,5 +1,8 @@
 package com.guardwork.backend.auth.security;
 
+import com.guardwork.backend.logging.DiagnosticLog;
+import com.guardwork.backend.logging.DiagnosticEvent;
+
 import java.io.IOException;
 
 import org.slf4j.Logger;
@@ -26,11 +29,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
     private final JwtService jwtService;
+    private final com.guardwork.backend.staff.service.AccountEnforcementService enforcement;
     private final RestAccessDeniedHandler accessDeniedHandler;
     private final RestAuthenticationEntryPoint authenticationEntryPoint;
 
     public JwtAuthenticationFilter(JwtService jwtService, RestAccessDeniedHandler accessDeniedHandler,
-                                   RestAuthenticationEntryPoint authenticationEntryPoint) {
+                                   RestAuthenticationEntryPoint authenticationEntryPoint,
+                                   com.guardwork.backend.staff.service.AccountEnforcementService enforcement) {
+        this.enforcement = enforcement;
         this.jwtService = jwtService;
         this.accessDeniedHandler = accessDeniedHandler;
         this.authenticationEntryPoint = authenticationEntryPoint;
@@ -47,9 +53,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 Claims claims = jwtService.parseAndValidateToken(jwt);
                 Long userId = Long.parseLong(claims.getSubject());
+                Number version = claims.get("sessionVersion", Number.class);
+                var user = enforcement.authenticate(userId, version == null ? 0 : version.longValue());
                 String username = claims.get("username", String.class);
                 String email = claims.get("email", String.class);
                 String role = claims.get("role", String.class);
+                // A stale signed role can neither retain nor acquire Staff authority.
+                if (!user.getRole().equals(role)) role = "USER";
                 String portal = claims.get("portal", String.class);
                 tokenPortal = portal == null ? Portal.fromRole(role) : Portal.parse(portal);
 
@@ -60,6 +70,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+            } catch (org.springframework.dao.DataAccessException | org.springframework.transaction.TransactionException unavailable) {
+                DiagnosticLog.error(log,DiagnosticEvent.UNEXPECTED_FAILURE,unavailable);
+                SecurityContextHolder.clearContext();
+                response.setStatus(503);
+                response.setContentType("application/json");
+                response.getWriter().write("{\"status\":503,\"message\":\"50392 ENFORCEMENT_UNAVAILABLE\",\"data\":null}");
+                return;
             } catch (Exception ignored) {
                 tokenPortal = null;
                 SecurityContextHolder.clearContext();

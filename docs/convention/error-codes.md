@@ -83,3 +83,14 @@ Ordinary `log.error("event=...", failure)` remains redacted. Do not pass dynamic
 data or raw messages through a different overload to bypass the registry.
 Framework throwable messages remain redacted. The converter does not sanitize
 arbitrary text logs that have no attached throwable.
+
+## GW-95 scoped account-control additions
+
+These scoped ResponseStatusException codes preserve the existing envelope; they do not select a new global error architecture.
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| 40094 | 400 | INVALID_ACCOUNT_ACTION_PROOF — invalid, expired, consumed or exhausted lifecycle code |
+| 40994 | 409 | COMPANY_OWNERSHIP_EXISTS — resolve Company ownership before closure |
+| 40995 | 409 | ACCOUNT_LIFECYCLE_CONFLICT — action does not match current voluntary lifecycle/request |
+| 42994 | 429 | ACCOUNT_ACTION_COOLDOWN — Retry-After seconds before another code request |

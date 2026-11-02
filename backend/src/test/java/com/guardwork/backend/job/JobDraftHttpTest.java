@@ -164,7 +164,7 @@ class JobDraftHttpTest {
         database.update("UPDATE companies SET is_banned=false WHERE id=?", company);
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", user);
         http.perform(post(JOBS).header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content("{\"content\":{}}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Autowired NotificationDispatcher dispatcher;
@@ -217,7 +217,7 @@ class JobDraftHttpTest {
         http.perform(get("/api/me/notifications").header("Authorization", owner)).andExpect(jsonPath("$.data.totalElements").value(0));
         http.perform(get(JOBS + "/" + job).header("Authorization", recruiter)).andExpect(status().isOk());
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", recipient);
-        http.perform(get("/api/me/notifications").header("Authorization", recruiter)).andExpect(status().isForbidden());
+        http.perform(get("/api/me/notifications").header("Authorization", recruiter)).andExpect(status().isUnauthorized());
     }
 
     @Test void concurrentSavesHaveOneWinnerWithoutOverwritingItsContent() throws Exception {
@@ -311,9 +311,8 @@ class JobDraftHttpTest {
     }
 
     long userId(String token) throws Exception {
-        String body = http.perform(get("/api/auth/me").header("Authorization", token)).andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        return mapper.readTree(body).path("data").path("id").asLong();
+        // Resolve fixture IDs without issuing a request inside a deliberately held database lock.
+        return context.getBean(com.guardwork.backend.auth.service.JwtService.class).extractUserId(token.substring(7));
     }
 
     long createdCompany(String token) throws Exception {

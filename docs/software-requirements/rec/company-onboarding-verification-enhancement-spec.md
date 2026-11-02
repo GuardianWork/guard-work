@@ -8,93 +8,56 @@
 |---|---|
 | **Specification ID** | GW-SR-REC-03 |
 | **Project** | GuardWork |
-| **Module** | Employer onboarding, personal verification, and Company verification |
+| **Module** | Employer registration, email verification, and Company verification |
 | **File** | `company-onboarding-verification-enhancement-spec.md` |
-| **Version** | 0.1.1 |
+| **Version** | 0.2.1 |
 | **Date** | 2026-10-18 |
-| **Last Updated** | 2026-10-28 |
-| **Owner** | VyTrg (proposed, following the existing Company Verification ownership) |
-| **Approver** | VyTrg (proposed human reviewer; formal approval pending) |
+| **Last Updated** | 2026-10-27 |
+| **Owner** | VyTrg (proposed, following existing Company Verification ownership) |
+| **Approver** | VyTrg (proposed human reviewer; formal review-register reconciliation pending) |
 | **Status** | Draft |
 
-The user confirmed the consolidated product direction after a design interview on 2026-10-18, subsequently stated that they had read and approved this document, requested implementation, and confirmed the [concrete technical contract](company-onboarding-implementation-contract.md) with “chốt”. Those later confirmations authorize the documented implementation choices; SMS vendor selection and the explicitly unresolved production-readiness policies remain outstanding. The Draft metadata is retained as the original review register; it does not override the recorded human authorization. Agents do not independently declare human approval.
+## 1. Decision record and scope
 
-On 2026-10-21, the user explicitly requested the same narrow localhost HTTP exception for onboarding confirmation URLs as for Company Invitations. Both new-registration and existing-member confirmation links may use HTTP only on literal `localhost`, with an optional port from 1–65535 and an explicitly allowlisted matching scheme, host and effective port (HTTP defaults to 80; HTTPS defaults to 443). Other hosts require HTTPS. IP addresses, subdomains and trailing-dot names do not qualify for the HTTP exception. URL user information, queries and pre-existing fragments remain prohibited; secrets are added only in fragments. Allowlist entries are origins, with at most an optional `/` path. Resend API transport remains HTTPS. The user requested no new test files for this change. See [configuration examples](../../backend/employer-onboarding.md#configuration-and-delivery).
+The user previously approved the 2026-10-18 journey and its concrete implementation contract. On 2026-10-27, the user explicitly confirmed interview decisions Q1–Q5 and Q7–Q9: immediate account creation with restricted sign-in, email-only verification, unique declared phone/email, invitation-based Recruiter activation, atomic Owner assignment at initial dossier submission, and removal of SMS gates for already-enrolled accounts. Q6 was explicitly left undecided. This records session authorization; agents do not set the lifecycle to Approved or independently identify the human reviewer.
 
-## 1. Introduction
+The user subsequently confirmed Q10–Q17: backend-only delivery, a shared canonical account phone, coordinated client changes, persisted accounts on email-delivery failure, retirement of old pending-proof/SMS routes with 410, blocking migration on unresolved phone conflicts, Candidate contact edits against the shared source, and authenticated cross-device email proof without continuation tokens. The [current gap and implementation plan](company-onboarding-email-only-implementation-plan.md) separates these confirmations from the proposed exact schema/API.
 
-### 1.1 Problem and goal
+This revision supersedes the earlier email-before-account-creation, SMS-before-dossier, verified-phone-only uniqueness, and acceptance-before-email-proof directions. The user subsequently approved the concrete REC-03 plan sections 3–5; the backend now implements this journey, including authenticated email binding, scoped eligibility and retired pending-proof routes. See the [implementation contract](company-onboarding-implementation-contract.md), [implementation inventory](../../backend/employer-onboarding.md), and [ADR 0007](../../architecture/decisions/0007-email-only-employer-onboarding.md).
 
-Current registration automatically treats email as verified. Current Company onboarding accepts a complete dossier and creates the Company and its first Owner together. This enhancement introduces staged onboarding: prove mailbox access, prove possession of a Vietnamese mobile number, submit Company documents and a representation declaration, then obtain a Platform Staff decision before employer operations become available.
+In scope: employer registration, restricted workspace, email proof, invitation acceptance prerequisites, new-Company legal submission, Staff moderation, rejection correction, and affected-account transition requirements. The platform role remains USER; Employer Applicant is a journey term, not a new platform or Company role.
 
-Personal verification and Company verification are separate. A verified phone does not establish Company legitimacy; a verified Company does not prove possession of every member's email or phone.
+Out of scope: new frontend delivery; Candidate-to-employer conversion; post-approval Candidate capability expansion; ownership transfer; and selecting new shared authentication, authorization, notification, frontend, or infrastructure architecture. Production retention, dispute handling and rollout details remain subject to review.
 
-### 1.2 Scope
-
-In scope:
-
-- A new Company applicant registration form and limited onboarding experience.
-- Email-link verification and SMS OTP verification, including verified-identifier uniqueness.
-- Editable provisional Company information after phone verification.
-- Legal dossier submission, a mandatory representation declaration, duplicate tax-code handling, manual review, rejection correction, and decision email.
-- Personal verification prerequisites for invited Recruiters, without another Company dossier.
-
-Outside this enhancement:
-
-- The transition of an existing job-seeker account into Company onboarding; record this case for later work.
-- Internal Recruiter roles, invitations, delegation, Job Assignments, and recruitment-operation permissions. Existing membership authorization remains the dependency.
-- International mobile numbers, OCR, government-registry integration, automatic Company approval, and mandatory authorization-letter upload.
-- SMS/email provider selection, physical schema, endpoint definitions, deployment, and existing-data migration implementation.
-- Broader Candidate capabilities beyond the explicitly agreed search/view access during onboarding. This feature does not grant CV management or Application access.
-
-## 2. Overall description
-
-### 2.1 Applicant journey
+## 2. Journey and access
 
 ```text
-Register personal details and provisional Company information
-    -> Verify email using a link
-    -> Sign in with limited access: search/view jobs and phone verification
-    -> Verify Vietnamese mobile number using SMS OTP
-    -> Edit provisional information and complete the legal dossier
-    -> Accept the representation and accuracy declaration
-    -> Submit dossier: PENDING
-    -> Platform Staff checks dossier: CHECKED
-         -> VERIFIED: employer eligibility, subject to existing authorization
-         -> REJECTED: reason in settings and account email
-              -> Correct the same Company dossier and resubmit: PENDING
+Register all required fields with unique email and normalized phone
+    -> Create official account, email unverified; no Company or membership
+    -> Sign in to restricted employer workspace
+    -> Verify email using account-bound, single-use email proof
+         -> Accept a valid invitation for a verified Company
+              -> ACTIVE RECRUITER membership in the invited Company
+         -> Prepare and submit a complete new-Company dossier
+              -> Atomically create Company PENDING + ACTIVE OWNER + submission attempt
+              -> Staff checks dossier: CHECKED
+                   -> VERIFIED: recruitment operations eligible within existing permissions
+                   -> REJECTED: Owner reads feedback, corrects same Company and resubmits
 ```
 
-Registration alone does not create a Company in the moderation queue. Company creation and first Owner assignment occur together when a complete initial dossier is submitted. Provisional Company information must remain distinguishable from a submitted Company dossier; its storage design is not selected here.
+The branches describe an applicant without an existing active Company membership. Q6, transition from an already-ACTIVE Recruiter to a new Company's Owner, remains undecided; this revision defines no path for that case and does not authorize changing existing membership constraints.
 
-### 2.2 Access matrix
+Entering a Company name during registration does not join, claim, create, or verify a Company. A valid invitation determines the Company joined; typed Company information cannot substitute for invitation acceptance. Successful initial legal submission creates ownership immediately, before Staff approval. Owner membership and Company verification are independent.
 
-This matrix describes the new applicant journey, not a platform-wide replacement for existing Candidate permissions.
-
-| Applicant stage | Search/view jobs | Verification/settings access | Employer operations |
-|---|---|---|---|
-| Email unverified | Existing public discovery only; no authenticated session | Email verification instructions and resend | Locked |
-| Email verified, phone unverified | Allowed after sign-in | Phone verification | Locked |
-| Email and phone verified, before dossier submission | Allowed | Edit provisional information and prepare legal dossier | Locked |
-| Dossier pending | Allowed | View submitted status | Locked |
-| Dossier rejected | Allowed | Read reason, correct dossier, resubmit | Locked |
-| Company verified | Allowed | Relevant account/Company settings | Eligible only within existing Company authorization |
-
-Before Company approval, CV management, Applications, and Candidate functions other than job search/view remain unavailable to this onboarding account. Post-approval Candidate capability expansion is not defined by this enhancement and must not be inferred from employer approval.
-
-Logout and the recovery/verification actions necessary to complete onboarding must remain available. These do not grant marketplace or employer capabilities.
-
-### 2.3 Review lifecycle
-
-| Processing status | Review outcome | Meaning |
+| Stage | Permitted access | Locked actions |
 |---|---|---|
-| `PENDING` | None | Submitted and awaiting Platform Staff review |
-| `CHECKED` | `VERIFIED` | Checked and approved |
-| `CHECKED` | `REJECTED` | Checked and rejected, with a mandatory reason |
+| Registered, email unverified | Sign-in, workspace shell, email instructions, email confirmation/resend, logout, and necessary account recovery | Invitation acceptance, Company edits/document uploads/dossier submission, recruitment operations, and Candidate profile/CV/Application operations |
+| Email verified, no membership | Employer onboarding, provisional Company editing, legal preparation/submission, own eligible invitation actions; job search/view where implemented | Recruitment operations and Candidate profile/CV/Application operations |
+| Owner, Company PENDING | Own verification status and submitted information | Recruitment operations and invitation issue/resend |
+| Owner, Company REJECTED | Own rejection feedback, legal correction and resubmission | Recruitment operations and invitation issue/resend |
+| Email verified, active membership, Company VERIFIED | Relevant account/Company settings and operations allowed by current authorization | Operations outside the member's permissions |
 
-`CHECKED` alone never grants employer access. The outcome must be `VERIFIED`, and personal verification, active membership, User status, Company status, and operation-specific authorization must also permit the action.
-
-These are conceptual statuses, not approved database columns. Resubmission creates a new pending review attempt while retaining earlier submissions, declarations, and decisions.
+UI controls shall reflect these gates; backend checks shall deny direct requests before side effects. Existing suspension, membership and operation-specific authorization still apply. Public discovery remains public; its availability is not evidence that job discovery is implemented. This enhancement does not grant new Candidate capabilities after approval.
 
 ## 3. Information requirements
 
@@ -102,147 +65,144 @@ These are conceptual statuses, not approved database columns. Resubmission creat
 
 | Information | Requirement |
 |---|---|
-| Full name | Required; preserve Vietnamese Unicode names. Mapping to existing first/last-name fields remains a design task. |
-| Mobile number | Required; Vietnamese mobile number; normalize local `0…` and international `+84…` representations to one identity. |
-| Company name | Required provisional information; editable after phone verification. |
-| Gender | Required selection: Male, Female, Other, or Prefer not to disclose. No effect on verification decisions or permissions. |
-| Work address | Required provisional information; editable after phone verification. |
-| Account email | Required; login, personal verification, and decision-email destination. |
-| Password | Required; preserve applicable existing password-security requirements. |
-| Password confirmation | Required; must match; must not be persisted. |
+| Full name | Required; preserve Vietnamese Unicode names verbatim. |
+| Mobile number | Required Vietnamese mobile number; normalize local `0…` and `+84…` forms to one identity; unique across existing accounts, including email-unverified accounts. It is a declared contact number, not verified possession. |
+| Company name | Required provisional information; grants no Company association or authority. |
+| Gender | Required: Male, Female, Other, or Prefer not to disclose; no effect on review or permissions. |
+| Work address | Required provisional information; editable after email verification. |
+| Account email | Required, normalized under the existing email convention and unique across existing accounts, including email-unverified accounts; used for login, proof and decision email. |
+| Password | Required; preserve existing applicable password-security requirements. |
+| Password confirmation | Required and equal to password; never persisted. |
 
-No separate Company contact email is requested in this journey. Removing the current required Company email is an explicit contract change requiring coordinated approval.
+System-wide phone uniqueness includes Candidate account contact data, not only employer profiles. One canonical phone is shared by Candidate and employer contexts. Eligible Candidate profile updates may change or clear it; responses use normalized +84 values and existing access restrictions remain. Existing phone-less accounts remain valid; no new employer phone-change endpoint is selected. Conflicting/invalid old data blocks conversion pending reviewed correction. The physical schema, data inventory and coordinated migration are detailed as a technical proposal in the implementation plan; no silent contact winner or database reset is authorized.
+
+No separate Company contact email is requested. Existing historical Company contact data remains compatible; verified account email is the decision destination for the enhanced journey.
 
 ### 3.2 Legal dossier
 
-After phone verification, the applicant can update provisional information and submit:
+After email verification, the applicant may edit provisional Company name/address and prepare a dossier containing Company name, work address, tax code (MST), business registration/license document, submitter position, legal/authorized-representative selection, and explicit accuracy/representation declaration. No SMS or authorization-letter upload is required.
 
-- Company name and work address, confirmed or corrected from registration.
-- Company tax code (MST).
-- Business registration/license document.
-- Submitter's position/job title.
-- A selection identifying the submitter as legal representative or an authorized representative.
-- An explicit accuracy and representation commitment.
-
-The system retains submitted documents, the declaration, and their association with the submitting account and review history. Exact retention periods and deletion handling remain subject to a separate approved privacy/retention policy; retention must not silently mean indefinite storage.
-
-No authorization letter is mandatory. A declaration records an assertion of authority and is not independent proof of authority. The submitter's job title is not a Company authorization role.
+Retain private document bytes, each submission snapshot, declaration, actor, review decision/reason and timestamps under the existing retained-evidence contract. Retention periods and controlled disposal still require a separate reviewed policy. A declaration is an assertion of authority, not independent proof.
 
 ## 4. Functional requirements
 
-Requirement IDs below are local to GW-SR-REC-03.
+Local IDs retain traceability to the earlier revision; changed entries are amended by the confirmed interview. Retired SMS IDs must not be interpreted as active requirements.
 
 | ID | Requirement |
 |---|---|
-| REQ-REC-01 | Registration shall collect the information in section 3.1 without automatically marking email or phone verified. |
-| REQ-REC-02 | The system shall maintain independent email-verification and phone-verification flags bound to the verified identifiers. |
-| REQ-REC-03 | Account sign-in shall require successful email-link verification for this journey. |
-| REQ-REC-04 | After email verification, the applicant shall have only authenticated job search/view and the onboarding actions permitted by section 2.2. |
-| REQ-REC-05 | Phone verification shall use an SMS OTP and shall unlock legal-dossier preparation only after success. |
-| REQ-REC-06 | The applicant shall be able to edit provisional Company information after phone verification and submit it with the legal dossier. |
-| REQ-REC-07 | Submission shall require email and phone verification, complete dossier information, and explicit acceptance of the representation/accuracy declaration. |
-| REQ-REC-08 | Initial submission shall create the Company and first Owner atomically and place a complete dossier in the pending review queue. |
-| REQ-REC-09 | Only a Platform Staff member shall decide a pending legal dossier. |
-| REQ-REC-10 | A completed review shall be represented as CHECKED with a VERIFIED or REJECTED outcome; rejection shall require a reason. Preserve the current 10–1000 character rejection-reason constraint. |
-| REQ-REC-11 | The system shall email the decision to the submitting account's verified email and expose rejection feedback in the account's verification settings. |
-| REQ-REC-12 | A rejected applicant shall be able to correct and resubmit the existing Company dossier, preserving Company identity, immutable MST, and previous review history. |
-| REQ-REC-13 | Employer eligibility shall require personal verification and an approved Company; existing authorization determines permitted operations. |
-| REQ-REC-14 | An invited Recruiter shall verify their own email and phone before employer operations, without submitting another Company dossier. Invitation/delegation implementation is outside this enhancement. |
-| REQ-REC-15 | A new dossier whose MST already belongs to an existing Company shall be blocked and display system-support guidance. Authorized correction of that same rejected Company is not a new duplicate request. |
-| REQ-REC-16 | Submission and review shall retain declarations, reviewed content, actor, decision, reason, and time without overwriting prior attempts. |
+| REQ-REC-01 | Successful registration shall collect section 3.1 information and immediately create one official account without marking email or phone verified, creating a Company, or assigning a Company role. |
+| REQ-REC-02 | Email proof shall be bound to the exact account, email and attempt. A declared or historical phone flag shall not constitute mailbox proof or a new phone-possession claim. |
+| REQ-REC-03 | A registered email-unverified applicant shall be able to sign in to the restricted employer workspace in section 2. |
+| REQ-REC-04 | The system shall enforce the section 2 access matrix in both UI and backend, including existing sessions and direct requests. |
+| REQ-REC-05 | Retired: SMS OTP verification and the phone-proof prerequisite are removed from the target journey. |
+| REQ-REC-06 | An email-verified applicant shall be able to edit provisional Company information and prepare the legal dossier without phone verification. |
+| REQ-REC-07 | Dossier submission/correction shall require actual email proof, complete legal information, retained document and explicit declaration acceptance; SMS shall not be required. |
+| REQ-REC-08 | Successful initial submission shall atomically create the Company PENDING, the submitter's ACTIVE OWNER membership and retained submission attempt. Failed submissions shall create none of those records. |
+| REQ-REC-09 | Only authorized Platform Staff shall decide a pending legal dossier. |
+| REQ-REC-10 | Review responses shall derive CHECKED with VERIFIED or REJECTED outcome from existing eligibility states. Rejection requires a 10–1000 character reason. |
+| REQ-REC-11 | A committed review decision shall initiate email to the submitter's verified account email and expose rejection feedback in Owner settings. |
+| REQ-REC-12 | An eligible Owner shall be able to correct and resubmit the same rejected Company, retaining Company ID, immutable MST and prior review history. |
+| REQ-REC-13 | Recruitment operations shall require actual email proof, eligible active membership, VERIFIED and non-suspended Company, active User and operation-specific permission. Phone proof shall not be an eligibility condition. |
+| REQ-REC-14 | A Recruiter shall join through a valid, matching-email invitation and explicit acceptance. Actual email proof is required before acceptance creates an ACTIVE RECRUITER membership. A Recruiter joining an existing Company does not submit another legal dossier for it. |
+| REQ-REC-15 | An MST already assigned to another Company shall block new-Company submission and show support guidance without disclosing another Company's private records. Authorized correction of the same rejected Company remains allowed. |
+| REQ-REC-16 | Submission, correction and review shall preserve private evidence, declarations, actor, decision, reason and time without overwriting prior attempts. |
+| REQ-REC-17 | Registration shall reject an email or normalized phone already assigned to any existing account, verified or unverified. Concurrent registrations shall allow at most one account per identifier. |
+| REQ-REC-18 | Existing accounts already subject to enhanced onboarding shall no longer require SMS once this revision is implemented; their email, membership, Company and permission checks still apply. Unrelated legacy accounts shall not be newly enrolled by this change alone. |
+| REQ-REC-19 | Candidate and employer contexts shall share one canonical normalized phone per User. Eligible Candidate profile updates shall update/clear that source atomically with profile changes, reject duplicate/invalid new values and return +84 or NULL. Existing phone-less accounts remain valid. |
+| REQ-REC-20 | The old pending-registration proof and SMS endpoints shall be retired with 410 under applicable authentication. Pending records shall remain retained but shall not be bulk-promoted or transfer data; affected applicants register afresh. |
+| REQ-REC-21 | Failure to submit the initial verification email after successful account creation shall not undo the account. Report delivery acceptance separately; permit restricted sign-in and authenticated resend. |
 
 ## 5. Business and verification rules
 
 | ID | Rule |
 |---|---|
-| BR-REC-01 | A verified email or normalized phone shall belong exclusively to one account. Registration checks existing verified ownership, and verification rechecks it atomically at completion. |
-| BR-REC-02 | An unverified claim shall not permanently reserve an identifier or let an applicant deny its real owner's verification. Concurrent completion shall grant at most one verified owner. |
-| BR-REC-03 | Verification shall bind proof to the exact account, identifier, and verification attempt. A verified flag shall not verify a different value or transfer another account's data. |
+| BR-REC-01 | Email and declared normalized phone are unique across existing accounts at account creation; uniqueness does not prove phone possession. |
+| BR-REC-02 | Unverified official accounts retain their identifiers. Expiry of email proof shall not automatically release the phone, delete the account, or transfer identifiers/data to another claimant. Phone disputes require manual support under a separately defined process. |
+| BR-REC-03 | Email proof shall be account/email/attempt-bound, single-use and replay-safe. An unsolicited link alone shall not establish an authenticated session or transfer control of an existing account. |
 | BR-REC-04 | Email verification links expire after 24 hours. |
-| BR-REC-05 | Phone OTPs expire after 5 minutes and allow at most 5 incorrect submissions per issued code. |
-| BR-REC-06 | Resending an email link or SMS OTP requires at least 60 seconds. A newly issued link/code invalidates the previous one. |
-| BR-REC-07 | Expired verification attempts shall not erase entered onboarding information; the applicant may request another attempt. |
-| BR-REC-08 | Phone verification alone shall never unlock employer operations. |
-| BR-REC-09 | Initial Company submission and first Owner creation shall succeed or fail together. A duplicate or failed submission shall leave no orphan Company or membership. |
-| BR-REC-10 | Existing MST uniqueness shall block new duplicate Companies. Company-name similarity or identical uploaded filenames alone shall not establish a duplicate. |
-| BR-REC-11 | Rejected dossiers may return to PENDING through correction; pending or verified dossiers do not use this rejection-correction path. Preserve existing concurrency protection and audit requirements. |
-| BR-REC-12 | Decision-email delivery shall occur after the decision commits; a delivery failure shall not undo the decision. Delivery/retry implementation needs a reviewed contract. |
-| BR-REC-13 | Gender and the self-declared job title shall not grant privileges or determine approval. |
-| BR-REC-14 | User-facing forms, declarations, errors, and messages shall support Vietnamese, vi-VN conventions, Unicode, and Asia/Ho_Chi_Minh display time. |
+| BR-REC-05 | Retired: five-minute SMS OTP expiry and five-incorrect-attempt rules do not apply to the email-only target. |
+| BR-REC-06 | Email resend requires at least 60 seconds; replacement invalidates the previous email proof. |
+| BR-REC-07 | Expired email proof shall preserve entered information and allow another verification attempt. |
+| BR-REC-08 | Retired: phone verification shall not gate Company onboarding, invitation acceptance or recruitment operations. |
+| BR-REC-09 | Initial Company, Owner and attempt creation succeed or fail together; no orphan records. |
+| BR-REC-10 | MST uniqueness blocks new duplicate Companies; matching names/filenames alone do not prove duplication or grant ownership. |
+| BR-REC-11 | Only a rejected dossier may use rejection correction; retain optimistic concurrency, audit and review safeguards. |
+| BR-REC-12 | Decision delivery occurs after commit; failure cannot undo the review decision. Preserve scoped retry/idempotency behavior. |
+| BR-REC-13 | Gender and submitter job title grant no privileges and do not determine approval. |
+| BR-REC-14 | User-facing forms and messages support Vietnamese, vi-VN, Unicode and Asia/Ho_Chi_Minh display time. |
 
-Changing an already verified email or phone, including number recycling and recovery, requires a separate reviewed policy. Implementers must not preserve verification on a changed value by default.
+Account recovery, verified-email changes, phone changes/recycling and support dispute handling require reviewed policies; unique storage alone does not establish a person's identity. Preserve existing email abuse protections; removing SMS does not authorize removing email throttling.
 
 ## 6. User-facing copy intent
 
-Final wording needs human review. The following Vietnamese text is a draft, not approved legal language.
+Vietnamese copy below is draft wording; the declaration still requires legal/human review.
 
-**Representation and accuracy declaration:**
+- Before email proof: “Vui lòng xác thực email để gửi hồ sơ xác thực công ty hoặc chấp nhận lời mời tham gia công ty.”
+- Company pending: “Hồ sơ công ty đang chờ xét duyệt. Các chức năng tuyển dụng sẽ được mở sau khi công ty được xác thực.”
+- Duplicate MST: “Mã số thuế này đã tồn tại trong hệ thống. Vui lòng liên hệ bộ phận hỗ trợ để được hướng dẫn: [Thông tin hỗ trợ sẽ được cập nhật].”
+
+Representation declaration:
 
 > Tôi cam kết thông tin và giấy tờ cung cấp là chính xác. Tôi là người đại diện theo pháp luật hoặc người được ủy quyền hợp lệ để thực hiện thủ tục này cho công ty. Tôi hiểu rằng hồ sơ và nội dung cam kết sẽ được lưu trong hệ thống để phục vụ việc xác minh và đối soát.
 
-**Duplicate legal information:**
+Do not invent a live support address. Supply a real system-owned contact before release.
 
-> Mã số thuế này đã tồn tại trong hệ thống. Bạn không thể tạo yêu cầu xác thực mới. Vui lòng liên hệ bộ phận hỗ trợ để được hướng dẫn: [Thông tin hỗ trợ sẽ được cập nhật].
+## 7. Compatibility and approval boundaries
 
-The temporary support text must not invent an email address, phone number, or active contact destination. An actual system-owned support contact is a release-readiness item.
-
-## 7. Compatibility and requirement amendments
-
-This draft proposes changes to the following sources; it does not silently replace them.
-
-| Existing source or behavior | Enhancement impact requiring coordinated approval |
+| Source / existing contract | Confirmed target amendment |
 |---|---|
-| [GW-SR-AUTH-01](../auth/authentication-authorization-spec.md): automatic activation and verified email at registration | Introduce real email proof before sign-in for the new journey. Preserve unrelated authentication behavior until an amendment is approved. |
-| AUTH registration uses first/last name and username; User storage has unique email | The new form uses full name and no user-entered username. Mapping, login compatibility, and verified-only identifier ownership need an explicit API/schema design. A flag alone cannot resolve existing uniqueness constraints. |
-| [GW-SR-REC-02](company-membership-mvp-spec.md): members retain Candidate capabilities | The new onboarding account is limited to job search/view before approval. This is a deliberate proposed exception; existing Candidate accounts are not globally restricted by this draft. |
-| [GW-SR-REC-01](company-verification-spec.md): Company plus complete dossier and Owner created during onboarding | Preserve atomic Company/Owner creation at complete dossier submission; add provisional information before submission. |
-| Current Company submission requires a separate Company email and checks its duplication | Use account email only in the new flow; existing schema, DTOs, clients, and historical Company contact data need a migration/compatibility decision. |
-| Existing Company verification is PENDING / VERIFIED / REJECTED | Introduce conceptual processing status PENDING / CHECKED plus outcome. Existing clients, membership checks, queries, and audit records require an explicit mapping. |
-| Verification-decision notifications were deferred in the current verification specification | Decision email becomes required in this enhancement; provider, delivery, retry, and failure visibility need approved design. |
-| Existing legacy ownership assignment requires reviewed representation evidence | New-company submission accepts a declaration without an authorization letter. This does not weaken or replace the separate legacy ownership-assignment process. |
+| Earlier REC-03 and ADR 0005: pending registration, official account only after email proof | Official account is created at successful registration; email-unverified sign-in is restricted to the workspace shell and verification/recovery actions. |
+| Earlier REC-03: verified-only phone ownership and SMS prerequisite | Email/declared phone must be unique across all existing accounts; phone possession is not verified or required. |
+| Earlier contract: invitation acceptance before personal proof | Actual email proof is required before Recruiter invitation acceptance/activation for the scoped journey. |
+| GW-SR-AUTH-01 | New employer accounts start email-unverified but may sign in with restricted capabilities. Ordinary Candidate registration is not otherwise redesigned; global phone uniqueness needs coordinated Candidate data enforcement. |
+| GW-SR-REC-01 | Keep complete-dossier submission, atomic Company/Owner creation, Staff moderation, immutable MST, private retained evidence and rejection correction. |
+| GW-SR-REC-02 | Keep Company-scoped roles and invitation binding; Company name never grants membership. Already-ACTIVE Recruiter-to-new-Owner transition remains undecided (Q6); no membership constraint change is approved. |
+| Existing enhanced accounts / legacy Companies | Remove phone gates for already-enrolled applicants/members, preserving actual email proof and current authorization. Preserve old proof/history; do not enable new gates for unrelated legacy accounts. |
 
-Reference architecture: [Company-scoped Membership ADR](../../architecture/decisions/0001-company-scoped-membership.md). This enhancement does not introduce a global Recruiter user type or make a legal job title into a membership role.
+Product confirmation does not approve an unspecified replacement API, schema, migration, global identifier architecture or new dependency. The [implementation contract](company-onboarding-implementation-contract.md) identifies the technical amendments still needing concrete review.
 
-## 8. Security, privacy, and data implications
+## 8. Security, privacy and data implications
 
-- New data includes phone, gender, work address, submitter position, verification evidence, and declaration history. Access to private dossiers must remain scoped to the submitting Owner and authorized Platform Staff members.
-- Employer gates must be enforced by the backend, including submission-time and operation-time checks; hiding controls is insufficient.
-- Verification material must not be logged or exposed to other applicants. Design must address challenge binding, single use, replay, concurrent claims, and pending-registration recovery without account takeover or cross-account disclosure.
-- The agreed per-attempt limits do not define all abuse controls. SMS budgets, aggregate throttling, brute-force protection, and delivery-failure behavior need approval before implementation.
-- A self-declared authorization claim leaves an impersonation risk. The user explicitly selected a retained declaration instead of mandatory authorization evidence for this journey; the Staff review checklist and dispute handling still need definition.
-- Email/SMS possession is not proof of legal identity. Company approval does not grant unrestricted Candidate-data access.
+Restricted sign-in must not accidentally grant Candidate, Company, invitation-acceptance or recruitment effects. Eligibility must use current persisted state, including for old tokens and refresh sessions. Email verification must not silently activate an attacker's credentials from an unsolicited link or disclose another applicant's data.
+
+Collect phone as declared contact data. SMS removal trades possession evidence for a simpler flow; strict uniqueness still permits malicious reservation, so manual dispute support must be defined before production. Duplicate-identifier errors must not disclose another account's profile, verification status or Company context. Registration, contact updates and migration must not introduce duplicate normalized values through races or alternate write paths.
+
+Retain existing private document access and immutable history. Do not erase old phone proof, rewrite migrations, merge accounts, mass-revoke sessions or fabricate actual mailbox proof from legacy auto-verified flags.
 
 ## 9. Acceptance scenarios
 
-1. Registration preserves required information, rejects mismatched passwords, and leaves email/phone unverified.
-2. An unverified applicant cannot sign in; a valid email link permits limited sign-in. Expired, replaced, or consumed proof cannot verify another attempt.
-3. Before phone verification, direct requests to dossier submission, CV management, Application submission, and employer operations are denied; job search/view remains available after email verification.
-4. Correct SMS OTP verifies the exact normalized phone and opens dossier preparation, without employer access.
-5. Local and +84 forms of one phone cannot become verified ownership on two accounts. Concurrent email/phone claims yield at most one verified owner.
-6. An abandoned unverified claim does not permanently block the real mailbox/phone owner, and recovery does not reveal or transfer the earlier applicant's data.
-7. Resends respect 60 seconds and replace old proof; email expires at 24 hours, OTP at 5 minutes, and a sixth incorrect OTP attempt cannot succeed for that code.
-8. An applicant edits provisional Company information after phone verification and submits complete documents and an explicit declaration. Missing declaration blocks submission.
-9. A duplicate MST blocks a new request, shows temporary support guidance, and creates no extra Company, Owner, or review request. Matching names/filenames alone do not trigger this rule.
-10. Platform Staff approves a pending dossier: it becomes CHECKED/VERIFIED, records the decision, and initiates an account-email notification. Only existing authorized employer operations become eligible.
-11. Rejection without a valid reason fails. A valid rejection produces CHECKED/REJECTED, feedback in settings, and decision email; employer operations remain locked.
-12. Owner correction of a rejected dossier preserves Company ID and MST, creates a pending review attempt, and retains earlier documents, declarations, decisions, and reasons.
-13. Concurrent Staff decisions or stale resubmission cannot overwrite each other; decision-email failure does not reverse a committed decision.
-14. An invited Recruiter must complete personal verification but does not submit the Company's legal dossier again; Company access still depends on existing membership authorization.
-15. Gender selection is required, including an option not to disclose, and never changes permissions or the review outcome.
+1. Valid registration creates one official account immediately with email unverified and no Company/membership; mismatched passwords fail and confirmation is not stored.
+2. Duplicate email or phone fails even when the existing account is unverified. Local/+84 phone forms collide; concurrent claims produce one account with no partial registration.
+3. An unverified account can sign in and view the shell, resend/confirm email and log out, but direct Company edits/uploads/submission, invitation acceptance, Candidate profile/CV/Application and recruitment requests fail without side effects.
+4. Email proof expires at 24 hours, resend requires 60 seconds, replacement invalidates old proof, and consumed/wrong-account/wrong-email proof fails. Proof expiry preserves the account and its identifier reservations.
+5. After actual email proof, Company preparation/upload/submission and eligible invitation actions need no SMS request, OTP or phone-verification flag.
+6. A name entered at registration creates no Company/membership. Accepting a valid invitation activates RECRUITER only in that invitation's eligible Company and only after actual email proof; wrong-recipient, expired, revoked or suspended cases retain existing safeguards.
+7. Complete new-Company submission atomically creates PENDING Company, ACTIVE OWNER and retained attempt. Missing fields/declaration, duplicate MST, stale state or transaction failure produces no orphan Company/Owner/attempt. A successful Owner still cannot recruit before Company approval.
+8. Staff decisions retain current authorization, version and reason constraints, derived CHECKED mapping and after-commit decision email. Delivery failure cannot undo the decision.
+9. Rejected correction retains Company ID/MST and every earlier document/declaration/decision. Only the authorized Owner may correct it after email proof, without SMS.
+10. Recruitment requires actual email proof, current authorized membership and eligible VERIFIED Company; approval alone does not grant Candidate-data access.
+11. An already-enrolled account stuck at phone verification proceeds after actual email proof with no SMS, while proof/history remain retained. Unrelated legacy accounts are not newly gated by this revision.
+12. Another claimant cannot obtain an existing account or its data by disputing a declared phone. Email expiry does not automatically release it. Final support procedures must be reviewed before this scenario can be operationally completed.
 
-## 10. Implementation readiness and follow-up
+13. Eligible Candidate GET/PUT uses the shared phone source. Updating/clearing it preserves current authorization and other profile behavior; duplicate or invalid changes fail without partial updates. Historical phone proof does not verify a new number.
+14. Old registration-proof/SMS endpoints return 410 under applicable authentication without revealing or promoting old records. Fresh registration is required for abandoned attempts, and existing official accounts remain intact.
+15. Account creation succeeds independently of provider email acceptance; failed submission is reported separately and authenticated resend remains available after cooldown. Cross-device proof requires the correct signed-in account, not an old continuation token.
 
-Before implementation:
+## 10. Open decisions and implementation readiness
 
-- Obtain a named human's formal specification approval and coordinate the amendments in section 7.
-- Design registration/full-name/username compatibility, verified identifier ownership and pending-claim recovery, challenge persistence, and Company processing/outcome mapping. Approve schema and any breaking API changes explicitly.
-- Define existing-account and existing-data migration. Existing job-seeker-to-employer onboarding is deliberately deferred, not silently supported.
-- Decide verified-identifier change/recovery policy and post-approval Candidate capability policy before delivering those paths.
-- Select and approve SMS/email integrations, delivery/retry behavior, aggregate abuse limits, and operational costs. No provider or dependency is selected by this draft.
-- Review the declaration, dossier-access controls, retention/deletion policy, Staff review checklist, and dispute route.
-- Replace temporary support information before release and define document upload/storage validation using an approved contract.
-- Derive implementation tasks and backend/frontend checks from section 9. No endpoint, migration, frontend framework, or shared notification architecture is selected here.
+| Item | Decision / boundary |
+|---|---|
+| Q6: already-ACTIVE Recruiter becoming a new Company's Owner | — (explicitly deferred by the user). Do not infer mandatory departure, simultaneous memberships, ownership transfer or permission to change existing constraints. |
+| Immediate-account registration and email proof API/schema | The [implementation plan](company-onboarding-email-only-implementation-plan.md) records the selected registration/state/proof schemas and responses. The user approved sections 3–5; backend implementation and coordinated client/data cutover are documented in the current backend contract. |
+| Global phone data ownership and collisions | One canonical account phone is confirmed. Inventory Candidate/employer values; same-User differing numbers, invalid values and cross-User conflicts block conversion until reviewed correction. No automatic winner or silent contact deletion. Physical migration remains subject to technical review. |
+| Manual phone dispute/recovery | Define responsible support actors, evidence, privacy, audit and allowed outcomes before production; do not claim email ownership proves phone ownership. |
+| Rollout | Remove SMS for enrolled accounts; prepare pending-registration/session compatibility and keep unrelated legacy scope unchanged. |
+| Retention and production readiness | Review controlled disposal, declaration text, Staff checklist, real support contact, configured email delivery and aggregate email abuse controls. |
+
+Existing job discovery integration and interactive browser/accessibility/provider checks remain delivery dependencies. No SMS vendor selection is required for this target.
 
 ## 11. Change history
 
-- 2026-10-18: Created a separate Draft from the user-confirmed design interview. Existing approved specifications and application code remain unchanged.
+- 2026-10-18: Created initial staged email/SMS onboarding direction, later confirmed by the user with the original implementation contract.
+- 2026-10-27: Recorded user-confirmed Q1–Q5/Q7–Q9; replaced pending-account promotion and SMS gates with immediate restricted accounts and email-only gates; added strict account identifier uniqueness, clarified Applicant/Recruiter/Owner transitions, and explicitly deferred Q6.
+- 2026-10-27 (0.2.1): Recorded Q10–Q17 for backend scope, canonical phone/Candidate edits, failure-safe email submission, coordinated client upgrade, 410 retirement, blocking data conversion and authenticated email proof. Added REQ-REC-19–21 and the current implementation-plan proposal. Documentation only; runtime behavior is unchanged.

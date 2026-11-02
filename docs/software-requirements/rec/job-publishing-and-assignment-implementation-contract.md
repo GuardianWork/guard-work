@@ -45,7 +45,7 @@ Every mutation of an existing job includes `expectedJobVersion`. Draft/review mu
 
 `applicationsAvailable` is false for PAUSED/CLOSED/EXPIRED or Company not verified, true only for verified non-suspended PUBLISHED before approved deadline. It describes job eligibility, not an implemented Application submission endpoint. Reasons: `PAUSED`, `CLOSED`, `EXPIRED`, `COMPANY_NOT_VERIFIED`, or null. Suspended Company returns 404 instead of a public dossier/status disclosure.
 
-All narrative strings are data, never HTML to execute. `applicationInstructions` is plain text directing in-platform submission; no separate external application URL field is provided. Clients must render text safely. Human moderation rejects instructions that require applying outside GuardWork; substring detection is not a substitute for review.
+All narrative strings are plain text data, never HTML to execute. The complete Job Description is carried in `description`, which may include responsibilities, qualifications, experience expectations and benefits. Candidates apply through GuardWork; there is no separate application-instructions field or external application URL. Clients must render text safely. Human moderation rejects descriptions that require applying outside GuardWork; substring detection is not a substitute for review.
 
 ## 3. Proposed content object and bounds
 
@@ -54,16 +54,13 @@ Lengths count Unicode code points after outer whitespace trimming, preserving in
 | JSON field | Submission requirement and proposed bounds |
 |---|---|
 | `title` | Required, 1–200 characters. |
-| `description`, `responsibilities` | Each required, 1–10,000 characters. |
-| `requiredQualifications`, `preferredQualifications` | Each required, 1–5,000 characters; explicit text such as “None” is permitted where genuinely applicable. |
-| `experienceExpectations`, `benefits` | Each required, 1–5,000 characters. |
-| `applicationInstructions` | Required, 1–2,000 characters. |
-| `employmentType` | FULL_TIME, PART_TIME, CONTRACT, INTERNSHIP or TEMPORARY. |
-| `workArrangement` | ONSITE, HYBRID or REMOTE. |
-| `location` | Required plain text, 1–1,000 characters; for remote work describe eligible location/time zone rather than an invented street address. |
+| `description` | Required, 1–10,000 characters; contains the complete Job Description, including any relevant responsibilities, qualifications, experience expectations and benefits. |
+| `employmentType` | Required: FULL_TIME, PART_TIME, CONTRACT, INTERNSHIP or TEMPORARY. |
+| `workArrangement` | Required: ONSITE, HYBRID or REMOTE. |
+| `location` | Required plain text, 1–1,000 characters. For ONSITE or HYBRID, give the work location. For REMOTE, give the eligible area, such as a country or city, or explicitly say `Worldwide`; do not invent an office address. |
 | `deadline` | ISO-8601 datetime with explicit offset, mapped to TIMESTAMPTZ; strictly future at submission/approval. No ambiguous local datetime or default midnight. |
-| `headcount` | Integer 1–10,000. |
-| `compensation` | `{disclosed: boolean, minimum?, maximum?, currency?, payPeriod?}`. Required explicit choice. If disclosed, positive decimals (precision 18, scale ≤2), min ≤ max, currency VND/USD, period HOUR/DAY/MONTH/YEAR. VND amounts must be whole numbers. If not disclosed, remaining fields must be null/absent. Zero/negative placeholders rejected; misleading nonzero claims remain moderation concerns. |
+| `headcount` | Optional; when present, integer 1–10,000. |
+| `compensation` | Optional. When present, `{disclosed: boolean, minimum?, maximum?, currency?, payPeriod?}` requires an explicit choice. If disclosed, positive decimals (precision 18, scale ≤2), min ≤ max, currency VND/USD, period HOUR/DAY/MONTH/YEAR. VND amounts must be whole numbers. If not disclosed, remaining fields must be null/absent. Zero/negative placeholders rejected; misleading nonzero claims remain moderation concerns. |
 | `screeningQuestions` | Ordered array of 0–10 objects `{key, type, prompt, required, options?}`. Unique stable UUID key per question; prompt 1–500 characters. |
 | `screeningQuestions[].options` | SINGLE_CHOICE only, 2–10 distinct nonblank labels of 1–200 characters each. Other question types must have no options. Choice selection is single, not multiple. |
 

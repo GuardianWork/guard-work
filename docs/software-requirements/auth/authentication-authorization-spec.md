@@ -2,7 +2,8 @@
 
 Shared registration creates an active User with unverified email and sends no mail. Candidate access requires active status; private recruiting operations require verified account email for every User. Account-email request/confirmation, complete Company setup, and retired onboarding routes are defined in [GW-SR-AUTH-03](unified-registration-implementation-contract.md).
 
-The [public/Staff portal contract](portal-routing-contract.md) defines proxy headers, role checks, refresh-session binding, envelopes, and CORS. Platform Staff authority remains separate from Company `ADMIN` membership. Company verification is separate from account-email proof.
+> Employer onboarding coordination (2026-10-27): the user confirmed the email-only amendment to [GW-SR-REC-03](../rec/company-onboarding-verification-enhancement-spec.md) (Q1–Q5/Q7–Q9). Its target creates restricted official accounts at registration, permits sign-in before actual email proof, enforces email/declared-phone uniqueness across existing accounts, removes SMS prerequisites, and requires email proof before Company preparation/submission or Recruiter invitation acceptance. Company name alone grants no membership; initial complete submission creates PENDING Company and ACTIVE OWNER atomically. Recruitment still requires VERIFIED Company and existing authorization. The already-ACTIVE Recruiter-to-new-Owner case (Q6) is deferred; no membership-constraint change is authorized. Remove SMS gates for already-enrolled accounts without newly enrolling unrelated legacy accounts. Global phone enforcement needs a concrete Candidate/employer data and collision-migration design. Code still implements the earlier journey; see [implementation inventory](../../backend/employer-onboarding.md). Retained evidence, CHECKED mapping and moderation safeguards remain in force.
+> Follow-up Q10–Q17 confirms one shared canonical account phone and eligible Candidate contact edits, backend-only delivery, coordinated client upgrade, account retention on initial email-submission failure, 410 retirement of old pending-proof/SMS routes, blocking conversion on unresolved phone conflicts and authenticated email confirmation. See the [current gap and implementation proposal](../rec/company-onboarding-email-only-implementation-plan.md); its exact physical/API details await technical review. Q6 remains deferred.
 
 | Field | Value |
 |---|---|
@@ -12,7 +13,7 @@ The [public/Staff portal contract](portal-routing-contract.md) defines proxy hea
 | **File** | `authentication-authorization-spec.md` |
 | **Version** | 1.0.0 |
 | **Date** | 2026-10-05 |
-| **Last Updated** | 2026-10-28 |
+| **Last Updated** | 2026-10-27 |
 | **Owner** | VyTrg |
 | **Approver** | VyTrg |
 | **Status** | Approved |
@@ -603,3 +604,24 @@ period. JWT platform roles and claims are unchanged, and current persistence rem
 The existing approved example above is retained for comparison. The review branch prepared this proposal; the
 current implementation retains the approved response fields and bodyless departure request until human approval.
 The coordinated amendment remains pending human approval before merge.
+
+## GW-92 scoped enforcement amendment (2026-10-30)
+
+The requesting human approved [GW-SR-ADM-02](../adm/account-management-spec.md) in
+session, including database-backed access-session versions, persisted active-state
+checks, transactional refresh-token revocation, Company-member invalidation, and
+expiry reconciliation. See [ADR 0009](../../architecture/decisions/0009-account-enforcement.md).
+Existing signed-role and portal boundaries remain enforced; current persisted roles
+cannot be elevated by an older token. Legacy JWTs without `sessionVersion` mean zero.
+Rollout requires stopping old issuers/API instances. This scoped amendment does not
+approve unrelated Draft Staff requirements or introduce a distributed revocation service.
+
+For this amendment, an inactive account's bearer token is treated as unauthenticated
+(401) on protected requests, including legacy `SUSPENDED` accounts. Credential login
+still returns the existing 403 suspension response. Anonymous recovery and public
+reads retain their existing access rules. This replaces the previous service-level
+403 expectation for inactive bearer tokens; callers should require sign-in again.
+
+## GW-95 scoped amendment (2026-10-31)
+
+The requesting human explicitly approved [own account control](account-control-spec.md) and its linked implementation contract in session. Platform USER password changes additionally require verified email and invalidate all existing sessions. Account and Candidate profile use canonical User first/last names and phone; Candidate writes replace fullName with firstName/lastName in a coordinated client rollout. Voluntary closure/recovery is independent of Staff bans. Deletion remains pending without erasure or Staff finalization. See the linked contract for scope, migration and approval provenance.

@@ -5,16 +5,16 @@
 | Specification ID | GW-SR-ADM |
 | Project | GuardWork |
 | File | `docs/feat/staff/spec.md` |
-| Version | 1.4.0 — adopt Staff role and verification API namespace |
+| Version | 1.6.0 — scoped GW-99 report intake and inspection |
 | Status | Draft |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-10-24 |
+| Last updated | 2026-11-01 |
 | Product source | Retained UC-11–21 in [usecase.md](usecase.md), scoped by GW-81 |
 
 ## 1. Purpose and scope
 
-This draft covers account management, Company verification dossier review, receipt and inspection of user reports, and Job Posting moderation. UC-11–20 retain their existing detailed requirements; UC-21 retains its draft use-case description and awaits detailed contract alignment. System monitoring, background-task operations, and platform-wide RBAC design are excluded from this Staff documentation set. GW-81 includes the user-approved runtime rename of the Platform role and implemented verification API namespace. Committed migrations remain immutable; other feature behavior is unchanged.
+This draft covers account management, Company verification dossier review, receipt and inspection of user reports, and Job Posting moderation. UC-11–20 retain their existing detailed requirements; UC-21 retains its draft use-case description and awaits detailed contract alignment. UC-22 adds a scoped personal activity-history draft with product decisions confirmed on 2026-10-30; its API proposal awaits review. System monitoring, background-task operations, and platform-wide RBAC design are excluded from this Staff documentation set. GW-81 includes the user-approved runtime rename of the Platform role and implemented verification API namespace. Committed migrations remain immutable; other feature behavior is unchanged.
 
 The actor is Platform Staff with Platform role `STAFF`. Platform authority remains distinct from Company Workspace membership (`OWNER`, `ADMIN`, `RECRUITER`). The user approved runtime adoption of `STAFF` and `/api/staff/**` on 2026-10-24. Section 4.3 records that scoped contract amendment and compatibility impact; it does not approve the remaining Draft capabilities. Login is a prerequisite. Viewing a job is navigation context for hiding, history, and restoration; standalone job viewing and job closure are not separate features here.
 
@@ -31,6 +31,7 @@ The actor is Platform Staff with Platform role `STAFF`. Platform authority remai
 | UC-19 | Ban account | ADM-BAN | P0 |
 | UC-20 | Unban account | ADM-BAN | P0 |
 | UC-21 | Republish hidden Job Posting | ADM-JOB / use-case draft only | Not assigned |
+| UC-22 | View own activity history | ADM-ACT / GW-SR-ADM-03 | Not assigned |
 
 Audit recording remains a prerequisite for state-changing actions. Priorities are retained planning context, not new delivery commitments or implementation claims.
 
@@ -64,6 +65,11 @@ The source UC 13 used `PUBLISHING` in its precondition and `PUBLISHED` in altern
 
 ### 3.1 UC-11–12 — View Reports
 
+GW-99 scoped approval (2026-11-01): the requesting maintainer approved the
+[report intake and inspection contract](../../software-requirements/adm/user-report-intake-contract.md),
+including authenticated User submission, private evidence and additive persistence.
+This approval covers the focused contract; report adjudication remains excluded.
+
 Preconditions: the common conditions hold; details require an existing accessible report. Postcondition: list/details are displayed without changing report state or applying sanctions.
 
 | ID | Requirement |
@@ -78,6 +84,8 @@ Former `ADM-REP-02–07` described review locks, resolution concurrency, sanctio
 
 ### 3.2 UC-13–14 — Hide Job Posting and View History
 
+GW-93 scoped approval (2026-10-31): the requesting maintainer approved the focused [Staff job management contract](../../software-requirements/adm/staff-job-management-contract.md), including API, additive schema, visibility and concurrency boundaries. This section is implemented under that approval; the rest of this document retains its Draft status.
+
 Preconditions: hiding requires a public `PUBLISHED` posting; history requires an authorized posting context. Postconditions: successful hiding produces `SUSPENDED` and removes public visibility; history inspection changes nothing.
 
 | ID | Requirement |
@@ -91,7 +99,7 @@ Preconditions: hiding requires a public `PUBLISHED` posting; history requires an
 | ADM-JOB-07 | The Staff shall be able to view recorded posting-history events, including time, actor, action, status, and reason where available, and return to the posting. |
 | ADM-JOB-08 | History inspection shall not edit events or content. Empty history and retrieval failure shall be displayed distinctly. |
 
-This scope does not add job closure, physical deletion, a new publication state, or access to unrelated applicant data and Company communications.
+Beyond the focused contract’s approved `SUSPENDED` extension, this scope adds no further publication states, job closure, physical deletion, or access to unrelated applicant data and Company communications.
 
 ### 3.3 UC-15–17 — Company Verification
 
@@ -122,7 +130,10 @@ Precondition: the target exists, subject to the common authorization conditions.
 | ADM-ACC-03 | Missing/inaccessible targets shall not be displayed. Retrieval errors shall be reported and permit retry. |
 | ADM-ACC-04 | Credentials, password hashes, tokens, and unrelated private communications shall not be displayed. |
 
-Exact search fields, private-field visibility, and pagination require a scoped contract before implementation.
+Exact search fields, private-field visibility, and pagination are defined by the
+[GW-92 scoped account contract](../../software-requirements/adm/account-management-spec.md),
+explicitly approved by the requesting human on 2026-10-30. This approval covers
+UC-18–20 only and does not approve the remaining Draft Staff capabilities.
 
 ### 3.5 UC-19–20 — Ban and Unban
 
@@ -148,7 +159,25 @@ Preconditions: banning requires an existing active target; unbanning requires a 
 | ADM-AUD-03 | Existing append-only audit protections shall remain intact. This documentation change shall not weaken or change committed audit persistence guards. |
 | ADM-AUD-05 | Audit or review responses shall not bypass the common privacy restrictions. |
 
-Former `ADM-AUD-04` audit-log search is outside this selected inventory. Audit recording is retained; a standalone audit-search screen/API is not added by this scope.
+Former `ADM-AUD-04` general audit-log search remains retired and outside scope.
+The separately scoped UC-22 below uses new ADM-ACT identifiers for the caller's own
+history only; it does not restore cross-Staff audit search.
+
+### 3.7 UC-22 — View Own Activity History
+
+The requesting human confirmed a read-only personal reconciliation view on
+2026-10-30. [GW-SR-ADM-03](../../software-requirements/adm/personal-activity-history-spec.md)
+owns ADM-ACT-01–13 and the complete acceptance criteria. Its
+[API proposal](../../software-requirements/adm/personal-activity-history-implementation-contract.md)
+is Draft and requires technical review before implementation.
+
+The actor may see only their own committed account-management, Job Posting
+management, and Company-verification changes, including retained historical audit.
+Display only safe recorded time/action/target/state/reason fields. Missing facts
+remain unavailable. Support Vietnam-date, group, action, and exact target-code
+filters; default to 30 local calendar dates including today, newest first, with
+20-row pages. Permit no edit/delete/hide/export/raw-JSON or target navigation.
+Existing reviewer attribution in authorized target histories remains unchanged.
 
 ## 4. Contracts and implementation status
 
@@ -176,9 +205,14 @@ The service checks non-pending state before version mismatch, so a previously co
 
 Enhanced retained-submission decisions create persisted email intents for the submitting user, processed by the existing delivery worker. Provider acceptance is not proof of mailbox arrival. Missing configuration or exhausted retries remain operational failures; legacy dossiers without an enhanced attempt do not currently create an intent. See [onboarding delivery documentation](../../backend/employer-onboarding.md).
 
-### 4.2 Not yet implemented or specified
+### 4.2 Implemented scope and remaining gaps
 
-The repository does not currently provide the Staff report-list/detail, job hiding/history/restoration, or account lookup/ban/unban interfaces described here. Existing session/authentication helpers do not establish those complete workflows. UC-21 remains a use-case draft; its detailed requirements, publication eligibility, concurrency, and failure recovery must be aligned before implementation.
+GW-99 adds User report intake, Staff report-list/detail and private evidence under
+its focused approved contract. GW-92 implements account lookup/ban/unban, and GW-93
+implements job hiding and posting-event history. UC-21 restoration remains a
+use-case draft; publication eligibility, concurrency and visibility recovery need
+a focused approved contract. Browser UI and deployed end-to-end readiness are not
+established by backend implementation alone.
 
 Older versions of this draft contained proposed report-resolution, account, job, and audit-search endpoints, SQL schemas, Redis keys, Kafka topics, and search integrations. They are not treated as implemented or approved contracts in this revision. No deployed API removal, schema migration, dependency change, or architecture selection is authorized by their removal from the active draft. Concrete contracts for unimplemented capabilities must be proposed and approved separately.
 
@@ -213,7 +247,7 @@ Verification uses the existing isolated PostgreSQL setup: `docker compose -f doc
 | Login | Remains an authentication prerequisite; excluded as a use case here. |
 | Standalone job view and closure | Not included in UC-11–21. Contextual job viewing remains necessary for hiding/history/restoration. |
 | Report adjudication | Review locks, warning/ban/takedown sanction selection, resolution/rejection, and resolution concurrency are outside UC-11–12. Do not implement them as side effects of opening details. Wider approved product obligations are not removed by this selected scope. |
-| Audit-log search | Outside the selected inventory; immutable audit recording remains required. |
+| Audit-log search | General/cross-Staff search remains excluded. UC-22 adds only own-history reads/search under the dedicated Draft contract; immutable audit recording remains required. |
 | Platform/Company authority | Approved authentication separates Platform role from Company membership. Staff documentation preserves this boundary and does not define a platform-wide role hierarchy. |
 | Verification reference | `company_verification.md` includes broader registry/domain/forensics checks, authorization-letter rules, badges, and ranking claims. They are not acceptance requirements introduced by this revision; approved onboarding/verification contracts govern implementation. |
 | Job restoration (UC-21) | Retained in the use-case draft only. Reconcile administrative `SUSPENDED` with independent Platform Removal in the Job Publishing Draft, publication eligibility, concurrent decisions, and visibility recovery before implementation. No new API or schema is selected. |
@@ -238,10 +272,11 @@ These boundaries are explicit gaps, not permission to bypass the stated outcomes
 | UC-18 | Authorized target information and eligible actions display; private credentials/messages are excluded; missing/inaccessible targets and retrieval failures are handled. |
 | UC-19 | Active user/non-banned Company can be banned with valid reason/duration; self-ban and already-banned targets are refused; Company restrictions cascade; required revocation failure cannot report success. |
 | UC-20 | Active ban and reason are required; applicable access returns, old sessions remain invalid, new sign-in is required; Company verification/roles/posting publication are not automatically changed. |
+| UC-22 | Own actor scope is enforced for rows and counts; only successful in-scope activities appear; safe historical projection, Vietnam-date filters, 20-row paging, and missing-data/empty/error states apply; no mutation/export/target navigation is offered. |
 
 UC-21 verification scenarios remain pending detailed specification alignment; its draft flow does not establish an approved implementation contract.
 
-GW-81 changes the implemented verification role/routes and their tests. The other scenarios guide future implementation verification; tests for unimplemented Staff features are not claimed to pass.
+GW-81 changes the implemented verification role/routes and their tests. GW-93 adds verification for UC-13/UC-14 under the focused contract. The remaining scenarios guide future implementation verification; tests for unimplemented Staff features are not claimed to pass.
 
 ## 7. Related documents
 

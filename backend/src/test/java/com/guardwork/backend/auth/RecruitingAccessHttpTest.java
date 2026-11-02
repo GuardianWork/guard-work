@@ -128,7 +128,7 @@ class RecruitingAccessHttpTest {
                         assertThat(error.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
                         assertThat(error.getReason()).startsWith("40982 COMPANY_VERIFICATION_REQUIRED");
                     });
-            http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.authorization()))
+            http.perform(get("/api/candidates/profile").header("Authorization", owner.authorization()))
                     .andExpect(status().isOk());
         }
     }
@@ -179,7 +179,7 @@ class RecruitingAccessHttpTest {
         long notification = json.readTree(inbox).path("data").path("content").get(0).path("id").asLong();
         http.perform(patch("/api/me/notifications/" + notification + "/read").header("Authorization", recruiter.authorization()))
                 .andExpect(status().isOk());
-        http.perform(get("/api/v1/candidates/profile").header("Authorization", recruiter.authorization()))
+        http.perform(get("/api/candidates/profile").header("Authorization", recruiter.authorization()))
                 .andExpect(status().isOk());
     }
 
@@ -197,7 +197,7 @@ class RecruitingAccessHttpTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasMessageContaining("EMAIL_VERIFICATION_REQUIRED");
         http.perform(get("/api/me/notifications").header("Authorization", owner.authorization())).andExpect(status().isOk());
-        http.perform(get("/api/v1/candidates/profile").header("Authorization", owner.authorization())).andExpect(status().isOk());
+        http.perform(get("/api/candidates/profile").header("Authorization", owner.authorization())).andExpect(status().isOk());
         verifyEmail(owner);
         http.perform(get("/api/companies/me/jobs/" + draft.id()).header("Authorization", owner.authorization()))
                 .andExpect(status().isOk());
@@ -212,9 +212,9 @@ class RecruitingAccessHttpTest {
         verifyEmail(owner);
         var staff = staffAccount();
         var content = new java.util.LinkedHashMap<String, Object>();
-        for (String field : List.of("title", "description", "responsibilities", "requiredQualifications", "preferredQualifications",
-                "experienceExpectations", "benefits", "location")) content.put(field, "Nội dung");
-        content.put("applicationInstructions", "Apply through GuardWork");
+        content.put("title", "Nội dung");
+        content.put("description", "Dòng một\nDòng hai");
+        content.put("location", "Hồ Chí Minh");
         content.put("employmentType", "FULL_TIME");
         content.put("workArrangement", "ONSITE");
         content.put("headcount", 2);
@@ -240,9 +240,9 @@ class RecruitingAccessHttpTest {
     @Test void suspendedUserLosesProtectedReadsButKeepsAnonymousRecoveryAndPublicDetailRules() throws Exception {
         var user = account();
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", user.id());
-        for (String path : List.of("/api/auth/me", "/api/v1/candidates/profile", "/api/me/notifications")) {
+        for (String path : List.of("/api/auth/me", "/api/candidates/profile", "/api/me/notifications")) {
             http.perform(get(path).header("Authorization", user.authorization()))
-                    .andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("40304 ACCOUNT_SUSPENDED: Account is suspended"));
+                    .andExpect(status().isUnauthorized());
         }
         http.perform(post("/api/auth/forgot-password").header("Authorization", user.authorization())
                 .contentType(MediaType.APPLICATION_JSON).content("{\"email\":\"unknown@example.vn\"}"))

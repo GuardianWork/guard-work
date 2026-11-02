@@ -29,6 +29,11 @@ public class OnboardingErrorHandler {
 
     @ExceptionHandler({DataIntegrityViolationException.class, ObjectOptimisticLockingFailureException.class})
     public ResponseEntity<ApiResponse<Void>> conflict(RuntimeException error) {
+        if (error instanceof DataIntegrityViolationException constraint
+                && String.valueOf(constraint.getMostSpecificCause().getMessage()).matches("(?s).*(uq_users_phone_number|uq_users_normalized_email|users_email_key).*")) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiResponse<>(409,
+                    "40930 IDENTIFIER_UNAVAILABLE: Registration information is unavailable", null));
+        }
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiResponse<>(409,
                 "40930 ONBOARDING_CONFLICT: Information is unavailable or was changed; reload and retry", null));
     }

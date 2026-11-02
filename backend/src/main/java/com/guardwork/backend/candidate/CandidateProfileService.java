@@ -1,22 +1,22 @@
 package com.guardwork.backend.candidate;
 
 import java.util.HashSet;
-import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
-
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.guardwork.backend.candidate.dto.UpdateCandidateProfileRequest;
+import com.guardwork.backend.candidate.util.ContactMaskingUtils;
 import com.guardwork.backend.candidate.util.ValidationConstants;
+import com.guardwork.backend.common.exception.AppException;
+import com.guardwork.backend.common.exception.ErrorCode;
+import com.guardwork.backend.account.service.AccountIdentityService;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
-import com.guardwork.backend.candidate.util.ContactMaskingUtils;
 import jakarta.transaction.Transactional;
-import org.springframework.http.HttpStatus;
+import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +25,7 @@ public class CandidateProfileService {
 
     CandidateProfileRepository profileRepository;
     UserRepository userRepository;
+    AccountIdentityService identity;
 
     /**
      * Returns the existing profile for the given user, or creates a skeleton one
@@ -32,25 +33,12 @@ public class CandidateProfileService {
      */
     @Transactional
     public CandidateProfile getOrCreateProfile(Long userId) {
-        return profileRepository.findByUserId(userId)
-                .orElseGet(() -> {
-                    CandidateProfile skeleton = createSkeletonProfile(userId);
-                    return profileRepository.save(skeleton);
-                });
-    }
-
-    private CandidateProfile createSkeletonProfile(Long userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND"));
-        String defaultFullName = (user.getFirstName() != null ? user.getFirstName() : "")
-                + " "
-                + (user.getLastName() != null ? user.getLastName() : "");
-        CandidateProfile profile = new CandidateProfile();
-        profile.setUserId(userId);
-        profile.setFullName(defaultFullName.trim());
-        profile.setSkills(List.of());
-        profile.setPublic(true);
-        return profile; // no save here
+        User user = requireUser(userId);
+        AccountIdentityService.requireEligible(user);
+        CandidateProfile profile = profileRepository.findByUserId(userId)
+                .orElseGet(() -> profileRepository.save(createSkeletonProfile(user)));
+        attachAccountContact(profile, user);
+        return profile;
     }
 
     /**
@@ -58,55 +46,93 @@ public class CandidateProfileService {
      */
     @Transactional
     public CandidateProfile updateProfile(Long userId, UpdateCandidateProfileRequest request) {
+        // Lock the account first so a racing phone claim serializes before profile writes.
+        User user = userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        AccountIdentityService.requireEligible(user);
         CandidateProfile profile = profileRepository.findByUserId(userId)
-                .orElseGet(() -> createSkeletonProfile(userId));
+                .orElseGet(() -> createSkeletonProfile(user));
 
-        // ----- Simple scalar fields -----
-        profile.setFullName(request.fullName());
-        profile.setPhoneNumber(request.phoneNumber());
-        profile.setAvatarUrl(request.avatarUrl());
-        profile.setExperienceSummary(request.experienceSummary());
-        profile.setEducationSummary(request.educationSummary());
+        // Account email and phone are derived from User so the profile cannot drift from the login identity.
+        profile.setEmail(user.getEmail());
+        if (request.avatarUrl() != null) {
+            profile.setAvatarUrl(request.avatarUrl());
+        }
         if (request.isPublic() != null) {
             profile.setPublic(request.isPublic());
         }
-
-        // ----- Skills handling -----
         if (request.skills() != null) {
-            List<String> incoming = request.skills();
-            // Trim, filter blanks, enforce length, deduplicate case‑insensitively
-            Set<String> normalized = new HashSet<>();
-            List<String> cleaned = incoming.stream()
-                    .map(String::trim)
-                    .filter(s -> !s.isBlank())
-                    .peek(s -> {
-                        if (s.length() > ValidationConstants.MAX_SKILL_LENGTH) {
-                            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                                    "Skill \"" + s + "\" exceeds maximum length of " + ValidationConstants.MAX_SKILL_LENGTH);
-                        }
-                    })
-                    .filter(s -> normalized.add(s.toLowerCase())) // keep first occurrence, deduplicate case‑insensitively
-                    .collect(Collectors.toList());
-
-            if (cleaned.size() > ValidationConstants.MAX_SKILLS) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "Number of skills exceeds maximum of " + ValidationConstants.MAX_SKILLS);
-            }
-            profile.setSkills(cleaned);
+            profile.setSkills(cleanSkills(request.skills()));
+        }
+        if (request.experience() != null) {
+            profile.setExperience(request.experience());
+        }
+        if (request.education() != null) {
+            profile.setEducation(request.education());
         }
 
-        return profileRepository.save(profile);
+        // Preserve dev's optional-field semantics on the Candidate form; account settings can clear phone.
+        identity.update(user, request.firstName(), request.lastName(),
+                request.phoneNumber() == null ? user.getPhoneNumber() : request.phoneNumber());
+        CandidateProfile saved = profileRepository.save(profile);
+        attachAccountContact(saved, user);
+        return saved;
+    }
+
+    private static void attachAccountContact(CandidateProfile profile, User user) {
+        profile.setEmail(user.getEmail());
+        profile.setFirstName(user.getFirstName());
+        profile.setLastName(user.getLastName());
+        profile.setFullName(user.fullName());
+        profile.setPhoneNumber(user.getPhoneNumber());
+    }
+
+    private User requireUser(Long userId) {
+        return userRepository.findByIdForUpdate(userId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+    }
+
+    private CandidateProfile createSkeletonProfile(User user) {
+        String defaultFullName = (user.getFirstName() != null ? user.getFirstName() : "")
+                + " "
+                + (user.getLastName() != null ? user.getLastName() : "");
+        CandidateProfile profile = new CandidateProfile();
+        profile.setUserId(user.getId());
+        profile.setFullName(defaultFullName.trim());
+        profile.setSkills(List.of());
+        profile.setPublic(true);
+        return profile;
+    }
+
+    private List<String> cleanSkills(List<String> incoming) {
+        Set<String> normalized = new HashSet<>();
+        List<String> cleaned = incoming.stream()
+                .map(s -> s == null ? "" : s.trim())
+                .filter(s -> !s.isBlank())
+                .peek(s -> {
+                    if (s.length() > ValidationConstants.MAX_SKILL_LENGTH) {
+                        throw new AppException(ErrorCode.INVALID_INPUT,
+                                "Skill \"" + s + "\" exceeds maximum length of " + ValidationConstants.MAX_SKILL_LENGTH);
+                    }
+                })
+                // Keep the first occurrence and deduplicate case-insensitively.
+                .filter(s -> normalized.add(s.toLowerCase()))
+                .collect(Collectors.toList());
+
+        if (cleaned.size() > ValidationConstants.MAX_SKILLS) {
+            throw new AppException(ErrorCode.INVALID_INPUT,
+                    "Number of skills exceeds maximum of " + ValidationConstants.MAX_SKILLS);
+        }
+        return cleaned;
     }
 
     /**
-     * Utility that can be used by future employer‑facing services to mask contact info.
+     * Utility that can be used by future employer-facing services to mask contact info.
      */
     public static void applyMaskIfUnverified(CandidateProfile profile, boolean employerVerified) {
         if (!employerVerified) {
-            // Mask email and phone. Email is stored in the User entity – not directly here,
-            // but we expose a hook for future use.
+            // Mask email and phone. Email is derived from the User entity and masked elsewhere.
             profile.setPhoneNumber(ContactMaskingUtils.maskPhone(profile.getPhoneNumber()));
-            // Note: email masking would be performed on the User object elsewhere.
         }
     }
 }

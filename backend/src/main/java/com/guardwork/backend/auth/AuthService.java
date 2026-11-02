@@ -29,11 +29,14 @@ import com.guardwork.backend.user.repository.UserRepository;
 @Service
 public class AuthService {
 
+    @jakarta.persistence.PersistenceContext private jakarta.persistence.EntityManager entityManager;
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-zA-Z0-9_]{3,50}$");
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     private static final Pattern PASSWORD_PATTERN = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,128}$");
 
+    private final com.guardwork.backend.staff.service.AccountEnforcementService enforcement;
+    private final com.guardwork.backend.audit.service.AuditService audit;
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
@@ -46,7 +49,11 @@ public class AuthService {
                        RefreshTokenRepository refreshTokenRepository,
                        PasswordResetTokenRepository passwordResetTokenRepository,
                        JwtService jwtService,
-                       PasswordEncoder passwordEncoder, CompanyMembershipRepository memberships, CompanyRepository companies) {
+                       PasswordEncoder passwordEncoder, CompanyMembershipRepository memberships, CompanyRepository companies,
+                       com.guardwork.backend.staff.service.AccountEnforcementService enforcement,
+                       com.guardwork.backend.audit.service.AuditService audit) {
+        this.audit = audit;
+        this.enforcement = enforcement;
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -110,14 +117,16 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40101 INVALID_CREDENTIALS: invalid credentials");
         }
 
-        User user = userOpt.get();
-        if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+        User user = enforcement.lockUser(userOpt.get().getId());
+        if (!passwordEncoder.matches(request.password(), user.getPassword()))
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40101 INVALID_CREDENTIALS");
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
 
         portal = portal == null ? Portal.fromRole(user.getRole()) : portal;
         portal.requireRole(user.getRole());
-        String accessToken = jwtService.generateAccessToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole(), portal);
+        String accessToken = jwtService.generateAccessToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole(), portal, user.getSessionVersion());
         String rawRefreshToken = jwtService.generateRefreshTokenValue();
         String tokenHash = jwtService.hashToken(rawRefreshToken);
         String familyId = jwtService.generateFamilyId();
@@ -172,10 +181,14 @@ public class AuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40104 REVOKED_REFRESH_TOKEN: Refresh token has expired");
         }
 
-        User user = userRepository.findById(token.getUserId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40401 USER_NOT_FOUND: User not found"));
+        User user = enforcement.lockUser(token.getUserId());
+        // Reload after the user lock: a ban/unban may have revoked the session while we waited.
+        refreshTokenRepository.flush();
+        entityManager.refresh(token);
+        if (token.isRevoked())
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "40104 REVOKED_REFRESH_TOKEN");
 
-        if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
 
@@ -183,7 +196,7 @@ public class AuthService {
         // Validate portal and current authority before consuming the refresh token.
         refreshTokenRepository.revokeToken(token.getId(), Instant.now());
         // Issue new access token and rotated refresh token with the SAME familyId and portal.
-        String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole(), portal);
+        String newAccessToken = jwtService.generateAccessToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole(), portal, user.getSessionVersion());
         String newRawRefreshToken = jwtService.generateRefreshTokenValue();
         String newTokenHash = jwtService.hashToken(newRawRefreshToken);
 
@@ -222,7 +235,7 @@ public class AuthService {
     public CurrentUserResponse getCurrentUser(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40401 USER_NOT_FOUND: User not found"));
-        if (!"ACTIVE".equals(user.getStatus())) {
+        if (!user.allowsNormalAccess()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40304 ACCOUNT_SUSPENDED: Account is suspended");
         }
         return new CurrentUserResponse(
@@ -252,16 +265,20 @@ public class AuthService {
             throw badRequest("40002 WEAK_PASSWORD: password must be 8-128 characters with at least one uppercase letter, one lowercase letter, and one digit");
         }
 
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "40401 USER_NOT_FOUND: User not found"));
-
-        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
+        User user = enforcement.lockUser(userId);
+        if (!user.allowsNormalAccess()) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40304 ACCOUNT_SUSPENDED");
+        if ("USER".equals(user.getRole()) && !user.isEmailVerified())
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40335 EMAIL_VERIFICATION_REQUIRED");
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword()))
             throw badRequest("40001 INVALID_INPUT: Current password does not match");
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        if ("USER".equals(user.getRole())) {
+            enforcement.invalidate(user);
+            audit.recordLog(userId, "ACCOUNT_PASSWORD_CHANGED", "USER", userId.toString(), null, null, null, null, null);
+        } else {
+            // GW-95 does not change Staff password-session policy.
+            refreshTokenRepository.revokeAllForUser(userId, Instant.now());
         }
-
-        userRepository.updatePassword(userId, passwordEncoder.encode(request.newPassword()));
-        // Invalidate all refresh tokens on password change
-        refreshTokenRepository.revokeAllForUser(userId, Instant.now());
         log.debug("event=auth_password_change outcome=password_updated_sessions_revoked");
     }
 

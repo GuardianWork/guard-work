@@ -57,8 +57,10 @@ public class SecurityConfig {
                 "/v3/api-docs/**")
             .permitAll()
             .requestMatchers("/api/staff/**").hasRole("STAFF")
+            .requestMatchers("/api/candidates/**").hasRole("USER")
             .requestMatchers(new RegexRequestMatcher("/api/jobs/[1-9][0-9]*", "GET"))
             .permitAll()
+            .requestMatchers("/api/jobs/search").permitAll()
             .anyRequest().authenticated())
         .addFilterBefore(portalCorsFilter, CorsFilter.class)
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

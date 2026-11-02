@@ -6,12 +6,18 @@
 | Project | GuardWork |
 | Module | Job Publishing and Assignments |
 | File | `job-publishing-and-assignment-mvp-spec.md` |
-| Version | 0.1.0 |
-| Date / Last Updated | 2026-10-28 |
+| Version | 0.3.0 |
+| Date / Last Updated | 2026-10-31 |
 | Owner | Thinh |
 | Named human approver | Thinh (retained from baseline) |
 | Status | Approved |
 | Ticket / branch | GW-78 / `GW-78-implement-job-publishing-and-assignment` |
+
+## Change note
+
+GW-93 adds the explicitly user-approved Staff suspension and posting-event history extension documented in [GW-SR-ADM-JOB-93](../adm/staff-job-management-contract.md). Other GW-78 requirements and the original approval metadata remain unchanged.
+
+GW-89 updates JP78-012 and JP78-013 to use one complete description, keep six required publishing inputs, and make headcount and compensation optional. The user approved this behavior in the GW-89 discussion. The companion implementation-focused specification remains Draft under the repository requirements process.
 
 ## 1. Purpose and scope
 
@@ -20,6 +26,8 @@ Deliver backend Company job drafting, responsibility management, revision submis
 Reopening, archiving, metrics, Platform Removal/appeals, search/discovery, Applications, interviews, offers and Company Admin capabilities are separate work. Existing Applications must eventually remain unaffected by closing/expiry; GW-78 introduces no Application storage, APIs, acceptance claims or synthetic metrics.
 
 The broader [Job Publishing draft](../../feat/recruiters/job-publishing-spec.md) is background. This focused draft records the GW-78 interview's narrower scope and explicit changes: Owner responsibility may replace a Recruiter assignment; authorship grants no continuing access; Company Admin is excluded; and retained pending reviews may complete after closure/expiry without reopening. It does not silently amend the broader draft or other approved specifications.
+
+GW-93 approved extension (2026-10-31): [Staff hiding and event history](../adm/staff-job-management-contract.md) adds `SUSPENDED`, public content hiding, and Staff history without enabling restoration. It governs suspension-specific lifecycle behavior; GW-78 behavior for existing states is retained.
 
 ## 2. Domain model and lifecycles
 
@@ -58,8 +66,8 @@ Only PUBLISHED and PAUSED jobs undergo deadline expiry. CLOSED remains CLOSED af
 |---|---|
 | JP78-010 | Authorized eligible members may create incomplete drafts before Company verification. Company suspension blocks private operations. All private job operations require an active User with verified account email; personal phone proof is not required. Preserve active User/membership, role/assignment and Company verification gates; use the scoped route exceptions in the contract for pre-verification drafts, public detail and own-inbox access. |
 | JP78-011 | Save incomplete drafts within type, enum, length and size limits. Submission requires complete content, a future exact deadline, verified non-suspended Company, eligible submitter and at least one responsible person. Return field-specific validation information through the existing scoped response convention. |
-| JP78-012 | Required content comprises title, description, responsibilities, required/preferred qualifications, experience expectations, employment type, work arrangement, location, benefits, deadline, headcount, application instructions and a compensation range or explicit not-disclosed choice. Application instructions direct Candidates to apply through GuardWork. |
-| JP78-013 | Narrative fields are plain text with line breaks, supporting Vietnamese Unicode. Screening questions are optional, capped at ten, ordered and typed SHORT_TEXT, SINGLE_CHOICE, YES_NO or NUMERIC, each with an explicit required flag. No automated ranking or rejection. Answer collection is out of scope. |
+| JP78-012 | Required content comprises title, one complete Job Description in `description`, employment type, work arrangement, location/eligible work area, and a strictly future deadline. Responsibilities, qualifications, experience expectations and benefits may be described within `description`; they are not separate required fields. Headcount and compensation are optional. If compensation is supplied, the disclosure and range rules in JP78-013 apply. Candidates apply through GuardWork. |
+| JP78-013 | Narrative text is plain text with line breaks and Vietnamese Unicode. Screening questions are optional, capped at ten, ordered and typed SHORT_TEXT, SINGLE_CHOICE, YES_NO or NUMERIC, each with an explicit required flag. A supplied compensation object must explicitly select disclosed or not disclosed; disclosed compensation requires a valid range, currency and pay period, while not-disclosed compensation cannot contain salary values. No automated ranking or rejection. Answer collection is out of scope. |
 | JP78-014 | Preview returns the exact candidate-facing draft projection and validation issues. Submission requires explicit confirmation and the previewed current version; stale content cannot be submitted through an old confirmation. GW-78 delivers the backend contract; frontend preview display is later client work. |
 | JP78-015 | Submission preserves exact content. Withdrawal before a decision marks the reviewed revision WITHDRAWN; create a separate derived draft to edit. Rejection retains its reason, reviewer and time; correction likewise derives a new draft. Every resubmission receives a distinct revision identity/review attempt. |
 | JP78-016 | First approval publishes immediately. Later approval replaces Published Revision but preserves PUBLISHED, PAUSED, CLOSED or EXPIRED state after deadline reconciliation. Approval never resumes or reopens a job. A pending edit never changes public content. |

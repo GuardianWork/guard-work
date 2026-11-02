@@ -40,7 +40,7 @@ class OnboardingAccessPolicyTest {
         assertTrue(policy.permits(1L, "/api/companies/me/verification", "GET"));
         assertTrue(policy.permits(1L, "/api/companies/me/verification/history", "GET"));
         assertTrue(policy.permits(1L, "/api/company-verification-documents/1", "GET"));
-        assertTrue(policy.permits(1L, "/api/v1/candidates/profile", "GET"));
+        assertTrue(policy.permits(1L, "/api/candidates/profile", "GET"));
         assertTrue(policy.permits(1L, "/api/me/notifications", "GET"));
         assertTrue(policy.permits(1L, "/api/me/email-verification/request", "POST"));
         assertTrue(policy.permits(1L, "/api/company-invitations/accept", "POST"));
@@ -50,7 +50,7 @@ class OnboardingAccessPolicyTest {
 
     @Test void suspensionStillBlocksProtectedOperationsButPublicAndRecoveryRemainReachable() {
         user.setStatus("SUSPENDED");
-        assertFalse(policy.permits(1L, "/api/v1/candidates/profile", "GET"));
+        assertFalse(policy.permits(1L, "/api/candidates/profile", "GET"));
         assertFalse(policy.permits(1L, "/api/me/notifications", "GET"));
         assertFalse(policy.permits(1L, "/api/auth/me", "GET"));
         assertTrue(policy.permits(1L, "/api/jobs/3", "GET"));

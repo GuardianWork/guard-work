@@ -34,6 +34,21 @@ public class ResendOnboardingDelivery implements OnboardingDelivery {
                 + "\nKhông chia sẻ mã này với người khác.", null);
     }
 
+    @Override public boolean accountActionEmail(String recipient, String secret, String action) {
+        String purpose = switch (action) {
+            case "DEACTIVATE" -> "tạm ngừng tài khoản";
+            case "DELETE" -> "gửi yêu cầu xóa tài khoản";
+            case "REACTIVATE" -> "kích hoạt lại tài khoản";
+            case "CANCEL_DELETION" -> "hủy yêu cầu xóa tài khoản";
+            default -> throw new IllegalArgumentException("Unsupported account action");
+        };
+        return send(recipient, "Mã xác nhận " + purpose + " GuardWork",
+                "Bạn đã yêu cầu " + purpose + ". Mã xác nhận: " + secret
+                + "\nChỉ nhập mã này trong bước xác nhận thao tác tương ứng trên GuardWork."
+                + "\nMã có hiệu lực trong 10 phút. Không chia sẻ mã với người khác."
+                + "\nNếu bạn không yêu cầu thao tác này, hãy bỏ qua email.", null);
+    }
+
     @Override public boolean decisionEmail(String recipient, String company, String outcome, String reason, UUID id) {
         return send(recipient, "Kết quả xác minh công ty GuardWork",
                 "Công ty: " + company + "\nKết quả: " + ("VERIFIED".equals(outcome) ? "Đã xác minh" : "Bị từ chối")

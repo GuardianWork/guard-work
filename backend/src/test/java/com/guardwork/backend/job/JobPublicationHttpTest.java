@@ -77,6 +77,85 @@ class JobPublicationHttpTest {
         http.perform(get("/api/me/notifications").header("Authorization",staff)).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isNotEmpty());
     }
+
+    @Test void jobWithoutHeadcountOrCompensationCanBeSubmittedApprovedAndPublished() throws Exception {
+        String owner=account();long company=createdCompany(owner);
+        database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
+        var content=complete();content.remove("headcount");content.remove("compensation");
+        var draft=create(owner,content);long job=draft.path("id").asLong();
+        long revision=draft.path("workingRevision").path("id").asLong();
+
+        http.perform(get(JOBS+"/"+job+"/draft/preview").header("Authorization",owner))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.submissionEligible").value(true));
+        var pending=mapper.readTree(http.perform(post(JOBS+"/"+job+"/revisions/"+revision+"/submit")
+            .header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(confirm(draft,true)))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        String staff=staff(owner);
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff)
+            .contentType(MediaType.APPLICATION_JSON).content(decision(pending,"APPROVED",null)))
+            .andExpect(status().isOk());
+        http.perform(get("/api/jobs/"+job)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.content.headcount").doesNotExist())
+            .andExpect(jsonPath("$.data.content.compensation").doesNotExist());
+    }
+
+    @Test void remoteWorldwidePostingPublishesOneCompleteDescription() throws Exception {
+        String owner = account();
+        long company = createdCompany(owner);
+        database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?", company);
+        var content = complete();
+        content.put("description", String.join("\n", "Responsibilities", "Protect the site.", "",
+            "Qualifications", "No prior experience required.", "", "Benefits", "Training provided."));
+        content.put("workArrangement", "REMOTE");
+        content.put("location", "Worldwide");
+        var draft = create(owner, content);
+        long job = draft.path("id").asLong();
+        long revision = draft.path("workingRevision").path("id").asLong();
+
+        var pending = mapper.readTree(http.perform(post(JOBS + "/" + job + "/revisions/" + revision + "/submit")
+                .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content(confirm(draft, true)))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        http.perform(put("/api/staff/job-revisions/" + revision + "/decision").header("Authorization", staff(owner))
+                .contentType(MediaType.APPLICATION_JSON).content(decision(pending, "APPROVED", null)))
+            .andExpect(status().isOk());
+
+        http.perform(get("/api/jobs/" + job)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.content.workArrangement").value("REMOTE"))
+            .andExpect(jsonPath("$.data.content.location").value("Worldwide"))
+            .andExpect(jsonPath("$.data.content.description").value(content.get("description")))
+            .andExpect(jsonPath("$.data.content.responsibilities").doesNotExist())
+            .andExpect(jsonPath("$.data.content.applicationInstructions").doesNotExist());
+    }
+
+    @Test void nullOptionalValuesAreAcceptedButAnEmptyCompensationChoiceIsIncomplete() throws Exception {
+        String owner=account();long company=createdCompany(owner);
+        database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
+        var content=complete();content.put("headcount",null);content.put("compensation",null);
+        var draft=create(owner,content);
+        http.perform(get(JOBS+"/"+draft.path("id").asLong()+"/draft/preview").header("Authorization",owner))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.submissionEligible").value(true));
+        long job=draft.path("id").asLong();long revision=draft.path("workingRevision").path("id").asLong();
+        var pending=mapper.readTree(http.perform(post(JOBS+"/"+job+"/revisions/"+revision+"/submit")
+            .header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(confirm(draft,true)))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff(owner))
+            .contentType(MediaType.APPLICATION_JSON).content(decision(pending,"APPROVED",null)))
+            .andExpect(status().isOk());
+        http.perform(get("/api/jobs/"+job)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.content.headcount").value(org.hamcrest.Matchers.nullValue()))
+            .andExpect(jsonPath("$.data.content.compensation").value(org.hamcrest.Matchers.nullValue()));
+
+        var incomplete=complete();incomplete.put("compensation",Map.of());
+        var second=create(owner,incomplete);
+        http.perform(get(JOBS+"/"+second.path("id").asLong()+"/draft/preview").header("Authorization",owner))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.submissionEligible").value(false))
+            .andExpect(jsonPath("$.data.validationIssues[*].field").value(
+                org.hamcrest.Matchers.hasItem("content.compensation.disclosed")));
+        http.perform(post(JOBS+"/"+second.path("id").asLong()+"/revisions/"
+                +second.path("workingRevision").path("id").asLong()+"/submit")
+            .header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(confirm(second,true)))
+            .andExpect(status().isBadRequest());
+    }
     @Test void exactApprovedDeadlineExpiresWithOneFactEvenWhenWorkerIsDelayed() throws Exception {
         String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
         var c=complete();var deadline=clock.now.plusSeconds(30);c.put("deadline",deadline.toString());
@@ -135,6 +214,51 @@ class JobPublicationHttpTest {
         database.update("UPDATE companies SET is_banned=true WHERE id=?",company);
         http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
     }
+    @Test void companyBanInvalidatesAllMemberRolesAndUnbanKeepsPostingsHidden() throws Exception {
+        companyEnforcementJourney(false);
+    }
+    @Test void companyExpiryInvalidatesSessionsIssuedDuringBanAndKeepsPostingsHidden() throws Exception {
+        companyEnforcementJourney(true);
+    }
+    void companyEnforcementJourney(boolean temporary) throws Exception {
+        String owner=account(), admin=account(), recruiter=account(), moderator=staff(account());
+        long company=createdCompany(owner), ownerId=userId(owner), adminId=userId(admin), recruiterId=userId(recruiter);
+        database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
+        for(var member:Map.of(adminId,"ADMIN",recruiterId,"RECRUITER").entrySet())
+            database.update("INSERT INTO company_memberships(company_id,user_id,role,status,joined_at) VALUES (?,?,?,'ACTIVE',now())",company,member.getKey(),member.getValue());
+        var p=pending(owner,complete()); long job=p.path("id").asLong(), revision=p.path("workingRevision").path("id").asLong();
+        http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",moderator)
+            .contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
+        http.perform(get("/api/jobs/"+job)).andExpect(status().isOk());
+        String route="/api/staff/accounts/companies/"+company;
+        http.perform(post(route+"/ban").header("Authorization",moderator).contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(temporary ? Map.of("reason","Company violation","expiresAt",clock.now.plusSeconds(60).toString()) : Map.of("reason","Company violation")))).andExpect(status().isOk());
+        for(String token:List.of(owner,admin,recruiter)) http.perform(get("/api/auth/me").header("Authorization",token)).andExpect(status().isUnauthorized());
+        http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
+        String during=loginAgain(ownerId);
+        http.perform(get("/api/auth/me").header("Authorization",during)).andExpect(status().isOk());
+        if(temporary) {
+            clock.now=clock.now.plusSeconds(60);
+            http.perform(get("/api/auth/me").header("Authorization",loginAgain(ownerId))).andExpect(status().isOk());
+        } else {
+            http.perform(post(route+"/unban").header("Authorization",moderator).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reason\":\"Appeal accepted\"}")).andExpect(status().isOk());
+        }
+        http.perform(get("/api/auth/me").header("Authorization",during)).andExpect(status().isUnauthorized());
+        http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
+        assertThat(database.queryForObject("SELECT staff_suspended FROM job_postings WHERE id=?",Boolean.class,job)).isTrue();
+        assertThat(database.queryForObject("SELECT verification_status FROM companies WHERE id=?",String.class,company)).isEqualTo("VERIFIED");
+        assertThat(database.queryForList("SELECT role FROM company_memberships WHERE company_id=? ORDER BY role",String.class,company))
+            .containsExactly("ADMIN","OWNER","RECRUITER");
+        for(long id:List.of(ownerId,adminId,recruiterId)) assertThat(database.queryForObject("SELECT session_version FROM users WHERE id=?",Long.class,id)).isEqualTo(2);
+    }
+    String loginAgain(long id) throws Exception {
+        String username=database.queryForObject("SELECT username FROM users WHERE id=?",String.class,id);
+        return "Bearer "+mapper.readTree(http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(Map.of("usernameOrEmail",username,"password","Password123"))))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data").path("accessToken").asText();
+    }
+
     JsonNode pending(String owner,Map<String,Object> content)throws Exception {
         var d=create(owner,content);return mapper.readTree(http.perform(post(JOBS+"/"+d.path("id").asLong()+"/revisions/"+d.path("workingRevision").path("id").asLong()+"/submit")
           .header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(confirm(d,true))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
@@ -227,8 +351,9 @@ class JobPublicationHttpTest {
     }
     Map<String,Object> complete() {
         var c=new LinkedHashMap<String,Object>();
-        for(String f:List.of("title","responsibilities","requiredQualifications","preferredQualifications","experienceExpectations","benefits","location"))c.put(f,"Nội dung");
-        c.put("description","Dòng một\nDòng hai"); c.put("applicationInstructions","Apply through GuardWork");
+        c.put("title", "Bảo vệ");
+        c.put("description", "Dòng một\nDòng hai");
+        c.put("location", "Hồ Chí Minh");
         c.put("employmentType","FULL_TIME");c.put("workArrangement","ONSITE");c.put("headcount",2);
         var questions=new ArrayList<Map<String,Object>>();
         for(String type:List.of("SHORT_TEXT","SINGLE_CHOICE","YES_NO","NUMERIC")) {
@@ -269,9 +394,8 @@ class JobPublicationHttpTest {
     }
 
     long userId(String token) throws Exception {
-        String body = http.perform(get("/api/auth/me").header("Authorization", token)).andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        return mapper.readTree(body).path("data").path("id").asLong();
+        // Resolve fixture IDs without issuing a request inside a deliberately held database lock.
+        return context.getBean(com.guardwork.backend.auth.service.JwtService.class).extractUserId(token.substring(7));
     }
 
     long createdCompany(String token) throws Exception {

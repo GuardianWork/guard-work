@@ -86,3 +86,8 @@ evidence and failed/retried decision mail. Automatic decision scheduling is disa
 in tests; the worker is driven explicitly. Dedicated account-email, Company, invitation
 and recruiting-access suites cover their own boundaries. Run `./mvnw test` and
 `./mvnw package` from `backend/`; browser checks require the separate client source.
+
+GW-85 preserves canonical account phones and retained historical email snapshots.
+See [the backend cutover instructions](../../backend/README.md#gw-85-rebase-compatibility-and-canonical-phone-cutover)
+for preflight reports and the one-time existing-dev Flyway upgrade. Historical
+EmployerProfile proof never adds a second recruiting prerequisite.

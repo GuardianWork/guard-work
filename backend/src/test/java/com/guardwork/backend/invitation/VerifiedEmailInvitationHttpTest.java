@@ -103,6 +103,19 @@ class VerifiedEmailInvitationHttpTest {
   }
 
   @Test
+  void retainedEmployerProfileDoesNotBlockSharedVerifiedEmailAcceptance() throws Exception {
+    CompanyFixture company = existingVerifiedCompany();
+    Account recipient = account();
+    database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,true,'Retained applicant')", recipient.id());
+    var retained = database.queryForMap("SELECT * FROM employer_profiles WHERE user_id=?", recipient.id());
+    String secret = invite(company.owner(), recipient.email());
+    verifyEmail(recipient);
+    invitation("accept", recipient, secret, true).andExpect(status().isCreated())
+        .andExpect(jsonPath("$.data.companyId").value(company.id()));
+    assertThat(database.queryForMap("SELECT * FROM employer_profiles WHERE user_id=?", recipient.id())).isEqualTo(retained);
+  }
+
+  @Test
   void unavailableInvitationsRemainNonEnumeratingBeforeEmailProof() throws Exception {
     CompanyFixture company = existingVerifiedCompany();
     Account recipient = account();

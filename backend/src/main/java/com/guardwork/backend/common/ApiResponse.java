@@ -12,4 +12,8 @@ public record ApiResponse<T>(
     public static <T> ApiResponse<T> ok(T data) {
         return new ApiResponse<>(200, "Success", data);
     }
+
+    public static <T> ApiResponse<T> created(String message, T data) {
+        return new ApiResponse<>(201, message, data);
+    }
 }

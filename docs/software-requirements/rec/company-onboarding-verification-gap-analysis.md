@@ -4,11 +4,15 @@
 |---|---|
 | **Analysis ID** | GW-ANALYSIS-REC-03 |
 | **Target specification** | [GW-SR-REC-03](company-onboarding-verification-enhancement-spec.md) |
-| **Date / Last Updated** | 2026-10-18 / 2026-10-24 |
+| **Date / Last Updated** | 2026-10-18 / 2026-10-27 |
 | **Owner** | VyTrg (proposed, following Company Verification ownership) |
 | **Human reviewer** | VyTrg (proposed) |
 | **Document status** | Draft implementation analysis |
 | **Evidence boundary** | Repository source, migrations, and test definitions; no running deployment or database inspected |
+
+> Current evidence-backed gap matrix, schema/API proposal and ordered work packages: [2026-10-27 email-only implementation plan](company-onboarding-email-only-implementation-plan.md).
+
+> Historical analysis: its 2026-10-18 evidence and implementation directions below are retained for traceability, not current target requirements. On 2026-10-27, user-confirmed Q1–Q5/Q7–Q9 superseded pending-to-official promotion, SMS prerequisites, verified-only phone uniqueness and invitation acceptance before email proof. Q6 remains deferred. Use [GW-SR-REC-03 v0.2.1](company-onboarding-verification-enhancement-spec.md) and the [amended implementation contract](company-onboarding-implementation-contract.md) for the current target and work order. Do not implement the historical SMS/provider tasks below.
 
 ## 1. Purpose and confirmed decisions
 

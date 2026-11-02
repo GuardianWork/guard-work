@@ -187,7 +187,7 @@ class AccountEmailVerificationHttpTest {
                     .andExpect(jsonPath("$.data.recruitingEmailVerificationRequired").doesNotExist())
                     .andExpect(jsonPath("$.data.candidateAccessAllowed").doesNotExist())
                     .andExpect(jsonPath("$.data.recruitingEmailEligible").value(verified));
-            http.perform(get("/api/v1/candidates/profile").header("Authorization", authorization))
+            http.perform(get("/api/candidates/profile").header("Authorization", authorization))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.data.userId").value(id));
         }
     }
@@ -199,7 +199,7 @@ class AccountEmailVerificationHttpTest {
         long id = login.path("user").path("id").asLong();
         database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", id);
         http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
         database.update("UPDATE users SET status='ACTIVE',role='STAFF' WHERE id=?", id);
         http.perform(post("/api/me/email-verification/request").header("Authorization", authorization))
                 .andExpect(status().isForbidden());
@@ -393,7 +393,7 @@ class AccountEmailVerificationHttpTest {
                 .andExpect(jsonPath("$.data.recruitingEmailVerificationRequired").doesNotExist())
                 .andExpect(jsonPath("$.data.recruitingEmailEligible").value(false))
                 .andExpect(jsonPath("$.data.candidateAccessAllowed").doesNotExist());
-        http.perform(get("/api/v1/candidates/profile").header("Authorization", "Bearer " + login.path("accessToken").asText()))
+        http.perform(get("/api/candidates/profile").header("Authorization", "Bearer " + login.path("accessToken").asText()))
                 .andExpect(status().isOk());
         verifyNoInteractions(delivery);
     }

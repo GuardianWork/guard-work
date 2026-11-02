@@ -64,6 +64,55 @@ class JobSubmissionHttpTest {
             .andExpect(jsonPath("$.data.version").value(draft.path("version").asLong()));
     }
 
+    @Test void removedNarrativeSectionsAreRejectedFromJobContent() throws Exception {
+        String owner = account();
+        createdCompany(owner);
+        for (String field : List.of("responsibilities", "requiredQualifications", "preferredQualifications",
+                "experienceExpectations", "benefits", "applicationInstructions")) {
+            var content = new LinkedHashMap<String, Object>();
+            content.put("title", "Security Officer");
+            content.put("description", "Responsibilities and qualifications are included here.");
+            content.put("employmentType", "FULL_TIME");
+            content.put("workArrangement", "ONSITE");
+            content.put("location", "Hồ Chí Minh");
+            content.put("deadline", "2099-12-01T12:00:00+07:00");
+            content.put(field, "Legacy narrative field");
+            http.perform(post(JOBS).header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                    .content(mapper.writeValueAsString(Map.of("content", content))))
+                .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test void eachRequiredPostingFieldIsReportedByPreviewAndRejectedAtSubmission() throws Exception {
+        String owner = account();
+        long company = createdCompany(owner);
+        database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?", company);
+        for (String field : List.of("title", "description", "employmentType", "workArrangement", "location", "deadline")) {
+            var content = complete();
+            content.remove(field);
+            var draft = create(owner, content);
+            long job = draft.path("id").asLong();
+            long revision = draft.path("workingRevision").path("id").asLong();
+            http.perform(get(JOBS + "/" + job + "/draft/preview").header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.submissionEligible").value(false))
+                .andExpect(jsonPath("$.data.validationIssues[?(@.field == 'content." + field + "')]").isNotEmpty());
+            http.perform(post(JOBS + "/" + job + "/revisions/" + revision + "/submit")
+                    .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content(confirm(draft, true)))
+                .andExpect(status().isBadRequest());
+        }
+        var content = complete();
+        content.put("description", " \n ");
+        var draft = create(owner, content);
+        http.perform(get(JOBS + "/" + draft.path("id").asLong() + "/draft/preview").header("Authorization", owner))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.validationIssues[?(@.field == 'content.description')]").isNotEmpty());
+        http.perform(post(JOBS + "/" + draft.path("id").asLong() + "/revisions/"
+                + draft.path("workingRevision").path("id").asLong() + "/submit")
+                .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content(confirm(draft, true)))
+            .andExpect(status().isBadRequest());
+    }
+
     @Test void exactConfirmedRevisionIsSubmittedOnceAndWithdrawalPreservesHistory() throws Exception {
         String owner=account(); long company=createdCompany(owner);
         database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
@@ -150,9 +199,10 @@ class JobSubmissionHttpTest {
 
     Map<String,Object> complete() {
         var c=new LinkedHashMap<String,Object>();
-        for(String f:List.of("title","responsibilities","requiredQualifications","preferredQualifications","experienceExpectations","benefits","location"))c.put(f,"Nội dung");
-        c.put("description","Dòng một\nDòng hai"); c.put("applicationInstructions","Apply through GuardWork");
-        c.put("employmentType","FULL_TIME");c.put("workArrangement","ONSITE");c.put("headcount",2);
+        c.put("title", "Bảo vệ");
+        c.put("description", "Dòng một\nDòng hai");
+        c.put("location", "Hồ Chí Minh");
+        c.put("employmentType", "FULL_TIME");c.put("workArrangement", "ONSITE");c.put("headcount",2);
         var questions=new ArrayList<Map<String,Object>>();
         for(String type:List.of("SHORT_TEXT","SINGLE_CHOICE","YES_NO","NUMERIC")) {
           var q=new LinkedHashMap<String,Object>();q.put("key",UUID.randomUUID().toString());q.put("type",type);

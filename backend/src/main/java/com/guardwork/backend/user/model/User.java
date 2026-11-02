@@ -38,6 +38,9 @@ public class User {
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
+    @Column(name = "phone_number", unique = true, length = 20)
+    private String phoneNumber;
+
     @Column(nullable = false, length = 255)
     private String password;
 
@@ -46,6 +49,23 @@ public class User {
 
     @Column(nullable = false, length = 30)
     private String status = "ACTIVE";
+
+    @Column(name = "self_service_state", nullable = false, length = 30)
+    private String selfServiceState = "ACTIVE";
+
+    @Column(name = "prior_candidate_visibility")
+    private Boolean priorCandidateVisibility;
+
+    public boolean allowsNormalAccess() {
+        return "ACTIVE".equals(status) && "ACTIVE".equals(selfServiceState);
+    }
+
+    public String fullName() {
+        return (firstName + " " + lastName).trim();
+    }
+
+    @Column(name = "session_version", nullable = false)
+    private long sessionVersion;
 
     @Column(name = "email_verified", nullable = false)
     private boolean emailVerified = false;

@@ -175,7 +175,7 @@ class CompanyInvitationHttpTest {
     issue(owner, "denied@example.vn", 404);
     database.update("UPDATE companies SET is_banned=false WHERE id=?", company);
     database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", userId(owner));
-    issue(owner, "denied@example.vn", 403);
+    issue(owner, "denied@example.vn", 401);
     http.perform(
             post("/api/companies/me/invitations")
                 .contentType(MediaType.APPLICATION_JSON)
