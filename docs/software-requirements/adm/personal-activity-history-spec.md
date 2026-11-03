@@ -9,8 +9,17 @@
 | Status | Draft — product scope confirmed; technical contract awaiting review |
 | Owner | GuardWork thesis team |
 | Human approver | Formal named approval pending; requesting human confirmed the design interview on 2026-10-30 |
-| Last updated | 2026-10-30 |
+| Last updated | 2026-11-02 |
 | Sources | Session decisions Q1–Q11; [Staff use cases](../../feat/staff/usecase.md); [API proposal](personal-activity-history-implementation-contract.md) |
+
+## Implementation record (GW-104)
+
+The requesting human explicitly instructed implementation of this proposal on
+2026-11-02 after its Draft status was surfaced. GW-104 delivers the backend read
+endpoint and future moderation snapshot enrichment described here. Formal named
+approval metadata remains pending; this note does not promote the lifecycle status.
+See the [frontend integration guide](../../backend/personal-staff-activity-history.md)
+for the delivered API and the separate Staff frontend work.
 
 ## 1. Purpose and scope
 
@@ -116,7 +125,8 @@ business state may never reconstruct a missing before/after value.
 `audit_logs` already stores actor, action, target, before/after payloads, reason,
 request metadata, and time. It has an actor/time index and database triggers
 prohibiting UPDATE, DELETE, and TRUNCATE. An internal unpaginated actor query exists,
-but no general personal-history HTTP endpoint currently exists.
+but no general personal-history HTTP endpoint existed at the drafting baseline.
+GW-104 now adds the scoped own-history endpoint.
 
 Account ban/unban records contain enforcement snapshots. Company verification
 records contain wider Company snapshots that must be projected through an allowlist.
