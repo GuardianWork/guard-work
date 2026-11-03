@@ -21,6 +21,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 
 @Slf4j
 @Component
@@ -120,6 +124,50 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
         } catch (Exception storageFailure) {
             log.warn("event=cv_download_url outcome=failed");
             throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
+        }
+    }
+
+    @Override
+    public byte[] read(String publicId, String resourceType, String format) {
+        String signed = createDownloadUrl(publicId, resourceType, format, Duration.ofMinutes(1));
+        HttpURLConnection connection = null;
+        try {
+            URI uri = URI.create(signed);
+            String expectedPrefix = "/" + requireCloudinary().config.cloudName + "/";
+            if (!"https".equalsIgnoreCase(uri.getScheme())
+                    || !"res.cloudinary.com".equalsIgnoreCase(uri.getHost())
+                    || uri.getPath() == null || !uri.getPath().contains(expectedPrefix)) {
+                throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
+            }
+            connection = (HttpURLConnection) uri.toURL().openConnection();
+            connection.setInstanceFollowRedirects(false);
+            connection.setConnectTimeout(5_000);
+            connection.setReadTimeout(15_000);
+            connection.setRequestMethod("GET");
+            if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
+            }
+            try (InputStream input = connection.getInputStream();
+                 ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int total = 0;
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    total += read;
+                    if (total > 10 * 1024 * 1024) {
+                        throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
+                    }
+                    output.write(buffer, 0, read);
+                }
+                return output.toByteArray();
+            }
+        } catch (AppException known) {
+            throw known;
+        } catch (Exception failure) {
+            log.warn("event=cv_application_read outcome=failed");
+            throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
+        } finally {
+            if (connection != null) connection.disconnect();
         }
     }
 

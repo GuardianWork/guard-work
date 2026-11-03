@@ -3,8 +3,10 @@ package com.guardwork.backend.application;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
 import com.guardwork.backend.application.dto.SubmitApplicationRequest;
 import com.guardwork.backend.application.model.ApplicationSnapshot;
+import com.guardwork.backend.application.model.ApplicationStatusHistory;
 import com.guardwork.backend.application.model.JobApplication;
 import com.guardwork.backend.application.repository.ApplicationSnapshotRepository;
+import com.guardwork.backend.application.repository.ApplicationStatusHistoryRepository;
 import com.guardwork.backend.application.repository.JobApplicationRepository;
 import com.guardwork.backend.application.service.JobApplicationService;
 import com.guardwork.backend.candidate.CandidateProfile;
@@ -66,6 +68,7 @@ class JobApplicationServiceTest {
     @Mock CompanyMembershipRepository memberships;
     @Mock JobApplicationRepository applications;
     @Mock ApplicationSnapshotRepository snapshots;
+    @Mock ApplicationStatusHistoryRepository statusHistory;
     @Mock Clock clock;
 
     @InjectMocks JobApplicationService service;
@@ -164,6 +167,13 @@ class JobApplicationServiceTest {
             assertEquals("Acme", snapshot.getValue().getCompanyName());
             assertEquals(cvId, snapshot.getValue().getSourceCvId());
             assertEquals("applications/abc/cv/snapshot.pdf", snapshot.getValue().getCvStorageKey());
+
+            ArgumentCaptor<ApplicationStatusHistory> history = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
+            verify(statusHistory).saveAndFlush(history.capture());
+            assertEquals(application.getValue().getId(), history.getValue().getApplicationId());
+            assertEquals("SUBMITTED", history.getValue().getToStatus());
+            assertEquals(USER_ID, history.getValue().getActorUserId());
+            assertEquals(APPLIED_AT, history.getValue().getOccurredAt());
         }
 
         @Test

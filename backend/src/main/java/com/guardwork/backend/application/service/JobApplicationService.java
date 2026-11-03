@@ -1,13 +1,19 @@
 package com.guardwork.backend.application.service;
 
 import com.guardwork.backend.application.dto.ApplicationCvOption;
+import com.guardwork.backend.application.dto.ApplicationDetailResponse;
+import com.guardwork.backend.application.dto.ApplicationStatusHistoryResponse;
+import com.guardwork.backend.audit.service.AuditService;
+import com.guardwork.backend.candidate.cvs.CandidateCvStorage;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
 import com.guardwork.backend.application.dto.JobApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.RecruiterApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.SubmitApplicationRequest;
 import com.guardwork.backend.application.model.ApplicationSnapshot;
+import com.guardwork.backend.application.model.ApplicationStatusHistory;
 import com.guardwork.backend.application.model.JobApplication;
 import com.guardwork.backend.application.repository.ApplicationSnapshotRepository;
+import com.guardwork.backend.application.repository.ApplicationStatusHistoryRepository;
 import com.guardwork.backend.application.repository.JobApplicationRepository;
 import com.guardwork.backend.candidate.CandidateProfile;
 import com.guardwork.backend.candidate.CandidateProfileService;
@@ -34,6 +40,7 @@ import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -64,6 +71,9 @@ public class JobApplicationService {
     JobAssignmentRepository assignments;
     JobApplicationRepository applications;
     ApplicationSnapshotRepository snapshots;
+    ApplicationStatusHistoryRepository statusHistory;
+    CandidateCvStorage cvStorage;
+    AuditService audit;
     Clock clock;
 
     @Transactional
@@ -122,6 +132,12 @@ public class JobApplicationService {
         try {
             applications.saveAndFlush(application);
             snapshots.saveAndFlush(snapshot);
+            ApplicationStatusHistory submitted = new ApplicationStatusHistory();
+            submitted.setApplicationId(applicationId);
+            submitted.setToStatus(STATUS_SUBMITTED);
+            submitted.setActorUserId(userId);
+            submitted.setOccurredAt(appliedAt);
+            statusHistory.saveAndFlush(submitted);
         } catch (DataIntegrityViolationException failure) {
             cvService.discardSnapshot(cvSnapshot);
             if (isDuplicateApplication(failure)) {
@@ -167,7 +183,12 @@ public class JobApplicationService {
                             snapshot.getCompanyName(),
                             application.getStatus(),
                             application.getAppliedAt(),
-                            snapshot.getCvFileName());
+                            snapshot.getCvFileName(),
+                            application.getVersion(),
+                            statusHistory.findByApplicationIdOrderById(application.getId()).stream()
+                                    .map(ApplicationStatusHistory::getCandidateFeedback)
+                                    .filter(java.util.Objects::nonNull)
+                                    .reduce((first, second) -> second).orElse(null));
                 })
                 .toList();
     }
@@ -220,7 +241,8 @@ public class JobApplicationService {
             throw invalidRequest("pagination");
         }
         String normalizedSearch = normalizeSearch(search);
-        if (status != null && !"SUBMITTED".equals(status)) {
+        if (status != null && !List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "REJECTED", "WITHDRAWN")
+                .contains(status)) {
             throw invalidRequest("status");
         }
 
@@ -234,6 +256,124 @@ public class JobApplicationService {
                 .toList();
         return com.guardwork.backend.common.PageResponse.of(applicationsPage, content);
     }
+
+    @Transactional
+    public ApplicationDetailResponse companyDetail(Long userId, Long jobId, UUID applicationId) {
+        var access = requireCompanyApplicationAccess(userId, jobId, applicationId);
+        ApplicationSnapshot snapshot = snapshots.findById(applicationId).orElseThrow(
+                JobApplicationService::listingNotFound);
+        JobApplication application = access.application();
+        boolean terminal = "REJECTED".equals(application.getStatus())
+                || "WITHDRAWN".equals(application.getStatus());
+        var history = statusHistory.findByApplicationIdOrderById(applicationId);
+        return new ApplicationDetailResponse(
+                application.getId(), application.getJobId(),
+                terminal ? snapshot.getFullName() : snapshot.getFullName(),
+                terminal ? null : snapshot.getEmail(),
+                terminal ? null : snapshot.getPhoneNumber(),
+                terminal ? null : snapshot.getCoverLetter(),
+                snapshot.getJobTitle(), snapshot.getCompanyName(), application.getStatus(),
+                application.getVersion(), application.getAppliedAt(),
+                terminal ? null : snapshot.getCvFileName(),
+                terminal ? null : snapshot.getCvContentType(),
+                terminal ? 0 : snapshot.getCvFileSize(),
+                history.stream()
+                        .map(item -> new ApplicationStatusHistoryResponse(item.getFromStatus(), item.getToStatus(),
+                                item.getActorUserId(), item.getOccurredAt(), item.getRejectionReason(),
+                                item.getInternalExplanation(), item.getCandidateFeedback()))
+                        .toList(),
+                history.stream()
+                        .map(com.guardwork.backend.application.model.ApplicationStatusHistory::getCandidateFeedback)
+                        .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null));
+    }
+
+    @Transactional
+    public ApplicationDetailResponse candidateDetail(Long userId, UUID applicationId) {
+        User user = requireActiveUser(userId, false);
+        if (!"ACTIVE".equals(user.getStatus())) {
+            throw new AppException(ErrorCode.ACCOUNT_SUSPENDED);
+        }
+        UUID candidateId = profiles.getOrCreateProfile(userId).getId();
+        JobApplication application = applications.findById(applicationId)
+                .filter(value -> value.getCandidateId().equals(candidateId))
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
+        ApplicationSnapshot snapshot = snapshots.findById(applicationId).orElseThrow(
+                () -> new IllegalStateException("Missing application snapshot"));
+        var history = statusHistory.findByApplicationIdOrderById(applicationId);
+        return new ApplicationDetailResponse(
+                application.getId(), application.getJobId(), snapshot.getFullName(), snapshot.getEmail(),
+                snapshot.getPhoneNumber(), snapshot.getCoverLetter(), snapshot.getJobTitle(),
+                snapshot.getCompanyName(), application.getStatus(), application.getVersion(),
+                application.getAppliedAt(), snapshot.getCvFileName(), snapshot.getCvContentType(),
+                snapshot.getCvFileSize(), history.stream().map(item -> new ApplicationStatusHistoryResponse(
+                        item.getFromStatus(), item.getToStatus(), null, item.getOccurredAt(), null, null,
+                        item.getCandidateFeedback())).toList(),
+                history.stream().map(com.guardwork.backend.application.model.ApplicationStatusHistory::getCandidateFeedback)
+                        .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null));
+    }
+
+    @Transactional
+    public ApplicationCvDownload companyCv(Long userId, Long jobId, UUID applicationId) {
+        CompanyApplicationAccess access = requireCompanyApplicationAccess(userId, jobId, applicationId);
+        if ("REJECTED".equals(access.application().getStatus())
+                || "WITHDRAWN".equals(access.application().getStatus())) {
+            throw listingNotFound();
+        }
+        ApplicationSnapshot snapshot = snapshots.findById(applicationId).orElseThrow(
+                JobApplicationService::listingNotFound);
+        if (!STORAGE_PROVIDER.equals(snapshot.getCvStorageProvider())) {
+            throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
+        }
+        MediaType contentType = MediaType.parseMediaType(snapshot.getCvContentType());
+        if (!MediaType.APPLICATION_PDF.equals(contentType)) {
+            throw new AppException(ErrorCode.CV_PREVIEW_UNSUPPORTED);
+        }
+        byte[] content = cvStorage.read(snapshot.getCvStorageKey(), "image", "pdf");
+        audit.recordLog(userId, "APPLICATION_CV_VIEWED", "APPLICATION", applicationId.toString(),
+                null, null, null, null, null);
+        return new ApplicationCvDownload(content, contentType, snapshot.getCvFileName());
+    }
+
+    private CompanyApplicationAccess requireCompanyApplicationAccess(Long userId, Long jobId, UUID applicationId) {
+        var access = companyAccess.findCurrentCompanyAccess(userId);
+        if (access == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "40302 NOT_COMPANY_MEMBER: Active Company membership required");
+        }
+        if (access.membership().getRole() == CompanyRole.ADMIN
+                || (access.membership().getRole() == CompanyRole.OWNER
+                    && !userId.equals(access.company().getOwnerUserId()))
+                || (access.membership().getRole() != CompanyRole.OWNER
+                    && access.membership().getRole() != CompanyRole.RECRUITER)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "40303 INSUFFICIENT_COMPANY_ROLE: Owner or Recruiter required");
+        }
+        if (access.company().getVerificationStatus() != VerificationStatus.VERIFIED) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "40305 COMPANY_NOT_VERIFIED: Company must be verified");
+        }
+        JobPosting job = jobPostings.lock(jobId, access.company().getId())
+                .orElseThrow(JobApplicationService::listingNotFound);
+        if (job.isStaffSuspended() || "SUSPENDED".equals(job.getStatus())) {
+            throw listingNotFound();
+        }
+        if (access.membership().getRole() == CompanyRole.RECRUITER
+                && assignments.current(jobId).stream().noneMatch(assignment ->
+                    assignment.getCompanyId().equals(access.company().getId())
+                            && assignment.getMembershipId().equals(access.membership().getId())
+                            && assignment.getMembershipJoinedAt().equals(access.membership().getJoinedAt()))) {
+            throw listingNotFound();
+        }
+        JobApplication application = applications.findById(applicationId)
+                .filter(value -> value.getJobId().equals(jobId)
+                        && value.getCompanyId().equals(access.company().getId()))
+                .orElseThrow(JobApplicationService::listingNotFound);
+        return new CompanyApplicationAccess(application);
+    }
+
+    private record CompanyApplicationAccess(JobApplication application) {}
+
+    public record ApplicationCvDownload(byte[] content, MediaType contentType, String fileName) {}
 
     private static ResponseStatusException invalidRequest(String field) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, "40001 INVALID_INPUT: Invalid " + field);

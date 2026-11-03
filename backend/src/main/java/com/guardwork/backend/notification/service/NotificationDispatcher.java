@@ -53,6 +53,8 @@ public class NotificationDispatcher {
               item.setCreatedAt(event.getCreatedAt());
               item.setJobId(event.getJobId());
               item.setRevisionId(event.getRevisionId());
+              item.setApplicationId(event.getApplicationId());
+              item.setCandidateFeedback(event.getCandidateFeedback());
               inbox.saveAndFlush(item);
             }
             event.setDeliveredAt(clock.instant());

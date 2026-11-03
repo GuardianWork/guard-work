@@ -89,6 +89,9 @@ class JobApplicationHttpTest {
         assertThat(database.queryForObject(
                 "SELECT count(*) FROM applications WHERE id=? AND candidate_id=? AND job_id=?",
                 Long.class, application, profile, job.id())).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM application_status_history "
+                        + "WHERE application_id=? AND to_status='SUBMITTED' AND actor_user_id=?",
+                Long.class, application, userId)).isEqualTo(1);
         Map<String, Object> snapshot = database.queryForMap(
                 "SELECT * FROM application_snapshots WHERE application_id=?", application);
         assertThat(snapshot.get("full_name")).isEqualTo("Nguyễn Văn An");
@@ -375,12 +378,20 @@ class JobApplicationHttpTest {
         database.update("UPDATE users SET email_verified=true WHERE id=?", recruiterId);
         long membership = addRecruiter(company, recruiterId);
         assign(job, company, membership, ownerId);
-        saveApplication(job, profile(userId(account())), "Assigned Candidate", "2026-10-31T12:00:00Z");
+        UUID application = saveApplication(job, profile(userId(account())), "Assigned Candidate", "2026-10-31T12:00:00Z");
 
         http.perform(get("/api/companies/me/jobs/{jobId}/applications", job.id())
                         .header("Authorization", recruiter))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.totalElements").value(1));
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}", job.id(), application)
+                        .header("Authorization", recruiter))
+                .andExpect(status().isOk());
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status", job.id(), application)
+                        .header("Authorization", recruiter).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"UNDER_REVIEW\",\"version\":0}"))
+                .andExpect(status().isOk());
 
         database.update("UPDATE job_assignments SET ended_at=now(),ended_by_user_id=?,end_reason='REVOKED' " +
                 "WHERE job_id=? AND membership_id=?", ownerId, job.id(), membership);
@@ -388,6 +399,14 @@ class JobApplicationHttpTest {
                         .header("Authorization", recruiter))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}", job.id(), application)
+                        .header("Authorization", recruiter))
+                .andExpect(status().isNotFound());
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status", job.id(), application)
+                        .header("Authorization", recruiter).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"SHORTLISTED\",\"version\":1}"))
+                .andExpect(status().isNotFound());
 
         assign(job, company, membership, ownerId);
         database.update("UPDATE company_memberships SET status='LEFT',ended_at=now(),ended_by_user_id=? " +
@@ -556,7 +575,7 @@ class JobApplicationHttpTest {
         saveApplication(job, profile(userId(account())), "Nguyễn% Văn", "2026-10-30T12:00:00Z");
         saveApplication(job, profile(userId(account())), "Nguyễn_ Văn", "2026-10-29T12:00:00Z");
         UUID viewed = saveApplication(job, profile(userId(account())), "Nguyễn Đức Anh", "2026-10-28T12:00:00Z");
-        database.update("UPDATE applications SET status='VIEWED' WHERE id=?", viewed);
+        database.update("UPDATE applications SET status='UNDER_REVIEW' WHERE id=?", viewed);
 
         http.perform(get("/api/companies/me/jobs/{jobId}/applications", job.id())
                         .queryParam("search", "%").header("Authorization", owner))
@@ -598,6 +617,464 @@ class JobApplicationHttpTest {
                             .queryParam("status", statusFilter).header("Authorization", owner))
                     .andExpect(status().isBadRequest());
         }
+    }
+
+    @Test
+    void companyAndCandidateDetailsReturnSubmittedSnapshotWithScopedPrivacy() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+
+        String candidate = account();
+        UUID candidateProfile = profile(userId(candidate));
+        UUID application = saveApplication(job, candidateProfile, "Nguyễn Văn An", "2026-10-31T12:00:00Z");
+        String route = "/api/companies/me/jobs/{jobId}/applications/{applicationId}";
+
+        http.perform(get(route, job.id(), application).header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.data.id").value(application.toString()))
+                .andExpect(jsonPath("$.data.candidateName").value("Nguyễn Văn An"))
+                .andExpect(jsonPath("$.data.email").value("candidate@example.vn"))
+                .andExpect(jsonPath("$.data.coverLetter").value("private note"))
+                .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+                .andExpect(jsonPath("$.data.version").value(0))
+                .andExpect(jsonPath("$.data.cvFileName").value("private.pdf"))
+                .andExpect(jsonPath("$.data.cvStorageKey").doesNotExist());
+
+        http.perform(get("/api/candidate/applications/{applicationId}", application)
+                        .header("Authorization", candidate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.email").value("candidate@example.vn"))
+                .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+
+        http.perform(get("/api/candidate/applications/{applicationId}", application)
+                        .header("Authorization", owner))
+                .andExpect(status().isNotFound());
+
+        http.perform(get(route, job.id() + 1, application).header("Authorization", owner))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void assignedCompanyReaderCanViewApplicationCvAndAuditAccess() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        UUID candidate = profile(userId(account()));
+        UUID application = saveApplication(job, candidate, "Applicant", "2026-10-31T12:00:00Z");
+        String cvKey = "applications/" + application + "/cv/test.pdf";
+        storage.put(new CandidateCvStorage.StoredCvAsset(cvKey, "pdf", PDF, 4, "image", "test"));
+        storage.putContent(cvKey, new byte[]{'P', 'D', 'F', '1'});
+
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv", job.id(), application)
+                        .header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Type", PDF))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Cache-Control", "no-store"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .bytes(new byte[]{'P', 'D', 'F', '1'}));
+
+        assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE action='APPLICATION_CV_VIEWED' AND target_id=?",
+                Long.class, application.toString())).isEqualTo(1);
+    }
+
+    @Test
+    void ownerCanAdvanceApplicationWithHistoryAndCandidateNotification() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        String candidate = account();
+        UUID profile = profile(userId(candidate));
+        UUID application = saveApplication(job, profile, "Applicant", "2026-10-31T12:00:00Z");
+        database.update("UPDATE applications SET version=200 WHERE id=?", application);
+        String route = "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status";
+
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("status", "UNDER_REVIEW", "version", 200))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("UNDER_REVIEW"))
+                .andExpect(jsonPath("$.data.version").value(201))
+                .andExpect(jsonPath("$.data.history.length()").value(2));
+        assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
+                Long.class, application)).isEqualTo(2);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_STATUS_CHANGED'",
+                Long.class, application)).isEqualTo(1);
+
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("status", "UNDER_REVIEW", "version", 201))))
+                .andExpect(status().isOk());
+        assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
+                Long.class, application)).isEqualTo(2);
+
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("status", "SHORTLISTED", "version", 200))))
+                .andExpect(status().isConflict());
+
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("status", "SHORTLISTED", "version", 201))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SHORTLISTED"));
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_STATUS_CHANGED'",
+                Long.class, application)).isEqualTo(2);
+    }
+
+    @Test
+    void sameSubmittedStatusIsAnIdempotentNoOp() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        UUID application = saveApplication(job, profile(userId(account())), "Applicant", "2026-10-31T12:00:00Z");
+
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status", job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"SUBMITTED\",\"version\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+        assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
+                Long.class, application)).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=?",
+                Long.class, application)).isZero();
+    }
+
+    @Test
+    void rejectionRollsBackStatusAndHistoryWhenNotificationIntentCannotBeStored() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        UUID application = saveApplication(job, profile(userId(account())), "Applicant", "2026-10-31T12:00:00Z");
+
+        database.execute("""
+                CREATE FUNCTION gw_application_fail_intent() RETURNS trigger AS $$
+                BEGIN
+                    IF NEW.application_id IS NOT NULL THEN
+                        RAISE EXCEPTION 'controlled application notification failure' USING ERRCODE='23514';
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql
+                """);
+        database.execute("CREATE TRIGGER gw_application_fail_intent BEFORE INSERT ON notification_outbox " +
+                "FOR EACH ROW EXECUTE FUNCTION gw_application_fail_intent()");
+        try {
+            http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                            "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status", job.id(), application)
+                            .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"status\":\"REJECTED\",\"version\":0,\"rejectionReason\":\"POSITION_FILLED\"}"))
+                    .andExpect(status().isInternalServerError());
+        } finally {
+            database.execute("DROP TRIGGER gw_application_fail_intent ON notification_outbox");
+            database.execute("DROP FUNCTION gw_application_fail_intent()");
+        }
+
+        assertThat(database.queryForObject("SELECT status FROM applications WHERE id=?", String.class, application))
+                .isEqualTo("SUBMITTED");
+        assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
+                Long.class, application)).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=?",
+                Long.class, application)).isZero();
+    }
+
+    @Test
+    void rejectionKeepsInternalReasonPrivateAndRevokesCompanyPersonalDataAccess() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        String candidate = account();
+        UUID profile = profile(userId(candidate));
+        UUID application = saveApplication(job, profile, "Applicant", "2026-10-31T12:00:00Z");
+        String statusRoute = "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status";
+
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                statusRoute, job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("status", "REJECTED", "version", 0,
+                                "rejectionReason", "OTHER", "internalExplanation", "internal only",
+                                "candidateFeedback", "Thank you for applying"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        String sameRejection = mapper.writeValueAsString(Map.of("status", "REJECTED", "version", 1,
+                "rejectionReason", "OTHER", "internalExplanation", "internal only",
+                "candidateFeedback", "Thank you for applying"));
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        statusRoute, job.id(), application).header("Authorization", owner)
+                        .contentType(MediaType.APPLICATION_JSON).content(sameRejection))
+                .andExpect(status().isOk());
+        String changedRetry = mapper.writeValueAsString(Map.of("status", "REJECTED", "version", 1,
+                "rejectionReason", "OTHER", "internalExplanation", "changed internal reason",
+                "candidateFeedback", "Changed feedback"));
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        statusRoute, job.id(), application).header("Authorization", owner)
+                        .contentType(MediaType.APPLICATION_JSON).content(changedRetry))
+                .andExpect(status().isBadRequest());
+
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}", job.id(), application)
+                        .header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.email").doesNotExist())
+                .andExpect(jsonPath("$.data.coverLetter").doesNotExist())
+                .andExpect(jsonPath("$.data.cvFileName").doesNotExist())
+                .andExpect(jsonPath("$.data.history[1].rejectionReason").value("OTHER"));
+
+        http.perform(get("/api/candidate/applications/{applicationId}", application)
+                        .header("Authorization", candidate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.candidateFeedback").value("Thank you for applying"))
+                .andExpect(jsonPath("$.data.history[1].rejectionReason").doesNotExist())
+                .andExpect(jsonPath("$.data.history[1].internalExplanation").doesNotExist())
+                .andExpect(jsonPath("$.data.history[1].actorUserId").doesNotExist());
+
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv", job.id(), application)
+                        .header("Authorization", owner))
+                .andExpect(status().isNotFound());
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_REJECTED' AND candidate_feedback=?",
+                Long.class, application, "Thank you for applying")).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND candidate_feedback='internal only'",
+                Long.class, application)).isZero();
+    }
+
+    @Test
+    void rejectionValidatesAllReasonsAndUnicodeTextBoundaries() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        String route = "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status";
+
+        String[] reasons = {"QUALIFICATIONS_MISMATCH", "EXPERIENCE_MISMATCH", "POSITION_FILLED", "OTHER"};
+        String[] startingStatuses = {"SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "SUBMITTED"};
+        for (int index = 0; index < reasons.length; index++) {
+            String reason = reasons[index];
+            UUID application = saveApplication(job, profile(userId(account())), "Applicant", "2026-10-31T12:00:00Z");
+            long version = 0;
+            if (!"SUBMITTED".equals(startingStatuses[index])) {
+                http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), application)
+                                .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                                .content(mapper.writeValueAsString(Map.of("status", startingStatuses[index], "version", 0))))
+                        .andExpect(status().isOk());
+                version = 1;
+            }
+            var body = new java.util.LinkedHashMap<String, Object>();
+            body.put("status", "REJECTED");
+            body.put("version", version);
+            body.put("rejectionReason", reason);
+            if ("OTHER".equals(reason)) body.put("internalExplanation", "Role requirements were not met");
+
+            http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), application)
+                            .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(body)))
+                    .andExpect(status().isOk());
+        }
+
+        UUID missingExplanation = saveApplication(job, profile(userId(account())), "Applicant", "2026-10-31T12:00:00Z");
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), missingExplanation)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"REJECTED\",\"version\":0,\"rejectionReason\":\"OTHER\",\"internalExplanation\":\"  \"}"))
+                .andExpect(status().isBadRequest());
+
+        String thousandCodePoints = "😀".repeat(1000);
+        UUID atLimit = saveApplication(job, profile(userId(account())), "Applicant", "2026-10-31T12:00:00Z");
+        var atLimitBody = new java.util.LinkedHashMap<String, Object>();
+        atLimitBody.put("status", "REJECTED");
+        atLimitBody.put("version", 0);
+        atLimitBody.put("rejectionReason", "OTHER");
+        atLimitBody.put("internalExplanation", thousandCodePoints);
+        atLimitBody.put("candidateFeedback", thousandCodePoints);
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), atLimit)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(atLimitBody)))
+                .andExpect(status().isOk());
+
+        for (String field : new String[]{"internalExplanation", "candidateFeedback"}) {
+            UUID overLimit = saveApplication(job, profile(userId(account())), "Applicant", "2026-10-31T12:00:00Z");
+            var body = new java.util.LinkedHashMap<String, Object>();
+            body.put("status", "REJECTED");
+            body.put("version", 0);
+            body.put("rejectionReason", "OTHER");
+            body.put("internalExplanation", "Valid explanation");
+            body.put("candidateFeedback", "Valid feedback");
+            body.put(field, "😀".repeat(1001));
+            http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), overLimit)
+                            .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(body)))
+                    .andExpect(status().isBadRequest());
+            assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
+                    Long.class, overLimit)).isEqualTo(1);
+            assertThat(database.queryForObject("SELECT status FROM applications WHERE id=?", String.class, overLimit))
+                    .isEqualTo("SUBMITTED");
+        }
+    }
+
+    @Test
+    void candidateWithdrawalNotifiesCurrentOwnerAndAssignedRecruiterOnce() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        String recruiter = account();
+        long recruiterId = userId(recruiter);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", recruiterId);
+        long membershipId = addRecruiter(company, recruiterId);
+        Job job = publishedJob(company, ownerId);
+        assign(job, company, membershipId, ownerId);
+        String candidate = account();
+        UUID profile = profile(userId(candidate));
+        UUID application = saveApplication(job, profile, "Applicant", "2026-10-31T12:00:00Z");
+        String route = "/api/candidate/applications/{applicationId}/withdraw";
+
+        http.perform(post(route, application).header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("WITHDRAWN"));
+        assertThat(database.queryForList("SELECT recipient_user_id FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_WITHDRAWN' ORDER BY recipient_user_id",
+                Long.class, application)).containsExactlyInAnyOrder(ownerId, recruiterId);
+
+        http.perform(post(route, application).header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\":1}"))
+                .andExpect(status().isOk());
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_WITHDRAWN'",
+                Long.class, application)).isEqualTo(2);
+
+        http.perform(post(route, application).header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\":0}"))
+                .andExpect(status().isConflict());
+
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status", job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"SHORTLISTED\",\"version\":1}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void candidateCanWithdrawFromEveryActiveStageButNotForAnotherCandidate() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        String statusRoute = "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status";
+        String withdrawalRoute = "/api/candidate/applications/{applicationId}/withdraw";
+
+        for (String stage : new String[]{"SUBMITTED", "UNDER_REVIEW", "SHORTLISTED"}) {
+            String candidate = account();
+            UUID application = saveApplication(job, profile(userId(candidate)), "Applicant", "2026-10-31T12:00:00Z");
+            long version = 0;
+            if (!"SUBMITTED".equals(stage)) {
+                http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(statusRoute, job.id(), application)
+                                .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                                .content(mapper.writeValueAsString(Map.of("status", stage, "version", 0))))
+                        .andExpect(status().isOk());
+                version = 1;
+            }
+            String foreignCandidate = account();
+            http.perform(post(withdrawalRoute, application).header("Authorization", foreignCandidate)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(Map.of("version", version))))
+                    .andExpect(status().isNotFound());
+            http.perform(post(withdrawalRoute, application).header("Authorization", owner)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(Map.of("version", version))))
+                    .andExpect(status().isNotFound());
+            http.perform(post(withdrawalRoute, application).header("Authorization", candidate)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(Map.of("version", version))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.status").value("WITHDRAWN"));
+            assertThat(database.queryForObject("SELECT count(*) FROM application_status_history " +
+                            "WHERE application_id=? AND from_status=? AND to_status='WITHDRAWN'",
+                    Long.class, application, stage)).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void simultaneousRejectionAndWithdrawalHaveOneVersionedWinner() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        String candidate = account();
+        UUID application = saveApplication(job, profile(userId(candidate)), "Applicant", "2026-10-31T12:00:00Z");
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var reject = pool.submit(() -> {
+                start.await();
+                return http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                                "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status", job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"REJECTED\",\"version\":0,\"rejectionReason\":\"POSITION_FILLED\"}"))
+                        .andReturn().getResponse().getStatus();
+            });
+            var withdraw = pool.submit(() -> {
+                start.await();
+                return http.perform(post("/api/candidate/applications/{applicationId}/withdraw", application)
+                        .header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":0}"))
+                        .andReturn().getResponse().getStatus();
+            });
+            start.countDown();
+            int rejectStatus = reject.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            int withdrawStatus = withdraw.get(20, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(java.util.List.of(rejectStatus, withdrawStatus)).contains(200).contains(409);
+            assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
+                    Long.class, application)).isEqualTo(2);
+            assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=?",
+                    Long.class, application)).isEqualTo(1);
+            assertThat(database.queryForObject("SELECT status FROM applications WHERE id=?", String.class, application))
+                    .isIn("REJECTED", "WITHDRAWN");
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void nonPdfApplicationCvReturnsControlledNotAcceptable() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        UUID candidate = profile(userId(account()));
+        UUID application = saveApplication(job, candidate, "Applicant", "2026-10-31T12:00:00Z",
+                UUID.randomUUID(), "application/msword");
+
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv", job.id(), application)
+                        .header("Authorization", owner))
+                .andExpect(status().isNotAcceptable());
     }
 
     static String phone() {
@@ -657,19 +1134,28 @@ class JobApplicationHttpTest {
     }
 
     UUID saveApplication(Job job, UUID candidateProfile, String candidateName, String appliedAt, UUID id) {
+        return saveApplication(job, candidateProfile, candidateName, appliedAt, id, PDF);
+    }
+
+    UUID saveApplication(Job job, UUID candidateProfile, String candidateName, String appliedAt,
+                         UUID id, String contentType) {
         database.update("""
                 INSERT INTO applications(
                     id,candidate_id,job_id,company_id,submitted_revision_id,status,applied_at,updated_at)
                 VALUES (?,?,?, ?,?,'SUBMITTED',?::timestamptz,?::timestamptz)
                 """, id, candidateProfile, job.id(), job.companyId(), job.revisionId(), appliedAt, appliedAt);
         database.update("""
+                INSERT INTO application_status_history(application_id,from_status,to_status,actor_user_id,occurred_at)
+                SELECT ?,NULL,'SUBMITTED',user_id,?::timestamptz FROM candidate_profiles WHERE id=?
+                """, id, appliedAt, candidateProfile);
+        database.update("""
                 INSERT INTO application_snapshots(
                     application_id,full_name,email,phone_number,cover_letter,job_title,company_name,
                     cv_storage_key,cv_file_name,cv_content_type,cv_file_size,captured_at)
                 VALUES (?,?, 'candidate@example.vn','0901234567','private note','Backend Engineer',
                     'Private Company',?,'private.pdf',
-                    'application/pdf',2048,?::timestamptz)
-                """, id, candidateName, "applications/" + id + "/cv/test.pdf", appliedAt);
+                    ? ,2048,?::timestamptz)
+                """, id, candidateName, "applications/" + id + "/cv/test.pdf", contentType, appliedAt);
         return id;
     }
 
@@ -746,15 +1232,21 @@ class JobApplicationHttpTest {
 
     static final class FakeCvStorage implements CandidateCvStorage {
         private final Map<String, StoredCvAsset> assets = new ConcurrentHashMap<>();
+        private final Map<String, byte[]> contents = new ConcurrentHashMap<>();
         private volatile boolean failCopy;
 
         void reset() {
             assets.clear();
+            contents.clear();
             failCopy = false;
         }
 
         void put(StoredCvAsset asset) {
             assets.put(asset.publicId(), asset);
+        }
+
+        void putContent(String publicId, byte[] content) {
+            contents.put(publicId, content);
         }
 
         void remove(String publicId) {
@@ -802,6 +1294,12 @@ class JobApplicationHttpTest {
         @Override
         public String createDownloadUrl(String publicId, String resourceType, String format, Duration ttl) {
             return "https://fake.example/" + publicId;
+        }
+
+        @Override
+        public byte[] read(String publicId, String resourceType, String format) {
+            return Optional.ofNullable(contents.get(publicId)).orElseThrow(
+                    () -> new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE));
         }
     }
 }
