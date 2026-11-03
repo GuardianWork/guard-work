@@ -15,6 +15,7 @@ import com.guardwork.backend.candidate.cvs.CandidateCvService;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.job.service.JobPublicationService;
+import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,6 +63,7 @@ class JobApplicationServiceTest {
     @Mock CandidateCvRepository cvs;
     @Mock CandidateCvService cvService;
     @Mock JobPublicationService jobs;
+    @Mock CompanyMembershipRepository memberships;
     @Mock JobApplicationRepository applications;
     @Mock ApplicationSnapshotRepository snapshots;
     @Mock Clock clock;
@@ -162,6 +164,20 @@ class JobApplicationServiceTest {
             assertEquals("Acme", snapshot.getValue().getCompanyName());
             assertEquals(cvId, snapshot.getValue().getSourceCvId());
             assertEquals("applications/abc/cv/snapshot.pdf", snapshot.getValue().getCvStorageKey());
+        }
+
+        @Test
+        void rejectsCurrentCompanyMemberBeforeCopyingCvOrWritingApplication() {
+            when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
+            when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
+            when(jobs.applicationContext(JOB_ID)).thenReturn(availableJob());
+            when(memberships.findActiveCompanyId(USER_ID)).thenReturn(Optional.of(COMPANY_ID));
+
+            AppException failure = assertThrows(AppException.class,
+                    () -> service.submit(USER_ID, request("Nguyễn Văn An", null)));
+
+            assertEquals(ErrorCode.FORBIDDEN, failure.getErrorCode());
+            verifyNoInteractions(cvService, applications, snapshots);
         }
 
         @Test

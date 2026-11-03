@@ -58,6 +58,11 @@ public class JobSearchService {
   }
 
   public PageResponse<JobPublicationService.PublicDetail> search(JobSearchRequest request, Pageable pageable) {
+    return search(request, pageable, null);
+  }
+
+  public PageResponse<JobPublicationService.PublicDetail> search(
+      JobSearchRequest request, Pageable pageable, Long callerUserId) {
     pageable = PaginationUtils.validateAndBound(pageable);
 
     String normalizedKeyword = escapeLike(blankToNull(request.keyword()));
@@ -89,6 +94,7 @@ public class JobSearchService {
             salaryMax,
             deadlineInstant,
             now,
+            callerUserId,
             pageable);
 
     List<JobPublicationService.PublicDetail> content = new ArrayList<>();

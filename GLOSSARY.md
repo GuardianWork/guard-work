@@ -1,8 +1,16 @@
 # GuardWork
 
-Language for employer onboarding and Company participation. Company authority and Company approval are separate concepts.
+Language for employer onboarding, Company participation, and Applications. Company authority and Company approval are separate concepts.
 
 ## Language
+
+**Application**:
+A Candidate's submission to one Job Posting, carrying the submitted evidence and its current recruitment status.
+_Avoid_: Candidate profile, CV as a synonym for Application
+
+**Application Snapshot**:
+The immutable record of the Candidate information and evidence captured when an Application was submitted.
+_Avoid_: Current Candidate profile, live CV
 
 **Employer Applicant**:
 A registered person entering the employer journey who has not yet obtained a Company membership through invitation acceptance or successful new-Company dossier submission.

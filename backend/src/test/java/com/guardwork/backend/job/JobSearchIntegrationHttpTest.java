@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guardwork.backend.auth.service.JwtService;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -14,6 +15,8 @@ import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -33,6 +36,7 @@ class JobSearchIntegrationHttpTest {
   @Autowired WebApplicationContext context;
   @Autowired JdbcTemplate jdbc;
   @Autowired ObjectMapper mapper;
+  @Autowired JwtService jwt;
   MockMvc http;
   @Autowired PlatformTransactionManager transactionManager;
   private TransactionTemplate tx;
@@ -114,6 +118,79 @@ class JobSearchIntegrationHttpTest {
     });
     postingIds.add(postingId);
     return postingId;
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"RECRUITER", "ADMIN", "OWNER"})
+  void excludesCurrentCompanyBeforePaginationUsingPersistedMembership(String role) throws Exception {
+    String keyword = "MEMBERSHIP-" + System.nanoTime();
+    long caller = uniqueUser("search-member");
+    var identity = jdbc.queryForMap("SELECT username,email FROM users WHERE id=?", caller);
+    String bearer = "Bearer " + jwt.generateAccessToken(caller,
+        (String) identity.get("username"), (String) identity.get("email"), "USER");
+    long owner = "OWNER".equals(role) ? caller : uniqueUser("search-owner");
+    long currentCompany = company(owner, "current", "Current Employer", true, false);
+    if (!"OWNER".equals(role)) {
+      jdbc.update("INSERT INTO company_memberships(company_id,user_id,role,status,joined_at) "
+          + "VALUES (?,?,?,'ACTIVE',now())", currentCompany, caller, role);
+    }
+    long otherOwner = uniqueUser("other-owner");
+    long otherCompany = company(otherOwner, "other", "Other Employer", true, false);
+    Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+    for (int i = 0; i < 3; i++) {
+      insertPosting(currentCompany, owner, keyword, "Current employer", "Ha Noi", "FULL_TIME", "ONSITE",
+          8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now.minus(i, ChronoUnit.HOURS));
+    }
+    long visible = insertPosting(otherCompany, otherOwner, keyword, "Other employer", "Ha Noi", "FULL_TIME", "ONSITE",
+        8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now.minus(1, ChronoUnit.DAYS));
+    insertPosting(otherCompany, otherOwner, keyword, "Other employer", "Ha Noi", "FULL_TIME", "ONSITE",
+        8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now.minus(2, ChronoUnit.DAYS));
+    insertPosting(otherCompany, otherOwner, keyword, "Other employer", "Ha Noi", "FULL_TIME", "ONSITE",
+        8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now.minus(3, ChronoUnit.DAYS));
+
+    http.perform(get("/api/jobs/search").header("Authorization", bearer)
+            .param("keyword", keyword).param("size", "2"))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Cache-Control", "no-store"))
+        .andExpect(jsonPath("$.data.content.length()").value(2))
+        .andExpect(jsonPath("$.data.content[0].id").value(visible))
+        .andExpect(jsonPath("$.data.content[0].company.id").value(otherCompany))
+        .andExpect(jsonPath("$.data.content[1].company.id").value(otherCompany))
+        .andExpect(jsonPath("$.data.totalElements").value(3))
+        .andExpect(jsonPath("$.data.totalPages").value(2));
+    http.perform(get("/api/jobs/search").header("Authorization", bearer)
+            .param("keyword", keyword).param("size", "2").param("page", "1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content.length()").value(1))
+        .andExpect(jsonPath("$.data.content[0].company.id").value(otherCompany))
+        .andExpect(jsonPath("$.data.totalElements").value(3));
+    http.perform(get("/api/jobs/search").param("keyword", keyword))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(6));
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"NONE", "LEFT", "REMOVED"})
+  void noActiveMembershipDoesNotExcludeJobs(String membershipStatus) throws Exception {
+    long caller = uniqueUser("former-member");
+    var identity = jdbc.queryForMap("SELECT username,email FROM users WHERE id=?", caller);
+    String bearer = "Bearer " + jwt.generateAccessToken(caller,
+        (String) identity.get("username"), (String) identity.get("email"), "USER");
+    long owner = uniqueUser("former-owner");
+    long employer = company(owner, "former", "Former Employer", true, false);
+    String keyword = "FORMER-" + System.nanoTime();
+    Instant now = Instant.now();
+    insertPosting(employer, owner, keyword, "Former employer", "Ha Noi", "FULL_TIME", "ONSITE",
+        8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now);
+    if (!"NONE".equals(membershipStatus)) {
+      jdbc.update("INSERT INTO company_memberships(company_id,user_id,role,status,joined_at) "
+          + "VALUES (?,?,'RECRUITER','ACTIVE',now())", employer, caller);
+      http.perform(get("/api/jobs/search").header("Authorization", bearer).param("keyword", keyword))
+          .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+      jdbc.update("UPDATE company_memberships SET status=?,ended_at=now(),ended_by_user_id=? "
+          + "WHERE user_id=? AND status='ACTIVE'", membershipStatus, caller, caller);
+    }
+    http.perform(get("/api/jobs/search").header("Authorization", bearer).param("keyword", keyword))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
   }
 
   @Test
