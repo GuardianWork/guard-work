@@ -15,6 +15,12 @@ public interface CandidateApplicationProjection {
 
     String getCompanyName();
 
+    String getJobLocation();
+
+    String getWorkMode();
+
+    Instant getJobDeadline();
+
     String getStatus();
 
     Instant getAppliedAt();

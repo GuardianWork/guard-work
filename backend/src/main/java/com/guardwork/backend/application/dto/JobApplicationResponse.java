@@ -9,6 +9,9 @@ public record JobApplicationResponse(
         String jobTitle,
         Long companyId,
         String companyName,
+        String location,
+        String workMode,
+        Instant deadline,
         String status,
         Instant appliedAt,
         String cvFileName

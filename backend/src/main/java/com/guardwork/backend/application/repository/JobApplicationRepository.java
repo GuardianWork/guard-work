@@ -33,6 +33,7 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication, 
 
     @Query(value = """
             SELECT a.id AS id, a.job_id AS "jobId", a.version AS version, s.job_title AS "jobTitle", s.company_name AS "companyName",
+                   s.job_location AS "jobLocation", s.work_mode AS "workMode", s.job_deadline AS "jobDeadline",
                    a.status AS status, a.applied_at AS "appliedAt", s.cv_file_name AS "cvFileName"
             FROM applications a
             JOIN application_snapshots s ON s.application_id = a.id

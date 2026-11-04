@@ -135,6 +135,9 @@ public class JobApplicationService {
         snapshot.setCoverLetter(coverLetter);
         snapshot.setJobTitle(job.title());
         snapshot.setCompanyName(job.companyName());
+        snapshot.setJobLocation(job.location());
+        snapshot.setWorkMode(job.workMode());
+        snapshot.setJobDeadline(job.deadline());
         snapshot.setSourceCvId(cvSnapshot.sourceCvId());
         snapshot.setCvStorageKey(cvSnapshot.storageKey());
         snapshot.setCvStorageProvider(STORAGE_PROVIDER);
@@ -172,6 +175,9 @@ public class JobApplicationService {
                 job.title(),
                 job.companyId(),
                 job.companyName(),
+                job.location(),
+                job.workMode(),
+                job.deadline(),
                 STATUS_SUBMITTED,
                 appliedAt,
                 cvSnapshot.fileName()
@@ -203,6 +209,9 @@ public class JobApplicationService {
                         application.getJobId(),
                         application.getJobTitle(),
                         application.getCompanyName(),
+                        application.getJobLocation(),
+                        application.getWorkMode(),
+                        application.getJobDeadline(),
                         application.getStatus(),
                         application.getAppliedAt(),
                         application.getCvFileName(),

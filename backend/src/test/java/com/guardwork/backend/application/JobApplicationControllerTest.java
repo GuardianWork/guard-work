@@ -62,7 +62,9 @@ class JobApplicationControllerTest {
         when(applicationService.submit(eq(USER_ID), any(SubmitApplicationRequest.class)))
                 .thenReturn(new JobApplicationResponse(
                         UUID.randomUUID(), JOB_ID, "Backend Engineer", 20L, "Acme",
-                        "SUBMITTED", Instant.parse("2026-10-30T09:00:00Z"), "CV.pdf"));
+                        "2 Queen Place, Ho Chi Minh", "HYBRID",
+                        Instant.parse("2026-11-30T17:00:00Z"), "SUBMITTED",
+                        Instant.parse("2026-10-30T09:00:00Z"), "CV.pdf"));
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
