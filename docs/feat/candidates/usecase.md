@@ -218,7 +218,7 @@
   - **Luồng chính:**
     1. Ứng viên chọn mục "Công việc đã ứng tuyển" từ menu điều hướng cá nhân.
     2. Hệ thống lấy danh sách đơn ứng tuyển của ứng viên từ cơ sở dữ liệu.
-    3. Hệ thống hiển thị danh sách gồm: Tên vị trí tuyển dụng, Tên công ty, Ngày ứng tuyển, Hồ sơ đã đính kèm và Trạng thái ứng tuyển (Đã nộp, Đã xem, Từ chối).
+    3. Hệ thống hiển thị danh sách gồm: Tên vị trí tuyển dụng, Tên công ty, Ngày ứng tuyển, Hồ sơ đã đính kèm và Trạng thái ứng tuyển (Đã nộp, Đang xem xét, Được chọn sơ bộ, Từ chối, Đã rút).
     4. Ứng viên có thể chọn lọc đơn ứng tuyển theo trạng thái hoặc tìm kiếm theo tên công việc/công ty.
     5. Hệ thống hiển thị kết quả lọc/tìm kiếm tương ứng.
   - **Luồng thay thế:**
