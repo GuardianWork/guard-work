@@ -1094,6 +1094,67 @@ class JobApplicationHttpTest {
         return mapper.writeValueAsString(body);
     }
 
+    @Test
+    void candidateListFiltersPaginatesSearchesStatusAndDownloadsCv() throws Exception {
+        String candidate = account();
+        long candidateUserId = userId(candidate);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", candidateUserId);
+        UUID profileId = profile(candidateUserId);
+        UUID cvId = cv(profileId);
+
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long companyId = company();
+        Job job = publishedJob(companyId, ownerId);
+
+        JsonNode submitted = com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        String response = http.perform(post(APPLICATIONS)
+                        .header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(submitBody(job.id(), cvId, "Nguyễn Văn An", "Em quan tâm")))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID applicationId = UUID.fromString(mapper.readTree(response).path("data").path("id").asText());
+
+        database.update("UPDATE applications SET status='UNDER_REVIEW' WHERE id=?", applicationId);
+
+        http.perform(get(APPLICATIONS).header("Authorization", candidate)
+                        .queryParam("status", "UNDER_REVIEW"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(applicationId.toString()))
+                .andExpect(jsonPath("$.data.content[0].status").value("UNDER_REVIEW"))
+                .andExpect(jsonPath("$.data.content[0].cvFileName").value("CV.pdf"));
+
+        http.perform(get(APPLICATIONS).header("Authorization", candidate)
+                        .queryParam("status", "REJECTED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(0))
+                .andExpect(jsonPath("$.data.content").isEmpty());
+
+        http.perform(get(APPLICATIONS).header("Authorization", candidate)
+                        .queryParam("search", "Backend")
+                        .queryParam("page", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content").isEmpty());
+
+        http.perform(get(APPLICATIONS).header("Authorization", candidate)
+                        .queryParam("status", "VIEWED"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(40000));
+
+        http.perform(get(APPLICATIONS + "/" + applicationId + "/cv/download-url")
+                        .header("Authorization", candidate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fileName").value("CV.pdf"))
+                .andExpect(jsonPath("$.data.url").isNotEmpty())
+                .andExpect(jsonPath("$.data.expiresAt").isNotEmpty());
+
+        assertThat(submitted).isNotNull();
+    }
+
     String account() throws Exception {
         String name = "app_user_" + UUID.randomUUID().toString().replace("-", "");
         String email = name + "@example.vn";
