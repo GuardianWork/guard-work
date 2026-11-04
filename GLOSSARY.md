@@ -12,6 +12,22 @@ _Avoid_: Candidate profile, CV as a synonym for Application
 The immutable record of the Candidate information and evidence captured when an Application was submitted.
 _Avoid_: Current Candidate profile, live CV
 
+**Application Status**:
+The current recruitment step or terminal result for one Application. Viewing submitted evidence does not itself change this status.
+_Avoid_: CV status, separate stage and outcome as synonyms
+
+**Application Status History**:
+The append-only record of an Application's submission and subsequent status changes, preserving who acted and when.
+_Avoid_: Editable activity log, current status
+
+**Candidate-facing Feedback**:
+Rejection feedback intentionally shared with the Candidate, separate from the Company's internal reason and explanation.
+_Avoid_: Internal rejection reason, Internal Note
+
+**Application Withdrawal**:
+A Candidate's terminal decision to stop recruitment for their own Application. Company Members cannot reverse it or perform it on the Candidate's behalf.
+_Avoid_: Company rejection, Job Posting closure
+
 **Employer Applicant**:
 A registered person entering the employer journey who has not yet obtained a Company membership through invitation acceptance or successful new-Company dossier submission.
 _Avoid_: Recruiter when no Recruiter membership exists, Company Owner before a Company is created

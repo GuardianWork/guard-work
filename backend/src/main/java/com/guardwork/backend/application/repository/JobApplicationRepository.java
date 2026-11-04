@@ -2,6 +2,8 @@ package com.guardwork.backend.application.repository;
 
 import com.guardwork.backend.application.model.JobApplication;
 import org.springframework.data.jpa.repository.JpaRepository;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Query;
@@ -16,6 +18,14 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication, 
     boolean existsByCandidateIdAndJobId(UUID candidateId, Long jobId);
 
     Optional<JobApplication> findByCandidateIdAndJobId(UUID candidateId, Long jobId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from JobApplication a where a.id=:id")
+    Optional<JobApplication> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("select a.jobId as jobId, a.companyId as companyId, a.candidateId as candidateId "
+            + "from JobApplication a where a.id=:id")
+    Optional<ApplicationRouteProjection> findRouteById(@Param("id") UUID id);
 
     List<JobApplication> findByCandidateIdOrderByAppliedAtDesc(UUID candidateId);
 

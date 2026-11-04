@@ -36,6 +36,12 @@ public class UserNotification {
   @Column(name = "revision_id")
   private Long revisionId;
 
+  @Column(name = "application_id")
+  private UUID applicationId;
+
+  @Column(name = "candidate_feedback", length = 1000)
+  private String candidateFeedback;
+
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 

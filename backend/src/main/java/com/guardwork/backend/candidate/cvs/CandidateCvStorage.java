@@ -30,6 +30,9 @@ public interface CandidateCvStorage {
 
     String createDownloadUrl(String publicId, String resourceType, String format, Duration ttl);
 
+    /** Fetches one already-authorized application copy without returning its signed URL to a client. */
+    byte[] read(String publicId, String resourceType, String format);
+
     record UploadSignature(
             String url,
             String apiKey,

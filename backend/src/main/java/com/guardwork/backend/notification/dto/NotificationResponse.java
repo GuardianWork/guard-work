@@ -2,6 +2,7 @@ package com.guardwork.backend.notification.dto;
 
 import com.guardwork.backend.notification.model.UserNotification;
 import java.time.Instant;
+import java.util.UUID;
 
 public record NotificationResponse(
     Long id,
@@ -11,7 +12,9 @@ public record NotificationResponse(
     Instant createdAt,
     Instant readAt,
     Long jobId,
-    Long revisionId) {
+    Long revisionId,
+    UUID applicationId,
+    String candidateFeedback) {
   public static NotificationResponse from(UserNotification n) {
     return new NotificationResponse(
         n.getId(),
@@ -21,6 +24,8 @@ public record NotificationResponse(
         n.getCreatedAt(),
         n.getReadAt(),
         n.getJobId(),
-        n.getRevisionId());
+        n.getRevisionId(),
+        n.getApplicationId(),
+        n.getCandidateFeedback());
   }
 }

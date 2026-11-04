@@ -10,6 +10,7 @@ import java.util.*;
 public interface JobAssignmentRepository extends JpaRepository<JobAssignment, Long> {
   List<JobAssignment> findByMembershipIdAndEndedAtIsNullOrderByJobId(Long membershipId);
   List<JobAssignment> findByJobIdAndMembershipIdAndEndedAtIsNull(Long jobId, Long membershipId);
+  List<JobAssignment> findByJobIdAndEndedAtIsNullOrderById(Long jobId);
 
   @Query("""
       select a from JobAssignment a, CompanyMembership m, User u

@@ -51,10 +51,12 @@ public enum ErrorCode {
     DUPLICATE_CV(40902, "This CV has already been registered.", HttpStatus.CONFLICT),
     IDENTIFIER_UNAVAILABLE(40930, "The requested phone number is already used by another account.", HttpStatus.CONFLICT),
     APPLICATION_ALREADY_SUBMITTED(40903, "You have already applied to this job.", HttpStatus.CONFLICT),
+    APPLICATION_VERSION_CONFLICT(40905, "This application changed. Refresh it and try again.", HttpStatus.CONFLICT),
     JOB_NOT_ACCEPTING_APPLICATIONS(40904, "This job posting is no longer accepting applications.", HttpStatus.CONFLICT),
 
     // --- SERVICE UNAVAILABLE (503) ---
     CV_STORAGE_UNAVAILABLE(50300, "CV storage is temporarily unavailable. Please try again later.", HttpStatus.SERVICE_UNAVAILABLE),
+    CV_PREVIEW_UNSUPPORTED(40600, "This CV format cannot be viewed inline.", HttpStatus.NOT_ACCEPTABLE),
     APPLICATION_CV_COPY_FAILED(50301, "The CV could not be attached to your application. Please try again later.", HttpStatus.SERVICE_UNAVAILABLE),
 
     // --- TOO MANY REQUESTS (429) ---

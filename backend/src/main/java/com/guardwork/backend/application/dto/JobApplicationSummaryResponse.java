@@ -10,5 +10,7 @@ public record JobApplicationSummaryResponse(
         String companyName,
         String status,
         Instant appliedAt,
-        String cvFileName
+        String cvFileName,
+        long version,
+        String candidateFeedback
 ) {}

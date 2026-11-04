@@ -54,4 +54,24 @@ public class NotificationIntentService {
     outbox.saveAndFlush(intent);
     return intent.getEventId();
   }
+
+  @Transactional(propagation = Propagation.MANDATORY)
+  public UUID recordApplication(Long recipient, String eventType, Company company, Long jobId,
+      UUID applicationId, String candidateFeedback, Instant eventTime) {
+    if (!Set.of("APPLICATION_STATUS_CHANGED", "APPLICATION_REJECTED", "APPLICATION_WITHDRAWN")
+        .contains(eventType)) throw new IllegalArgumentException("Unsupported application notification");
+    var intent = new NotificationOutbox();
+    intent.setEventId(UUID.randomUUID());
+    intent.setRecipientUserId(recipient);
+    intent.setEventType(eventType);
+    intent.setCompanyId(company.getId());
+    intent.setCompanyName(company.getName());
+    intent.setJobId(jobId);
+    intent.setApplicationId(applicationId);
+    intent.setCandidateFeedback(candidateFeedback);
+    intent.setCreatedAt(eventTime);
+    intent.setNextAttemptAt(eventTime);
+    outbox.saveAndFlush(intent);
+    return intent.getEventId();
+  }
 }
