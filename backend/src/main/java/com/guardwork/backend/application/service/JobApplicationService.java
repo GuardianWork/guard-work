@@ -1,5 +1,6 @@
 package com.guardwork.backend.application.service;
 
+import com.guardwork.backend.application.dto.ApplicationCvDownloadResponse;
 import com.guardwork.backend.application.dto.ApplicationCvOption;
 import com.guardwork.backend.application.dto.ApplicationDetailResponse;
 import com.guardwork.backend.application.dto.ApplicationStatusHistoryResponse;
@@ -16,6 +17,8 @@ import com.guardwork.backend.application.repository.ApplicationSnapshotRepositor
 import com.guardwork.backend.application.repository.ApplicationStatusHistoryRepository;
 import com.guardwork.backend.application.repository.JobApplicationRepository;
 import com.guardwork.backend.candidate.CandidateProfile;
+import com.guardwork.backend.candidate.cvs.CandidateCvStorage;
+import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.candidate.CandidateProfileService;
 import com.guardwork.backend.candidate.cvs.CandidateCv;
 import com.guardwork.backend.candidate.cvs.CandidateCvRepository;
@@ -57,8 +60,19 @@ import java.util.UUID;
 public class JobApplicationService {
 
     private static final String STATUS_SUBMITTED = "SUBMITTED";
+    private static final String STATUS_UNDER_REVIEW = "UNDER_REVIEW";    private static final String STATUS_REJECTED = "REJECTED";
     private static final String STORAGE_PROVIDER = "CLOUDINARY";
     private static final String DUPLICATE_CONSTRAINT = "uk_applications_candidate_job";
+    private static final java.time.Duration DOWNLOAD_URL_TTL = java.time.Duration.ofMinutes(15);
+
+    private static final java.util.Map<String, String> CONTENT_TYPE_TO_FORMAT = java.util.Map.of(
+            "application/pdf", "pdf",
+            "application/msword", "doc",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx");
+    private static final java.util.Map<String, String> FORMAT_TO_RESOURCE_TYPE = java.util.Map.of(
+            "pdf", "image",
+            "doc", "raw",
+            "docx", "raw");
 
     UserRepository users;
     CandidateProfileService profiles;
@@ -164,33 +178,64 @@ public class JobApplicationService {
         );
     }
 
-    @Transactional
-    public java.util.List<JobApplicationSummaryResponse> list(Long userId) {
+    @Transactional(readOnly = true)
+    public PageResponse<JobApplicationSummaryResponse> list(Long userId, String search, String status, int page, int size) {
         User user = requireActiveUser(userId, false);
         if (!"ACTIVE".equals(user.getStatus())) {
             throw new AppException(ErrorCode.ACCOUNT_SUSPENDED);
         }
+        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
+            throw invalid("pagination");
+        }
+        if (status != null && !java.util.List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "REJECTED",
+                "WITHDRAWN").contains(status)) {
+            throw invalid("status");
+        }
+        String normalizedSearch = normalizeCandidateSearch(search);
+
         CandidateProfile profile = profiles.getOrCreateProfile(userId);
         UUID candidateId = profile.getId();
-        return applications.findByCandidateIdOrderByAppliedAtDesc(candidateId).stream()
-                .map(application -> {
-                    ApplicationSnapshot snapshot = snapshots.findById(application.getId()).orElseThrow(
-                            () -> new IllegalStateException("Missing application snapshot"));
-                    return new JobApplicationSummaryResponse(
-                            application.getId(),
-                            application.getJobId(),
-                            snapshot.getJobTitle(),
-                            snapshot.getCompanyName(),
-                            application.getStatus(),
-                            application.getAppliedAt(),
-                            snapshot.getCvFileName(),
-                            application.getVersion(),
-                            statusHistory.findByApplicationIdOrderById(application.getId()).stream()
-                                    .map(ApplicationStatusHistory::getCandidateFeedback)
-                                    .filter(java.util.Objects::nonNull)
-                                    .reduce((first, second) -> second).orElse(null));
-                })
+        var applicationsPage = applications.findCandidateList(candidateId, normalizedSearch, status,
+                PageRequest.of(page, size, Sort.unsorted()));
+        var content = applicationsPage.getContent().stream()
+                .map(application -> new JobApplicationSummaryResponse(
+                        application.getId(),
+                        application.getJobId(),
+                        application.getJobTitle(),
+                        application.getCompanyName(),
+                        application.getStatus(),
+                        application.getAppliedAt(),
+                        application.getCvFileName(),
+                        application.getVersion() == null ? 0L : application.getVersion(),
+                        statusHistory.findByApplicationIdOrderById(application.getId()).stream()
+                                .map(ApplicationStatusHistory::getCandidateFeedback)
+                                .filter(java.util.Objects::nonNull)
+                                .reduce((first, second) -> second).orElse(null)))
                 .toList();
+        return PageResponse.of(applicationsPage, content);
+    }
+
+    @Transactional(readOnly = true)
+    public ApplicationCvDownloadResponse downloadSubmittedCv(Long userId, UUID applicationId) {
+        requireActiveUser(userId, false);
+        CandidateProfile profile = profiles.getOrCreateProfile(userId);
+        UUID candidateId = profile.getId();
+        JobApplication application = applications.findByIdAndCandidateId(applicationId, candidateId)
+                .orElseThrow(() -> new AppException(ErrorCode.JOB_NOT_FOUND));
+        ApplicationSnapshot snapshot = snapshots.findById(application.getId()).orElseThrow(
+                () -> new IllegalStateException("Missing application snapshot"));
+
+        String format = CONTENT_TYPE_TO_FORMAT.get(snapshot.getCvContentType());
+        if (format == null) {
+            throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
+        }
+        String resourceType = FORMAT_TO_RESOURCE_TYPE.get(format);
+        if (resourceType == null) {
+            throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
+        }
+        var expiresAt = clock.instant().plus(DOWNLOAD_URL_TTL);
+        String url = cvStorage.createDownloadUrl(snapshot.getCvStorageKey(), resourceType, format, DOWNLOAD_URL_TTL);
+        return new ApplicationCvDownloadResponse(url, expiresAt, snapshot.getCvFileName());
     }
 
     @Transactional
@@ -377,6 +422,16 @@ public class JobApplicationService {
 
     private static ResponseStatusException invalidRequest(String field) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, "40001 INVALID_INPUT: Invalid " + field);
+    }
+
+    private static String normalizeCandidateSearch(String search) {
+        if (search == null) return null;
+        String normalized = search.strip();
+        if (normalized.isEmpty()) return null;
+        if (normalized.codePointCount(0, normalized.length()) > 150) {
+            throw invalid("search");
+        }
+        return normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     private static String normalizeSearch(String search) {
