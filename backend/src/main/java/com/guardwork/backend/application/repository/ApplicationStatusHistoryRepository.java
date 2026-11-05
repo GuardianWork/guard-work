@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ApplicationStatusHistoryRepository extends JpaRepository<ApplicationStatusHistory, Long> {
     List<ApplicationStatusHistory> findByApplicationIdOrderById(UUID applicationId);
+
+    List<ApplicationStatusHistory> findByApplicationIdInOrderByApplicationIdAscIdAsc(List<UUID> applicationIds);
 }

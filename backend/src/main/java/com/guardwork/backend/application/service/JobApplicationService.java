@@ -5,7 +5,6 @@ import com.guardwork.backend.application.dto.ApplicationCvOption;
 import com.guardwork.backend.application.dto.ApplicationDetailResponse;
 import com.guardwork.backend.application.dto.ApplicationStatusHistoryResponse;
 import com.guardwork.backend.audit.service.AuditService;
-import com.guardwork.backend.candidate.cvs.CandidateCvStorage;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
 import com.guardwork.backend.application.dto.JobApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.RecruiterApplicationSummaryResponse;
@@ -49,7 +48,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,7 +58,6 @@ import java.util.UUID;
 public class JobApplicationService {
 
     private static final String STATUS_SUBMITTED = "SUBMITTED";
-    private static final String STATUS_UNDER_REVIEW = "UNDER_REVIEW";    private static final String STATUS_REJECTED = "REJECTED";
     private static final String STORAGE_PROVIDER = "CLOUDINARY";
     private static final String DUPLICATE_CONSTRAINT = "uk_applications_candidate_job";
     private static final java.time.Duration DOWNLOAD_URL_TTL = java.time.Duration.ofMinutes(15);
@@ -203,6 +200,13 @@ public class JobApplicationService {
         UUID candidateId = profile.getId();
         var applicationsPage = applications.findCandidateList(candidateId, normalizedSearch, status,
                 PageRequest.of(page, size, Sort.unsorted()));
+        var applicationIds = applicationsPage.getContent().stream()
+                .map(application -> application.getId()).toList();
+        var statusHistoryByApplication = applicationIds.isEmpty()
+                ? java.util.Map.<UUID, List<ApplicationStatusHistory>>of()
+                : statusHistory.findByApplicationIdInOrderByApplicationIdAscIdAsc(applicationIds).stream()
+                        .collect(java.util.stream.Collectors.groupingBy(
+                                ApplicationStatusHistory::getApplicationId));
         var content = applicationsPage.getContent().stream()
                 .map(application -> new JobApplicationSummaryResponse(
                         application.getId(),
@@ -216,7 +220,8 @@ public class JobApplicationService {
                         application.getAppliedAt(),
                         application.getCvFileName(),
                         application.getVersion() == null ? 0L : application.getVersion(),
-                        statusHistory.findByApplicationIdOrderById(application.getId()).stream()
+                        statusHistoryByApplication.getOrDefault(application.getId(), java.util.List.of())
+                                .stream()
                                 .map(ApplicationStatusHistory::getCandidateFeedback)
                                 .filter(java.util.Objects::nonNull)
                                 .reduce((first, second) -> second).orElse(null)))
@@ -350,6 +355,10 @@ public class JobApplicationService {
         UUID candidateId = profiles.getOrCreateProfile(userId).getId();
         JobApplication application = applications.findById(applicationId)
                 .filter(value -> value.getCandidateId().equals(candidateId))
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
+        // AD-003: a suspended Job Posting conceals its Applications, mirroring the Candidate list.
+        jobPostings.lock(application.getJobId(), application.getCompanyId())
+                .filter(job -> !job.isStaffSuspended() && !"SUSPENDED".equals(job.getStatus()))
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
         ApplicationSnapshot snapshot = snapshots.findById(applicationId).orElseThrow(
                 () -> new IllegalStateException("Missing application snapshot"));
