@@ -1077,6 +1077,118 @@ class JobApplicationHttpTest {
                 .andExpect(status().isNotAcceptable());
     }
 
+    @Test
+    void companyInboxScopesAssignmentsAndRevokesOldMembershipAccess() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job first = publishedJob(company, ownerId);
+        Job second = publishedJob(company, ownerId);
+        Job unassigned = publishedJob(company, ownerId);
+        Job suspended = publishedJob(company, ownerId);
+        Job foreign = publishedJob(company(), ownerId);
+        UUID candidate = profile(userId(account()));
+        for (Job job : new Job[]{first, second, unassigned, suspended, foreign}) {
+            saveApplication(job, candidate, "Nguyễn Văn An", "2026-10-31T12:00:00Z");
+        }
+        database.update("UPDATE job_postings SET staff_suspended=true WHERE id=?", suspended.id());
+        String recruiter = account();
+        long recruiterId = userId(recruiter);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", recruiterId);
+        long membership = addRecruiter(company, recruiterId);
+        for (Job job : new Job[]{first, second, suspended}) assign(job, company, membership, ownerId);
+        String route = "/api/companies/me/applications";
+        http.perform(get(route).header("Authorization", owner))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(3));
+        http.perform(get(route).header("Authorization", recruiter).param("size", "1"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.content[0].jobTitle").value("Backend Engineer"))
+                .andExpect(jsonPath("$.data.content[0].email").doesNotExist())
+                .andExpect(jsonPath("$.data.content[0].cvFileName").doesNotExist());
+        for (Job hidden : new Job[]{unassigned, suspended, foreign}) {
+            http.perform(get(route).param("jobId", Long.toString(hidden.id())).header("Authorization", recruiter))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.nullValue()));
+        }
+        http.perform(get(route).param("jobId", Long.toString(first.id())).header("Authorization", recruiter))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].jobId").value(first.id()));
+        database.update("UPDATE job_assignments SET ended_at=now(),ended_by_user_id=?,end_reason='REVOKED' " +
+                "WHERE job_id=? AND membership_id=?", ownerId, first.id(), membership);
+        http.perform(get(route).header("Authorization", recruiter))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        database.update("UPDATE company_memberships SET status='LEFT',ended_at=now(),ended_by_user_id=? WHERE id=?",
+                ownerId, membership);
+        http.perform(get(route).header("Authorization", recruiter)).andExpect(status().isForbidden());
+        addRecruiter(company, recruiterId);
+        http.perform(get(route).header("Authorization", recruiter))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+    }
+
+    @Test
+    void companyInboxFiltersBeforeStablePaginationAcrossJobs() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job first = publishedJob(company, ownerId);
+        Job second = publishedJob(company, ownerId);
+        UUID candidate = profile(userId(account()));
+        UUID low = UUID.fromString("00000000-0000-0000-" + UUID.randomUUID().toString().substring(19));
+        UUID high = UUID.fromString("00000000-0000-0001-" + UUID.randomUUID().toString().substring(19));
+        saveApplication(first, candidate, "Nguyễn 100%_An", "2026-10-31T12:00:00Z", low);
+        saveApplication(second, candidate, "NGUYỄN 100%_Bình", "2026-10-31T12:00:00Z", high);
+        saveApplication(second, profile(userId(account())), "Different", "2026-10-31T13:00:00Z");
+        String route = "/api/companies/me/applications";
+        for (int page = 0; page < 2; page++) {
+            http.perform(get(route).header("Authorization", owner).param("search", " nguyen 100%_ ")
+                            .param("status", "SUBMITTED").param("size", "1").param("page", Integer.toString(page)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2))
+                    .andExpect(jsonPath("$.data.content[0].id").value((page == 0 ? high : low).toString()));
+        }
+        http.perform(get(route).header("Authorization", owner).param("page", "10"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content").isEmpty())
+                .andExpect(jsonPath("$.data.totalElements").value(3));
+        http.perform(get(route).header("Authorization", owner).param("status", "REJECTED"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+    }
+
+    @Test
+    void companyInboxValidatesParametersAndCompanyEligibility() throws Exception {
+        String route = "/api/companies/me/applications";
+        http.perform(get(route)).andExpect(status().isUnauthorized());
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        for (String[] invalid : new String[][]{{"jobId", "0"}, {"jobId", "abc"}, {"status", "ALL"},
+                {"page", "-1"}, {"size", "101"}, {"size", "0"}, {"page", "2147483647"},
+                {"search", "a".repeat(151)}}) {
+            http.perform(get(route).header("Authorization", owner).param(invalid[0], invalid[1]))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.status").value(400));
+        }
+        database.update("UPDATE users SET email_verified=false WHERE id=?", ownerId);
+        http.perform(get(route).header("Authorization", owner)).andExpect(status().isForbidden());
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        database.update("UPDATE companies SET verification_status='PENDING' WHERE id=?", company);
+        http.perform(get(route).header("Authorization", owner)).andExpect(status().isForbidden());
+        database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?", company);
+        String admin = account();
+        long adminId = userId(admin);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", adminId);
+        database.update("INSERT INTO company_memberships(company_id,user_id,role,status,joined_at) " +
+                "VALUES (?,?,'ADMIN','ACTIVE',now())", company, adminId);
+        http.perform(get(route).header("Authorization", admin)).andExpect(status().isForbidden());
+        http.perform(get(route).header("Authorization", account())).andExpect(status().isForbidden());
+    }
+
     static String phone() {
         return "09%08d".formatted(Math.floorMod(UUID.randomUUID().getLeastSignificantBits(), 100_000_000));
     }

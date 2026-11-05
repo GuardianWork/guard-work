@@ -1,6 +1,7 @@
 package com.guardwork.backend.application.controller;
 
 import com.guardwork.backend.application.dto.RecruiterApplicationSummaryResponse;
+import com.guardwork.backend.application.dto.CompanyApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.ApplicationDetailResponse;
 import com.guardwork.backend.application.service.JobApplicationService;
 import com.guardwork.backend.common.ApiResponse;
@@ -19,14 +20,27 @@ import org.springframework.http.ResponseEntity;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/companies/me/jobs/{jobId}/applications")
+@RequestMapping("/api/companies/me")
 @RequiredArgsConstructor
 @FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class RecruiterApplicationController {
 
     JobApplicationService applications;
 
-    @GetMapping
+    @GetMapping("/applications")
+    public ResponseEntity<ApiResponse<PageResponse<CompanyApplicationSummaryResponse>>>
+            inbox(@RequestParam(required = false) Long jobId,
+                  @RequestParam(required = false) String search,
+                  @RequestParam(required = false) String status,
+                  @RequestParam(defaultValue = "0") int page,
+                  @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+                ApiResponse.ok("Applications retrieved successfully",
+                        applications.listCompanyApplications(SecurityUtils.getCurrentUserId(), jobId,
+                                search, status, page, size)));
+    }
+
+    @GetMapping("/jobs/{jobId}/applications")
     public ApiResponse<PageResponse<RecruiterApplicationSummaryResponse>> list(
             @PathVariable Long jobId,
             @RequestParam(required = false) String search,
@@ -37,7 +51,7 @@ public class RecruiterApplicationController {
                 applications.listForCompany(SecurityUtils.getCurrentUserId(), jobId, search, status, page, size));
     }
 
-    @GetMapping("/{applicationId}")
+    @GetMapping("/jobs/{jobId}/applications/{applicationId}")
     public ResponseEntity<ApiResponse<ApplicationDetailResponse>> detail(
             @PathVariable Long jobId, @PathVariable UUID applicationId) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
@@ -45,7 +59,7 @@ public class RecruiterApplicationController {
                         applications.companyDetail(SecurityUtils.getCurrentUserId(), jobId, applicationId)));
     }
 
-    @GetMapping("/{applicationId}/cv")
+    @GetMapping("/jobs/{jobId}/applications/{applicationId}/cv")
     public ResponseEntity<byte[]> cv(@PathVariable Long jobId, @PathVariable UUID applicationId) {
         var cv = applications.companyCv(SecurityUtils.getCurrentUserId(), jobId, applicationId);
         String safeName = cv.fileName().replaceAll("[\\r\\n]", "_");

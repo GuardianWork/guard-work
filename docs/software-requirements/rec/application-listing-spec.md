@@ -7,7 +7,7 @@
 | Module | Application review |
 | Version | 1.0.0 |
 | Date | 2026-11-01 |
-| Last Updated | 2026-11-01 |
+| Last Updated | 2026-11-05 |
 | Owner | Thinh |
 | Approver | Thinh |
 | Status | Draft metadata retained under repository policy; explicit human approval recorded below |
@@ -108,6 +108,35 @@ Prove Company isolation; Owner and current-assignment Recruiter access; Admin ex
 
 Also cover unauthenticated and inactive actors, unverified account email, old membership-period assignments, literal search wildcards, whitespace/length limits, exact status validation, tied timestamps, empty and out-of-range pages, accurate filtered totals, and unchanged Candidate listing/submission behavior. Test the response contract and observable side effects; add lower-level tests only if an important behavior cannot be proved adequately at this boundary.
 
-## Out of Scope
+## Out of Scope (original per-job slice)
 
 Frontend implementation; a Company-wide Application inbox; Application details; contact information; CV viewing/download; cover letters; stage changes; rejection; withdrawal; internal notes; reopening; reapplication; interviews; Offers; Hiring Confirmation; new Application statuses; Admin enablement; Job Posting restoration; configurable sorting; new business audit events; notifications; retention durations or deletion workflows; dependencies; schema changes; commits; pushes; and PR publication.
+
+## Company-wide inbox extension (2026-11-05)
+
+The user explicitly accepted the Company-wide API proposal (including Owner access)
+and requested implementation on the current branch on 2026-11-05. This records human
+approval for the additive extension; the existing specification status is unchanged.
+Owner and named approver remain Thinh. The original per-job slice stays compatible.
+
+- RAL-INBOX-001: `GET /api/companies/me/applications` shall return Applications across
+  all eligible Company jobs for the Owner, or only currently assigned jobs for a
+  Recruiter's active membership period. Admin remains excluded. Apply existing live
+  actor, email, membership and Company eligibility checks on every request.
+- RAL-INBOX-002: Exclude suspended jobs from rows and totals. Permit paused, closed
+  and expired jobs. Apply authorization and all filters in PostgreSQL before paging.
+- RAL-INBOX-003: Accept the existing search, status and pagination contracts plus an
+  optional positive `jobId`. A missing or inaccessible selected job returns the same
+  concealed 404 as the per-job route. Without a selected job, no matches returns 200.
+- RAL-INBOX-004: Return the existing summary fields plus `jobId` and snapshot
+  `jobTitle`, ordered by `appliedAt DESC, id DESC`, in the existing page envelope.
+  Contact details, CV data and profile/storage identifiers remain excluded. Send
+  `Cache-Control: no-store`; reads produce no business audit or notification.
+- RAL-INBOX-005: Preserve the per-job endpoint and existing clients. No schema,
+  dependency, configuration or project-wide contract change is part of this slice.
+  Existing indexes are reused; exact counts, substring search and deep offsets
+  remain performance considerations requiring representative query-plan checks.
+
+Validation: PostgreSQL-backed HTTP tests cover multi-job isolation, current assignment
+and membership revocation, Owner access, filtering, deterministic pagination, accurate
+totals, privacy, parameter errors and existing Company eligibility checks.
