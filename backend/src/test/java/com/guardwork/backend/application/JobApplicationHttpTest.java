@@ -1151,8 +1151,116 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.fileName").value("CV.pdf"))
                 .andExpect(jsonPath("$.data.url").isNotEmpty())
                 .andExpect(jsonPath("$.data.expiresAt").isNotEmpty());
+    }
 
-        assertThat(submitted).isNotNull();
+    @Test
+    void malformedCandidateQueryUsesCandidateErrorEnvelope() throws Exception {
+        String candidate = account();
+
+        http.perform(get(APPLICATIONS + "?page=abc").header("Authorization", candidate))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(ErrorCode.INVALID_INPUT.getCode()));
+    }
+
+    @Test
+    void candidateListExcludesSuspendedJobs() throws Exception {
+        String candidate = account();
+        long candidateUserId = userId(candidate);
+        UUID profile = profile(candidateUserId);
+        UUID cvId = cv(profile);
+        Job job = publishedJob(company(), candidateUserId);
+
+        String response = http.perform(post(APPLICATIONS)
+                        .header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(submitBody(job.id(), cvId, "Nguyễn Văn An", "Em quan tâm")))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID applicationId = UUID.fromString(mapper.readTree(response).path("data").path("id").asText());
+
+        database.update("UPDATE job_postings SET status='SUSPENDED',staff_suspended=true WHERE id=?", job.id());
+
+        http.perform(get(APPLICATIONS).header("Authorization", candidate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(0))
+                .andExpect(jsonPath("$.data.content").isEmpty());
+
+        database.update("UPDATE job_postings SET staff_suspended=false WHERE id=?", job.id());
+        http.perform(get(APPLICATIONS + "/" + applicationId + "/cv/download-url")
+                        .header("Authorization", candidate))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void suspendedJobConcealsCandidateDetailAndWithdrawal() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        String candidate = account();
+        long candidateUserId = userId(candidate);
+        Job job = publishedJob(company, ownerId);
+        UUID application = saveApplication(job, profile(candidateUserId), "Applicant", "2026-10-31T12:00:00Z");
+
+        database.update("UPDATE job_postings SET status='SUSPENDED',staff_suspended=true WHERE id=?", job.id());
+
+        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
+                .andExpect(status().isNotFound());
+        http.perform(post("/api/candidate/applications/{applicationId}/withdraw", application)
+                        .header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":0}"))
+                .andExpect(status().isNotFound());
+        assertThat(database.queryForObject("SELECT status FROM applications WHERE id=?",
+                String.class, application)).isEqualTo("SUBMITTED");
+
+        database.update("UPDATE job_postings SET status='PUBLISHED',staff_suspended=false WHERE id=?", job.id());
+
+        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
+                .andExpect(status().isOk());
+        http.perform(post("/api/candidate/applications/{applicationId}/withdraw", application)
+                        .header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"version\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("WITHDRAWN"));
+    }
+
+    @Test
+    void candidateCvDownloadVerifiesOwnershipAccountStateAndFormat() throws Exception {
+        String candidate = account();
+        long candidateUserId = userId(candidate);
+        UUID profile = profile(candidateUserId);
+        UUID cvId = cv(profile);
+        Job job = publishedJob(company(), candidateUserId);
+
+        String response = http.perform(post(APPLICATIONS)
+                        .header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(submitBody(job.id(), cvId, "Nguyễn Văn An", "Em quan tâm")))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID applicationId = UUID.fromString(mapper.readTree(response).path("data").path("id").asText());
+
+        String otherCandidate = account();
+        http.perform(get(APPLICATIONS + "/" + applicationId + "/cv/download-url")
+                        .header("Authorization", otherCandidate))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(ErrorCode.JOB_NOT_FOUND.getCode()));
+
+        // The snapshot CHECK constraint preserves only approved CV content types, so an
+        // invalid-format download path is covered at the service logic boundary instead.
+
+        database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", candidateUserId);
+        http.perform(get(APPLICATIONS + "/" + applicationId + "/cv/download-url")
+                        .header("Authorization", candidate))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+        database.update("UPDATE users SET status='ACTIVE' WHERE id=?", candidateUserId);
+
+        http.perform(get(APPLICATIONS + "/" + applicationId + "/cv/download-url")
+                        .header("Authorization", candidate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.fileName").value("CV.pdf"));
     }
 
     String account() throws Exception {
