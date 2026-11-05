@@ -43,7 +43,8 @@ class AccountControlHttpTest {
 
     @Test void unverifiedIdentityIsSharedAndIdentifiersAreImmutable() throws Exception {
         JsonNode user=account(false);
-        request(user,"/api/me/account",Map.of("firstName","An","lastName","Nguyễn","phoneNumber","0901234567"),true)
+        String phone="09%08d".formatted(Math.floorMod(UUID.randomUUID().getLeastSignificantBits(),100_000_000));
+        request(user,"/api/me/account",Map.of("firstName","An","lastName","Nguyễn","phoneNumber",phone),true)
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.fullName").value("An Nguyễn"));
         http.perform(get("/api/candidates/profile").header("Authorization",auth(user)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.fullName").value("An Nguyễn"));
