@@ -375,4 +375,118 @@ BEGIN
 END;
 $$;
 
+-- Bulk published job postings for search/filter and browsing verification.
+DO $$
+DECLARE
+    company_id_value BIGINT;
+    owner_id_value BIGINT;
+    staff_id_value BIGINT;
+    fixture_count INTEGER;
+    job_id_value BIGINT;
+    revision_id_value BIGINT;
+    deadline_value TIMESTAMPTZ;
+    content_value JSONB;
+    roles TEXT[] := ARRAY[
+        'Kỹ sư phần mềm Backend', 'Lập trình viên Frontend React', 'Kỹ sư dữ liệu',
+        'Kỹ sư DevOps', 'Chuyên viên kiểm thử phần mềm QA', 'Thiết kế UI/UX',
+        'Chuyên viên marketing số', 'Chuyên viên nội dung', 'Quản trị nhân sự',
+        'Chuyên viên kế toán tổng hợp', 'Chuyên viên tài chính doanh nghiệp', 'Nhân viên bán hàng',
+        'Chuyên viên chăm sóc khách hàng', 'Nhân viên kho vận', 'Điều phối logistics',
+        'Kỹ sư điện công nghiệp', 'Nhân viên sản xuất', 'Giám sát sản xuất',
+        'Đầu bếp', 'Nhân viên phục vụ nhà hàng', 'Giáo viên tiểu học',
+        'Giáo viên tiếng Anh', 'Nhân viên y tá', 'Bác sĩ đa khoa', 'Dược sĩ',
+        'Kỹ sư xây dựng', 'Kiến trúc sư', 'Nhân viên an ninh',
+        'Chuyên viên mua hàng', 'Nhân viên hành chính văn phòng'
+    ];
+    industries TEXT[] := ARRAY[
+        'Công nghệ thông tin', 'Công nghệ thông tin', 'Dữ liệu và phân tích',
+        'Công nghệ thông tin', 'Công nghệ thông tin', 'Thiết kế và truyền thông',
+        'Marketing', 'Truyền thông', 'Nhân sự',
+        'Tài chính - Kế toán', 'Tài chính', 'Bán lẻ',
+        'Dịch vụ khách hàng', 'Logistics', 'Logistics',
+        'Sản xuất công nghiệp', 'Sản xuất', 'Sản xuất',
+        'Dịch vụ ăn uống', 'Dịch vụ ăn uống', 'Giáo dục',
+        'Giáo dục', 'Y tế', 'Y tế', 'Y tế',
+        'Xây dựng', 'Thiết kế và xây dựng', 'An ninh',
+        'Chuỗi cung ứng', 'Hành chính'
+    ];
+    locations TEXT[] := ARRAY[
+        'Hà Nội, Việt Nam', 'Thành phố Hồ Chí Minh, Việt Nam', 'Đà Nẵng, Việt Nam',
+        'Hải Phòng, Việt Nam', 'Cần Thơ, Việt Nam', 'Huế, Việt Nam',
+        'Nha Trang, Việt Nam', 'Biên Hòa, Việt Nam', 'Bình Dương, Việt Nam',
+        'Vũng Tàu, Việt Nam'
+    ];
+    employment_types TEXT[] := ARRAY['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'TEMPORARY'];
+    work_arrangements TEXT[] := ARRAY['ONSITE', 'HYBRID', 'REMOTE'];
+    levels TEXT[] := ARRAY['Junior', 'Middle', 'Senior', 'Lead'];
+    n INTEGER;
+    role_index INTEGER;
+    location_value TEXT;
+    employment_type TEXT;
+    work_arrangement TEXT;
+    level TEXT;
+    title TEXT;
+    industry TEXT;
+    min_salary BIGINT;
+    max_salary BIGINT;
+    headcount INTEGER;
+    fixture_key TEXT;
+BEGIN
+    SELECT c.id, c.owner_user_id INTO STRICT company_id_value, owner_id_value
+    FROM companies c WHERE c.tax_code = 'GW-DEMO-LOCAL-001';
+    SELECT id INTO STRICT staff_id_value FROM users WHERE username = 'demo_staff';
+
+    IF NOT EXISTS (SELECT 1 FROM users WHERE id = owner_id_value AND status = 'ACTIVE' AND email_verified) THEN
+        RAISE EXCEPTION 'Demo owner is not eligible for seeding bulk published jobs.';
+    END IF;
+
+    FOR n IN 1..100 LOOP
+        fixture_key := 'PUBLISHED-JOB-' || lpad(n::text, 3, '0');
+        SELECT count(*) INTO fixture_count
+        FROM job_audit_events WHERE facts ->> 'developmentFixture' = fixture_key;
+        IF fixture_count > 0 THEN
+            CONTINUE;
+        END IF;
+
+        role_index := ((n - 1) % array_length(roles, 1)) + 1;
+        level := levels[((n - 1) / 30) + 1];
+        title := level || ' ' || roles[role_index];
+        industry := industries[role_index];
+        location_value := locations[((n * 3 - 2) % array_length(locations, 1)) + 1];
+        employment_type := employment_types[((n - 1) % array_length(employment_types, 1)) + 1];
+        work_arrangement := work_arrangements[((n * 2 - 1) % array_length(work_arrangements, 1)) + 1];
+        headcount := 1 + ((n - 1) % 6);
+        min_salary := 5000000 + ((n - 1) % 20) * 1000000;
+        max_salary := min_salary + 3000000 + ((n - 1) % 5) * 1000000;
+        deadline_value := now() + ((15 + (n % 75))::text || ' days')::interval;
+
+        content_value := jsonb_build_object(
+            'title', title,
+            'description', 'Mô tả công việc cho vị trí ' || title || E'.\n\nTrách nhiệm chính:\n- Thực hiện nhiệm vụ chuyên môn theo phân công.\n- Phối hợp với các phòng ban liên quan.\n- Theo dõi KPI và báo cáo tiến độ.\n\nYêu cầu:\n- Có kiến thức và kỹ năng phù hợp với vị trí.\n- Giao tiếp tốt, chịu được áp lực công việc.\n\nQuyền lợi:\n- Lương cạnh tranh, thưởng theo hiệu suất.\n- Môi trường làm việc chuyên nghiệp.\n\nDữ liệu minh họa GuardWork, không phải tin tuyển dụng thực tế.',
+            'industry', industry,
+            'employmentType', employment_type,
+            'workArrangement', work_arrangement,
+            'location', location_value,
+            'deadline', to_char(deadline_value AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+            'headcount', headcount,
+            'compensation', jsonb_build_object('disclosed', true, 'minimum', min_salary,
+                'maximum', max_salary, 'currency', 'VND', 'payPeriod', 'MONTH')
+        );
+
+        INSERT INTO job_postings(company_id, creator_user_id, status, owner_responsible, created_at, updated_at)
+        VALUES (company_id_value, owner_id_value, 'DRAFT', true, now(), now()) RETURNING id INTO job_id_value;
+        INSERT INTO job_posting_revisions(job_id, revision_number, content, state, creator_user_id,
+            submitter_user_id, submitted_at, reviewer_user_id, decided_at, version, created_at)
+        VALUES (job_id_value, 1, content_value, 'APPROVED', owner_id_value, owner_id_value,
+            now() - interval '1 hour', staff_id_value, now(), 2, now())
+        RETURNING id INTO revision_id_value;
+        UPDATE job_postings SET status = 'PUBLISHED', published_revision_id = revision_id_value,
+            approved_deadline = deadline_value, version = 2, updated_at = now() WHERE id = job_id_value;
+        INSERT INTO job_audit_events(company_id, job_id, revision_id, actor_user_id, event_type, created_at, facts)
+        VALUES (company_id_value, job_id_value, revision_id_value, owner_id_value, 'JOB_CREATED', now(),
+            jsonb_build_object('ownerResponsible', true, 'developmentFixture', fixture_key));
+    END LOOP;
+END;
+$$;
+
 COMMIT;
