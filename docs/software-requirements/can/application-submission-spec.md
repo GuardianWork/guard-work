@@ -8,10 +8,10 @@
 | **File** | `application-submission-spec.md` |
 | **Version** | 0.1.0 |
 | **Date** | 2026-10-30 |
-| **Last Updated** | 2026-11-01 |
+| **Last Updated** | 2026-11-05 |
 | **Owner** | GuardWork thesis team |
 | **Named human approver** | chiko |
-| **Status** | Draft — implementation prepared; approval pending |
+| **Status** | Draft — implementation prepared; candidate application-list fields approved 2026-11-05, full approval pending |
 | **Related use case** | UC-CAN-11 — Điền thông tin ứng tuyển |
 
 ## 1. Purpose and scope
@@ -54,12 +54,13 @@ Identity fields are immutable after insert.
       v
   SUBMITTED
       |
-      +--> VIEWED     (reserved for recruiter workflow; not implemented here)
-      +--> REJECTED   (reserved for recruiter workflow; not implemented here)
+      +--> active stages under GW-SR-APPLICATION-REVIEW
+      +--> terminal REJECTED or WITHDRAWN
 ```
 
-Only `SUBMITTED` is produced by this change. `VIEWED` and `REJECTED` are accepted by the schema
-so a later approved recruiter workflow can evolve without rewriting application identity.
+Only `SUBMITTED` is produced by this submission specification. The accepted Application status set is
+`SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, `REJECTED`, and `WITHDRAWN`. Lifecycle transitions are
+owned by GW-SR-APPLICATION-REVIEW and do not alter the immutable Application identity or Snapshot rows.
 
 ### 2.2 Application snapshot
 
@@ -163,6 +164,9 @@ Indexes: `(candidate_id, applied_at DESC)`, `(job_id, applied_at DESC)`,
 | `cover_letter` | VARCHAR(1000) | Nullable | Trimmed; blank becomes null. |
 | `job_title` | VARCHAR(200) | NOT NULL, non-blank | Title at submission. |
 | `company_name` | VARCHAR(255) | NOT NULL, non-blank | Company name at submission. |
+| `job_location` | VARCHAR(1000) | Nullable | Published job location captured at submission time; may be null for older snapshots. |
+| `work_mode` | VARCHAR(30) | Nullable | Published work arrangement captured at submission time; may be null for older snapshots. |
+| `job_deadline` | TIMESTAMPTZ | Nullable | Published job deadline captured at submission time; may be null for older snapshots. |
 | `source_cv_id` | UUID | Nullable, no FK | Historical source CV identity. |
 | `cv_storage_key` | VARCHAR(255) | NOT NULL | Independent copy key. |
 | `cv_storage_provider` | VARCHAR(30) | NOT NULL | `CLOUDINARY`. |
@@ -174,6 +178,10 @@ Indexes: `(candidate_id, applied_at DESC)`, `(job_id, applied_at DESC)`,
 
 The snapshot table rejects all updates and deletes. `source_cv_id` intentionally has no foreign
 key so later CV deletion cannot fail or mutate the snapshot.
+
+GW-103 added the nullable submission context columns `job_location`, `work_mode`, and `job_deadline`
+(migration `V2026.11.04.102`); they remain nullable so pre-GW-103 snapshots stay readable. `work_mode`
+carries the published job arrangement (`ONSITE`, `HYBRID`, `REMOTE`).
 
 ## 5. API specification
 
@@ -215,9 +223,14 @@ Query parameters:
         "jobId": 42,
         "jobTitle": "Backend Engineer",
         "companyName": "Công ty Ánh Dương",
+        "location": "Hà Nội",
+        "workMode": "REMOTE",
+        "deadline": "2026-11-30T23:59:59Z",
         "status": "SUBMITTED",
         "appliedAt": "2026-10-30T09:00:00Z",
-        "cvFileName": "CV.pdf"
+        "cvFileName": "CV.pdf",
+        "version": 0,
+        "candidateFeedback": null
       }
     ],
     "pageNumber": 0,
@@ -292,6 +305,9 @@ Submits the application.
     "jobTitle": "Backend Engineer",
     "companyId": 7,
     "companyName": "Công ty Ánh Dương",
+    "location": "Hà Nội",
+    "workMode": "REMOTE",
+    "deadline": "2026-11-30T23:59:59Z",
     "status": "SUBMITTED",
     "appliedAt": "2026-10-30T09:00:00Z",
     "cvFileName": "CV.pdf"
@@ -339,8 +355,8 @@ Submits the application.
 | ID | Gap | Disposition |
 |---|---|---|
 | EC-CAN-APP-03 | No durable application event/outbox and no Kafka delivery. | Deferred by the approved scope; the application is still persisted atomically. |
-| APP-GAP-01 | No recruiter list/detail, status transition or download endpoint. | Separate recruiter workflow. |
-| APP-GAP-02 | No `application_status_events` history table. | Separate workflow; status values are reserved only. |
+| APP-GAP-01 | Company-side list, detail, CV access, status transitions, and withdrawal are scoped to GW-SR-APPLICATION-LISTING, GW-SR-APPLICATION-DETAILS, and GW-SR-APPLICATION-REVIEW. | Separate recruiter workflow; this submission specification remains Candidate-side and snapshot focused. |
+| APP-GAP-02 | `application_status_history` is owned by GW-SR-APPLICATION-REVIEW, not this submission specification. | Status values remain part of the Application lifecycle; this submission specification supplies only the initial `SUBMITTED` record. |
 | APP-GAP-03 | Candidate application list endpoint supports read-only tracking with status filtering, job/company search, pagination, submitted-CV download, and exclusion of suspended-Job-Posting applications. Full status transitions remain separate recruiter pipeline work. | Implemented for UC-CAN-13 listing scope. |
 | APP-GAP-04 | No notification to Candidate or Recruiter (UC-CAN-14). | Depends on EC-CAN-APP-03 and notification workflow. |
 | APP-GAP-05 | No frontend form. | No frontend exists in this repository. |
@@ -369,6 +385,7 @@ the project declares Java 25. The production build remains Java 25.
 | 2026-10-30 | User | Confirmed one CV, `applications` + `application_snapshots` only, and `chiko` as named approver. |
 | Pending | chiko | Formal approval of this specification. |
 | 2026-11-01 | Requesting human user | Approved section 12 (APP-023–APP-025), including Recruiter, Admin and Owner roles. |
+| 2026-11-05 | Requesting human user | Approved the Candidate application list response fields added by GW-103: `location`, `workMode`, `deadline`, `version`, and `candidateFeedback`. |
 
 ## 12. Scoped amendment: current-company member applications
 
