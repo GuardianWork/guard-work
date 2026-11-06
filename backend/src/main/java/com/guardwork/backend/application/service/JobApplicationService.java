@@ -8,6 +8,7 @@ import com.guardwork.backend.audit.service.AuditService;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
 import com.guardwork.backend.application.dto.JobApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.RecruiterApplicationSummaryResponse;
+import com.guardwork.backend.application.dto.CompanyApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.SubmitApplicationRequest;
 import com.guardwork.backend.application.model.ApplicationSnapshot;
 import com.guardwork.backend.application.model.ApplicationStatusHistory;
@@ -49,6 +50,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -259,6 +262,70 @@ public class JobApplicationService {
             throw invalidRequest("jobId");
         }
 
+        var access = requireApplicationListingAccess(userId);
+
+        requireListingJobAccess(access, jobId);
+
+        validateListingPaginationAndStatus(page, size, status);
+        String normalizedSearch = normalizeSearch(search);
+
+        var applicationsPage = applications.findRecruiterList(
+                access.company().getId(), jobId, normalizedSearch, status,
+                PageRequest.of(page, size, Sort.unsorted()));
+        var content = applicationsPage.getContent().stream()
+                .map(application -> new RecruiterApplicationSummaryResponse(
+                        application.getId(), application.getCandidateName(),
+                        application.getStatus(), application.getAppliedAt()))
+                .toList();
+        return com.guardwork.backend.common.PageResponse.of(applicationsPage, content);
+    }
+
+    @Transactional
+    public com.guardwork.backend.common.PageResponse<CompanyApplicationSummaryResponse>
+            listCompanyApplications(Long userId, Long jobId, String search, String status, int page, int size) {
+        if (jobId != null && jobId <= 0) throw invalidRequest("jobId");
+        var access = requireApplicationListingAccess(userId);
+        if (jobId != null) {
+            requireListingJobAccess(access, jobId);
+        }
+        validateListingPaginationAndStatus(page, size, status);
+        var result = applications.findCompanyList(access.company().getId(),
+                access.membership().getRole() == CompanyRole.OWNER, access.membership().getId(),
+                access.membership().getJoinedAt(), jobId, normalizeSearch(search), status,
+                PageRequest.of(page, size, Sort.unsorted()));
+        return com.guardwork.backend.common.PageResponse.of(result, result.getContent().stream()
+                .map(item -> new CompanyApplicationSummaryResponse(
+                        item.getId(), item.getCandidateName(), item.getStatus(), item.getAppliedAt(),
+                        item.getJobId(), item.getJobTitle()))
+                .toList());
+    }
+
+    private void requireListingJobAccess(CompanyAccessService.Access access, Long jobId) {
+        JobPosting job = jobPostings.lock(jobId, access.company().getId())
+                .orElseThrow(JobApplicationService::listingNotFound);
+        if (job.isStaffSuspended() || "SUSPENDED".equals(job.getStatus())) {
+            throw listingNotFound();
+        }
+        if (access.membership().getRole() == CompanyRole.RECRUITER
+                && assignments.current(jobId).stream().noneMatch(assignment ->
+                        assignment.getCompanyId().equals(access.company().getId())
+                                && assignment.getMembershipId().equals(access.membership().getId())
+                                && assignment.getMembershipJoinedAt().equals(access.membership().getJoinedAt()))) {
+            throw listingNotFound();
+        }
+    }
+
+    private static void validateListingPaginationAndStatus(int page, int size, String status) {
+        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
+            throw invalidRequest("pagination");
+        }
+        if (status != null && !List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "REJECTED", "WITHDRAWN")
+                .contains(status)) {
+            throw invalidRequest("status");
+        }
+    }
+
+    private CompanyAccessService.Access requireApplicationListingAccess(Long userId) {
         var access = companyAccess.findCurrentCompanyAccess(userId);
         if (access == null) {
             throw new ResponseStatusException(
@@ -283,37 +350,7 @@ public class JobApplicationService {
                     HttpStatus.FORBIDDEN, "40305 COMPANY_NOT_VERIFIED: Company must be verified");
         }
 
-        JobPosting job = jobPostings.lock(jobId, access.company().getId())
-                .orElseThrow(JobApplicationService::listingNotFound);
-        if (job.isStaffSuspended() || "SUSPENDED".equals(job.getStatus())) {
-            throw listingNotFound();
-        }
-        if (access.membership().getRole() == CompanyRole.RECRUITER
-                && assignments.current(jobId).stream().noneMatch(assignment ->
-                        assignment.getCompanyId().equals(access.company().getId())
-                                && assignment.getMembershipId().equals(access.membership().getId())
-                                && assignment.getMembershipJoinedAt().equals(access.membership().getJoinedAt()))) {
-            throw listingNotFound();
-        }
-
-        if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
-            throw invalidRequest("pagination");
-        }
-        String normalizedSearch = normalizeSearch(search);
-        if (status != null && !List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "REJECTED", "WITHDRAWN")
-                .contains(status)) {
-            throw invalidRequest("status");
-        }
-
-        var applicationsPage = applications.findRecruiterList(
-                access.company().getId(), jobId, normalizedSearch, status,
-                PageRequest.of(page, size, Sort.unsorted()));
-        var content = applicationsPage.getContent().stream()
-                .map(application -> new RecruiterApplicationSummaryResponse(
-                        application.getId(), application.getCandidateName(),
-                        application.getStatus(), application.getAppliedAt()))
-                .toList();
-        return com.guardwork.backend.common.PageResponse.of(applicationsPage, content);
+        return access;
     }
 
     @Transactional
@@ -325,6 +362,15 @@ public class JobApplicationService {
         boolean terminal = "REJECTED".equals(application.getStatus())
                 || "WITHDRAWN".equals(application.getStatus());
         var history = statusHistory.findByApplicationIdOrderById(applicationId);
+        // Resolve attribution only after Company authorization, in one batch.
+        Map<Long, String> actorNames = new HashMap<>();
+        var actorIds = history.stream().map(ApplicationStatusHistory::getActorUserId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (!actorIds.isEmpty()) {
+            users.findAllById(actorIds).forEach(actor -> actorNames.put(actor.getId(),
+                    actor.fullName().isBlank() ? actor.getUsername() : actor.fullName()));
+        }
+
         return new ApplicationDetailResponse(
                 application.getId(), application.getJobId(),
                 terminal ? snapshot.getFullName() : snapshot.getFullName(),
@@ -338,7 +384,8 @@ public class JobApplicationService {
                 terminal ? 0 : snapshot.getCvFileSize(),
                 history.stream()
                         .map(item -> new ApplicationStatusHistoryResponse(item.getFromStatus(), item.getToStatus(),
-                                item.getActorUserId(), item.getOccurredAt(), item.getRejectionReason(),
+                                item.getActorUserId(), actorNames.get(item.getActorUserId()),
+                                item.getOccurredAt(), item.getRejectionReason(),
                                 item.getInternalExplanation(), item.getCandidateFeedback()))
                         .toList(),
                 history.stream()
@@ -369,7 +416,7 @@ public class JobApplicationService {
                 snapshot.getCompanyName(), application.getStatus(), application.getVersion(),
                 application.getAppliedAt(), snapshot.getCvFileName(), snapshot.getCvContentType(),
                 snapshot.getCvFileSize(), history.stream().map(item -> new ApplicationStatusHistoryResponse(
-                        item.getFromStatus(), item.getToStatus(), null, item.getOccurredAt(), null, null,
+                        item.getFromStatus(), item.getToStatus(), null, null, item.getOccurredAt(), null, null,
                         item.getCandidateFeedback())).toList(),
                 history.stream().map(com.guardwork.backend.application.model.ApplicationStatusHistory::getCandidateFeedback)
                         .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null));

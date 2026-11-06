@@ -15,6 +15,36 @@ import java.util.UUID;
 
 public interface JobApplicationRepository extends JpaRepository<JobApplication, UUID> {
 
+    // Share predicates between page and count so totals cannot include inaccessible jobs.
+    String COMPANY_LIST_FROM = """
+            FROM applications a
+            JOIN application_snapshots s ON s.application_id = a.id
+            JOIN job_postings j ON j.id = a.job_id AND j.company_id = a.company_id
+            WHERE a.company_id = :companyId
+              AND NOT j.staff_suspended AND j.status <> 'SUSPENDED'
+              AND (CAST(:jobId AS bigint) IS NULL OR a.job_id = :jobId)
+              AND (:owner = true OR EXISTS (
+                  SELECT 1 FROM job_assignments ja
+                  WHERE ja.job_id = a.job_id AND ja.company_id = a.company_id
+                    AND ja.membership_id = :membershipId
+                    AND ja.membership_joined_at = :joinedAt AND ja.ended_at IS NULL))
+              AND (CAST(:search AS text) IS NULL OR
+                   unaccent(LOWER(s.full_name)) LIKE
+                   unaccent(LOWER(CONCAT('%', :search, '%'))) ESCAPE '\\')
+              AND (CAST(:status AS text) IS NULL OR a.status = :status)
+            """;
+
+    @Query(value = """
+            SELECT a.id AS id, s.full_name AS "candidateName", a.status AS status,
+                   a.applied_at AS "appliedAt", a.job_id AS "jobId", s.job_title AS "jobTitle"
+            """ + COMPANY_LIST_FROM + " ORDER BY a.applied_at DESC, a.id DESC",
+            countQuery = "SELECT count(*) " + COMPANY_LIST_FROM, nativeQuery = true)
+    Page<CompanyApplicationProjection> findCompanyList(
+            @Param("companyId") Long companyId, @Param("owner") boolean owner,
+            @Param("membershipId") Long membershipId, @Param("joinedAt") java.time.Instant joinedAt,
+            @Param("jobId") Long jobId, @Param("search") String search,
+            @Param("status") String status, Pageable pageable);
+
     boolean existsByCandidateIdAndJobId(UUID candidateId, Long jobId);
 
     Optional<JobApplication> findByCandidateIdAndJobId(UUID candidateId, Long jobId);

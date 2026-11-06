@@ -6,6 +6,7 @@ public record ApplicationStatusHistoryResponse(
         String fromStatus,
         String toStatus,
         Long actorUserId,
+        String actorName,
         Instant occurredAt,
         String rejectionReason,
         String internalExplanation,

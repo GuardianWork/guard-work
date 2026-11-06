@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
 
-/** Preserve the Company API's error envelope only for the new recruiter listing route. */
+/** Preserve the Company API's error envelope for Company Application routes. */
 @RestControllerAdvice(assignableTypes = RecruiterApplicationController.class)
 @Order(0)
 @RequiredArgsConstructor

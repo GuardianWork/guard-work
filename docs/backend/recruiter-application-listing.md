@@ -58,7 +58,7 @@ The list does not expose email, phone, cover letter, CV information, Candidate p
 
 `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}` returns the immutable submitted name, email, phone, cover letter, job title, Company name, current status/version and CV metadata. The Candidate-owned `GET /api/candidate/applications/{applicationId}` returns their own submitted evidence with the same envelope. Both responses use `Cache-Control: no-store`; opening details does not change status or send a notification. Company authorization and non-enumerating failures match the listing. Company personal details are removed after `REJECTED` or `WITHDRAWN`; the Candidate can continue to view their own details. CV bytes are not returned by these endpoints.
 
-`GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv` returns the application-specific PDF copy as an inline binary response. DOC and DOCX snapshots return `406` because this endpoint only views PDFs. Authorization is checked on each request, terminal Applications return a concealed 404, and successful reads create an `APPLICATION_CV_VIEWED` audit event. The response uses `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`; neither a storage key nor a signed provider URL is sent to the client. The backend fetch is limited to 10 MiB and uses provider-generated HTTPS URLs with bounded connect/read timeouts. An inline response cannot prevent a browser from saving or copying the CV.
+`GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv` returns the application-specific PDF copy as an inline binary response. DOC and DOCX snapshots return `406` because this endpoint only views PDFs. Authorization is checked on each request, terminal Applications return a concealed 404, and successful reads create an `APPLICATION_CV_VIEWED` audit event. The response uses `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`; neither a storage key nor a signed provider URL is sent to the client. The backend fetch is limited to 10 MiB and uses provider-generated HTTPS URLs with bounded connect/read timeouts. Cloudinary `privateDownload` URLs target `api.cloudinary.com/v1_1/{cloudName}/{resourceType}/download`, rather than the `res.cloudinary.com` delivery CDN. The backend validates the exact API host, configured cloud/resource path, HTTPS and default HTTPS port, rejects userinfo, and does not follow redirects. Signed query parameters remain server-side. An inline response cannot prevent a browser from saving or copying the CV.
 
 ## Review status and Candidate withdrawal
 
@@ -69,3 +69,49 @@ Candidates withdraw with `POST /api/candidate/applications/{applicationId}/withd
 Candidate list responses include the current `version` and Candidate-safe latest `candidateFeedback`, so clients can submit a guarded mutation. Candidate detail contains only safe history; Company detail contains actor attribution and internal rejection details. The Company list now accepts all five statuses; an omitted status returns all. Search, ordering and pagination are unchanged.
 
 Migration `V2026.11.03.101__application_review_history_and_notifications.sql` expands allowed states, creates append-only Application Status History, backfills each legacy `SUBMITTED` row as a submission event, and adds Application context to notification storage. It deliberately fails when legacy `VIEWED` or `REJECTED` rows exist, since their actor/time/reason cannot be reconstructed. Inspect and reconcile those records before deployment; do not invent history. No snapshot is modified and no dependency is added.
+
+## Company-wide Application inbox
+
+`GET /api/companies/me/applications` returns Applications across eligible Company Job
+Postings. Send the same Bearer access token as the per-job list. Owners can read all
+eligible Company Job Postings; Recruiters see only Job Postings assigned to their
+current active membership period. Admins are excluded. Live account, verified email,
+Company membership, verification and suspension checks remain unchanged. Suspended
+Job Postings are omitted from both rows and totals. Paused, closed and expired Job
+Postings remain eligible.
+
+The endpoint accepts the same `search`, `status`, `page` and `size` parameters and
+validation as the per-job list, plus optional positive `jobId`. An inaccessible,
+absent or suspended `jobId` returns the existing concealed 404 with no rows or totals.
+Without that filter, no accessible matches returns 200 with an empty page. Filtering
+and assignment authorization run before database pagination and counting. Ordering
+is `appliedAt DESC, id DESC` across all matching jobs.
+
+Each row contains `id`, `candidateName`, `status`, `appliedAt`, `jobId` and `jobTitle`.
+The title comes from the immutable Application Snapshot, matching the detail API.
+The response retains `ApiResponse<PageResponse<...>>` and sets `Cache-Control: no-store`.
+It exposes no contact, CV, profile or storage data and produces no workflow changes,
+notifications or business audit events.
+
+Example: `GET /api/companies/me/applications?status=SUBMITTED&search=Nguyen&page=0&size=20`.
+Use the returned `jobId` and `id` with the existing per-job detail and CV routes.
+The existing per-job response is unchanged.
+
+No migration, new index, configuration or dependency is introduced. The query can
+use the existing Company/time, job/time and active membership/job assignment indexes.
+Exact totals, substring name search and deep offsets can remain expensive at high
+volume. Index presence alone is not a production scale guarantee; validate page and
+count plans with representative Company sizes before claiming a capacity target.
+
+
+### History actor display names
+
+Company detail and status-update history entries include additive nullable `actorName`
+next to the existing `actorUserId`. It is the actor's current account full name, falling
+back to their username when the full name is blank. Names are resolved in one batch
+only after the existing Company authorization checks. Missing actors have a null name;
+clients should show a neutral unavailable label rather than a database ID. Attribution
+remains visible in terminal workflow history; contact, cover-letter and CV redaction is
+unchanged. Candidate-owned history exposes neither actor IDs nor actor names. No schema
+migration, dependency, or history mutation is introduced; this is current display
+attribution, not a historical name snapshot.

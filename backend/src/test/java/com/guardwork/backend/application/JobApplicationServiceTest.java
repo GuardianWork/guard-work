@@ -17,6 +17,10 @@ import com.guardwork.backend.candidate.cvs.CandidateCvService;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.job.service.JobPublicationService;
+import com.guardwork.backend.company.model.Company;
+import com.guardwork.backend.membership.model.CompanyMembership;
+import com.guardwork.backend.membership.model.CompanyRole;
+import com.guardwork.backend.membership.service.CompanyAccessService;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
@@ -66,6 +70,7 @@ class JobApplicationServiceTest {
     @Mock CandidateCvService cvService;
     @Mock JobPublicationService jobs;
     @Mock CompanyMembershipRepository memberships;
+    @Mock CompanyAccessService companyAccess;
     @Mock JobApplicationRepository applications;
     @Mock ApplicationSnapshotRepository snapshots;
     @Mock ApplicationStatusHistoryRepository statusHistory;
@@ -87,6 +92,23 @@ class JobApplicationServiceTest {
         profile.setFullName("Nguyễn Văn An");
         profile.setEmail("an@example.com");
         profile.setPhoneNumber("0901234567");
+    }
+
+    @Test
+    void companyInboxRejectsAnOwnerMembershipThatDoesNotMatchCompanyOwnership() {
+        var company = new Company();
+        company.setId(COMPANY_ID);
+        company.setOwnerUserId(USER_ID + 1);
+        var membership = new CompanyMembership();
+        membership.setRole(CompanyRole.OWNER);
+        when(companyAccess.findCurrentCompanyAccess(USER_ID)).thenReturn(
+                new CompanyAccessService.Access(company, membership));
+
+        var failure = assertThrows(ResponseStatusException.class,
+                () -> service.listCompanyApplications(USER_ID, null, null, null, 0, 20));
+
+        assertEquals(HttpStatus.FORBIDDEN, failure.getStatusCode());
+        verifyNoInteractions(applications);
     }
 
     private User user(String status) {
