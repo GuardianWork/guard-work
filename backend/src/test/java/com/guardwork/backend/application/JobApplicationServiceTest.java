@@ -99,7 +99,7 @@ class JobApplicationServiceTest {
     private JobPublicationService.ApplicationContext availableJob() {
         return new JobPublicationService.ApplicationContext(
                 JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
-                Instant.parse("2026-11-30T17:00:00Z"), true, null);
+                "Ha Noi", "HYBRID", Instant.parse("2026-11-30T17:00:00Z"), true, null);
     }
 
     private CandidateCv cv(boolean isDefault) {
@@ -248,7 +248,7 @@ class JobApplicationServiceTest {
             when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
             when(jobs.applicationContext(JOB_ID)).thenReturn(new JobPublicationService.ApplicationContext(
                     JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
-                    Instant.parse("2026-11-30T17:00:00Z"), false, "EXPIRED"));
+                    "Ha Noi", "HYBRID", Instant.parse("2026-11-30T17:00:00Z"), false, "EXPIRED"));
 
             AppException failure = assertThrows(AppException.class,
                     () -> service.submit(USER_ID, request("Nguyễn Văn An", null)));

@@ -15,6 +15,7 @@
 | **UC-CAN-10** Xem chi tiết thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc Ứng viên |
 | **UC-CAN-15** Lưu lại tin tuyển dụng | Ứng tuyển | Trung bình | Tách từ "Lưu / Bỏ lưu công việc" |
 | **UC-CAN-19** Bỏ lưu tin tuyển dụng | Ứng tuyển | Trung bình | Tách từ "Lưu / Bỏ lưu công việc" |
+| **UC-CAN-24** Rút hồ sơ ứng tuyển | Ứng tuyển | Trung bình | Ứng viên rút đơn đang còn hiệu lực; trạng thái kết thúc không thể hoàn tác |
 | **UC-CAN-16** Xem danh sách tin tuyển dụng đã lưu | Ứng tuyển | Trung bình | |
 | **UC-CAN-18** Xem thông báo hệ thống | Tiện ích | Trung bình | |
 | **UC-CAN-23** Hỏi đáp luật Lao động với AI | Tiện ích | Trung bình | Tác nhân: Ứng viên, nhân viên tuyển dụng. Use case mới; ưu tiên là đề xuất vì UC-CAN-22 mở rộng từ use case này |
@@ -34,6 +35,8 @@
 - Thêm mới UC-CAN-20, 21, 22, 23; ưu tiên của các use case mới là đề xuất, cần xác nhận lại.
 - Hồ sơ đã nộp được sao chép thành bản lưu riêng gắn với đơn ứng tuyển (cập nhật UC-CAN-11, UC-CAN-05 và EC-CAN-CV-04).
 - Bổ sung edge case EC-CAN-LAW-01 đến 03 cho UC-CAN-22.
+- Thêm mới **UC-CAN-24** "Rút hồ sơ ứng tuyển" cho luồng ứng viên rút đơn đang còn hiệu lực (Đã nộp / Đang xem xét / Được chọn sơ bộ), kèm thông báo cho chủ công ty và nhà tuyển dụng được phân công; trạng thái kết thúc không thể hoàn tác.
+- Bổ sung các edge case EC-CAN-APP-06 đến EC-CAN-APP-11 cho luồng rút hồ sơ.
 - Cập nhật UC-CAN-01: email chỉ đọc từ tài khoản (không cập nhật qua hồ sơ); họ tên được phép có khoảng trắng; số điện thoại lưu dạng +84 và hiển thị dạng 0xxxxxxxxx; bổ sung ảnh đại diện và trạng thái công khai vào phạm vi cập nhật; ngày kết thúc/mô tả của kinh nghiệm và học vấn là tùy chọn.
 
 ---
@@ -218,11 +221,33 @@
   - **Luồng chính:**
     1. Ứng viên chọn mục "Công việc đã ứng tuyển" từ menu điều hướng cá nhân.
     2. Hệ thống lấy danh sách đơn ứng tuyển của ứng viên từ cơ sở dữ liệu.
-    3. Hệ thống hiển thị danh sách gồm: Tên vị trí tuyển dụng, Tên công ty, Ngày ứng tuyển, Hồ sơ đã đính kèm và Trạng thái ứng tuyển (Đã nộp, Đã xem, Từ chối).
+    3. Hệ thống hiển thị danh sách gồm: Tên vị trí tuyển dụng, Tên công ty, Ngày ứng tuyển, Hồ sơ đã đính kèm và Trạng thái ứng tuyển (Đã nộp, Đang xem xét, Được chọn sơ bộ, Từ chối, Đã rút).
     4. Ứng viên có thể chọn lọc đơn ứng tuyển theo trạng thái hoặc tìm kiếm theo tên công việc/công ty.
     5. Hệ thống hiển thị kết quả lọc/tìm kiếm tương ứng.
   - **Luồng thay thế:**
     - *2a.* Ứng viên chưa từng nộp đơn ứng tuyển nào. Hệ thống hiển thị thông điệp "Bạn chưa ứng tuyển công việc nào" kèm gợi ý tìm việc làm.
+
+## Rút hồ sơ ứng tuyển
+
+- **Tác nhân:** Ứng viên
+- **Mô tả:** Cho phép ứng viên rút một hồ sơ ứng tuyển đang ở trạng thái còn hoạt động (Đã nộp, Đang xem xét hoặc Được chọn sơ bộ) khỏi quy trình xét tuyển. Thao tác đánh dấu hồ sơ ứng tuyển là kết thúc và không thể hoàn tác; các hồ sơ đã xử lý trước đó không bị ảnh hưởng.
+- **Pre-condition:** Ứng viên đã đăng nhập, đang xem chi tiết hoặc danh sách các tin tuyển dụng đã ứng tuyển, và hồ sơ ứng tuyển còn ở trạng thái hoạt động. Tin tuyển dụng tương ứng không bị tạm dừng hoặc ẩn bởi hệ thống.
+- **Post-condition:** Hồ sơ ứng tuyển chuyển sang trạng thái "Đã rút" (trạng thái kết thúc). Lịch sử trạng thái có thêm một mục từ trạng thái cũ sang "Đã rút". Nhà tuyển dụng nhận được thông báo về việc rút hồ sơ. Ứng viên vẫn xem được trạng thái và lịch sử xử lý; thông tin liên hệ, thư giới thiệu và CV của hồ sơ rút không còn khả dụng cho nhà tuyển dụng.
+- **Luồng sự kiện:**
+  - **Luồng chính:**
+    1. Ứng viên chọn "Rút hồ sơ" tại đơn ứng tuyển tương ứng trong danh sách đã ứng tuyển hoặc tại trang chi tiết đơn.
+    2. Hệ thống hiển thị hộp thoại xác nhận việc rút hồ sơ, nêu rõ thao tác không thể hoàn tác và rằng đơn đã rút vẫn được lưu cho mục đích theo dõi lịch sử.
+    3. Ứng viên chọn "Xác nhận rút".
+    4. Hệ thống kiểm tra ứng viên là chủ đơn ứng tuyển, đơn còn trạng thái hoạt động, tin tuyển dụng tương ứng chưa bị tạm dừng hoặc ẩn, và phiên bản hiện tại của đơn ứng tuyển còn khớp với dữ liệu hệ thống.
+    5. Hệ thống chuyển trạng thái đơn ứng tuyển sang "Đã rút", ghi nhận thời điểm và tác nhân vào lịch sử trạng thái.
+    6. Hệ thống gửi thông báo rút hồ sơ đến chủ công ty và các nhà tuyển dụng đang được phân công xử lý tin tuyển dụng, mỗi người nhận một thông báo.
+    7. Hệ thống cập nhật hiển thị trạng thái "Đã rút" và thông báo rút hồ sơ thành công.
+  - **Luồng thay thế:**
+    - *2a.* Ứng viên chọn "Hủy bỏ". Hệ thống đóng hộp thoại xác nhận và giữ nguyên trạng thái đơn ứng tuyển.
+    - *4a.* Đơn ứng tuyển không còn trạng thái hoạt động. Nếu đơn đã ở trạng thái "Đã rút", hệ thống trả lại thông tin hiện tại và không tạo thêm lịch sử hay thông báo; nếu đơn đã ở trạng thái kết thúc khác (ví dụ: "Từ chối"), hệ thống báo không thể rút và giữ nguyên trạng thái.
+    - *4b.* Phiên bản đơn ứng tuyển không còn khớp với hệ thống (đã thay đổi từ nơi khác). Hệ thống báo xung đột phiên bản, yêu cầu tải lại thông tin và thử lại.
+    - *4c.* Tin tuyển dụng tương ứng đang bị tạm dừng hoặc bị ẩn. Hệ thống không tiết lộ sự tồn tại của đơn ứng tuyển và báo không tìm thấy đơn.
+    - *4d.* Hệ thống gặp lỗi khi ghi nhận trạng thái, lịch sử hoặc thông báo trong cùng giao dịch. Hệ thống không lưu thay đổi và báo lỗi, yêu cầu ứng viên thử lại sau.
 
 ## Nhận thông báo về trạng thái ứng tuyển
 
@@ -419,7 +444,7 @@
 
 ---
 
-### 5.3 Tương tác & Ứng tuyển (`UC-CAN-11` - `UC-CAN-16`, `UC-CAN-19`, `UC-CAN-20`)
+### 5.3 Tương tác & Ứng tuyển (`UC-CAN-11` - `UC-CAN-16`, `UC-CAN-19`, `UC-CAN-20`, `UC-CAN-24`)
 
 | Mã Edge Case | Tên trường hợp biên | Mô tả chi tiết & Cách xử lý hệ thống                                                                                                                                                                                                                                                                                                                                                                                              |
 |---|---|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -428,6 +453,12 @@
 | **EC-CAN-APP-03** | **Lỗi Broker Kafka khi gửi sự kiện sau khi lưu DB** | Hồ sơ nộp đã được lưu thành công vào cơ sở dữ liệu PostgreSQL nhưng tiến trình gửi message sang Kafka `guardianwork.application.submitted` bị lỗi (Kafka down/network drop).<br>$\rightarrow$ **Xử lý:** Áp dụng mô hình Transactional Outbox Pattern. Message được ghi vào bảng `outbox_events` trong cùng DB transaction, một Worker background riêng sẽ quét và retry đảm bảo tính nhất quán cuối cùng (Eventual Consistency). |
 | **EC-CAN-APP-04** | **Tài khoản bị khóa trong lúc nộp hồ sơ** | Tài khoản ứng viên bị Staff khóa/đình chỉ (`status = 'BANNED'`) trong khi ứng viên đang soạn thư giới thiệu.<br>$\rightarrow$ **Xử lý:** Spring Security Interceptor kiểm tra trạng thái tài khoản active trên JWT authentication filter ở mọi protected request, từ chối giao dịch với lỗi `403 Forbidden`.                                                                                                                      |
 | **EC-CAN-APP-05** | **Xem tin đã lưu nhưng tin bị nhà tuyển dụng xóa hoàn toàn** | Tin tuyển dụng nằm trong danh sách đã lưu nhưng sau đó bị xóa hẳn (Hard Delete) khỏi database.<br>$\rightarrow$ **Xử lý:** Danh sách tin đã lưu sử dụng `LEFT JOIN`. Nếu bài đăng không tồn tại, hiển thị item dạng Disabled với nhãn *"Công việc không còn tồn tại"* kèm nút *"Bỏ lưu"* (UC-CAN-19). |
+| **EC-CAN-APP-06** | **Rút hồ sơ và thay đổi trạng thái đồng thời (Race Condition)** | Ứng viên rút hồ sơ và nhà tuyển dụng chuyển trạng thái/từ chối cùng một đơn đang hoạt động tại cùng thời điểm.<br>$\rightarrow$ **Xử lý:** Kiểm soát đồng thời bằng phiên bản (optimistic locking). Chỉ một thao tác thành công; thao tác còn lại trả về xung đột phiên bản `409`, không ghi thêm lịch sử và không gửi thông báo thứ hai. |
+| **EC-CAN-APP-07** | **Rút hồ sơ đã rút trước đó (No-op)** | Ứng viên gửi lại yêu cầu rút cho đơn đã ở trạng thái "Đã rút" với phiên bản hiện tại.<br>$\rightarrow$ **Xử lý:** Hệ thống trả lại thông tin hiện tại, không thêm lịch sử xử lý và không tạo thông báo mới. |
+| **EC-CAN-APP-08** | **Rút hồ sơ khi công việc bị tạm dừng hoặc ẩn** | Công việc tương ứng bị staff tạm dừng/ẩn giữa lúc ứng viên xem chi tiết và thực hiện rút.<br>$\rightarrow$ **Xử lý:** Hệ thống conceal đơn ứng tuyển (phản hồi không tiết lộ sự tồn tại) và không rút; trạng thái đơn không đổi. |
+| **EC-CAN-APP-09** | **Rút hồ sơ ở trạng thái kết thúc** | Đơn đã ở trạng thái "Từ chối" hoặc trạng thái kết thúc khác.<br>$\rightarrow$ **Xử lý:** Hệ thống báo không thể rút và giữ nguyên trạng thái hiện tại. |
+| **EC-CAN-APP-10** | **Phiên bản đơn ứng tuyển không khớp (Stale Version)** | Client gửi phiên bản cũ khi rút hồ sơ.<br>$\rightarrow$ **Xử lý:** Trả về xung đột phiên bản `409`, không thay đổi trạng thái; client tải lại thông tin và thử lại. |
+| **EC-CAN-APP-11** | **Thông báo rút hồ sơ tới nhiều người nhận** | Nhiều nhà tuyển dụng được phân công cho tin tuyển dụng hoặc chủ công ty trùng với người được phân công.<br>$\rightarrow$ **Xử lý:** Mỗi người nhận chỉ nhận một thông báo; khử trùng (dedup) theo recipient trước khi ghi nhận outbox. |
 
 ---
 

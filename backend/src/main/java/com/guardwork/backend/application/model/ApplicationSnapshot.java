@@ -46,6 +46,15 @@ public class ApplicationSnapshot {
     @Column(name = "company_name", nullable = false, length = 255)
     private String companyName;
 
+    @Column(name = "job_location", length = 1000)
+    private String jobLocation;
+
+    @Column(name = "work_mode", length = 30)
+    private String workMode;
+
+    @Column(name = "job_deadline")
+    private Instant jobDeadline;
+
     @Column(name = "source_cv_id")
     private UUID sourceCvId;
 

@@ -172,8 +172,10 @@ public class ApplicationWorkflowService {
                 .orElseThrow(ApplicationWorkflowService::notFound);
         var company = companies.findByIdForUpdate(observed.getCompanyId())
                 .orElseThrow(ApplicationWorkflowService::notFound);
-        jobs.lock(observed.getJobId(), observed.getCompanyId())
+        var job = jobs.lock(observed.getJobId(), observed.getCompanyId())
                 .orElseThrow(ApplicationWorkflowService::notFound);
+        // AD-003/AR-001: a suspended Job Posting conceals its Applications; withdrawal is denied.
+        if (job.isStaffSuspended() || "SUSPENDED".equals(job.getStatus())) throw notFound();
         JobApplication application = applications.findByIdForUpdate(applicationId)
                 .filter(item -> item.getCandidateId().equals(profile.getId())
                         && item.getCompanyId().equals(company.getId())
