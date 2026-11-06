@@ -25,6 +25,7 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.IOException;
 
 @Slf4j
 @Component
@@ -133,13 +134,17 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
         HttpURLConnection connection = null;
         try {
             URI uri = URI.create(signed);
-            String expectedPrefix = "/" + requireCloudinary().config.cloudName + "/";
+            // privateDownload signs the API download endpoint, not the delivery CDN.
+            String expectedPath = "/v1_1/" + requireCloudinary().config.cloudName
+                    + "/" + resourceType + "/download";
             if (!"https".equalsIgnoreCase(uri.getScheme())
-                    || !"res.cloudinary.com".equalsIgnoreCase(uri.getHost())
-                    || uri.getPath() == null || !uri.getPath().contains(expectedPrefix)) {
+                    || !"api.cloudinary.com".equalsIgnoreCase(uri.getHost())
+                    || uri.getRawUserInfo() != null
+                    || (uri.getPort() != -1 && uri.getPort() != 443)
+                    || !expectedPath.equals(uri.getRawPath())) {
                 throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
             }
-            connection = (HttpURLConnection) uri.toURL().openConnection();
+            connection = openConnection(uri);
             connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(5_000);
             connection.setReadTimeout(15_000);
@@ -169,6 +174,10 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    HttpURLConnection openConnection(URI uri) throws IOException {
+        return (HttpURLConnection) uri.toURL().openConnection();
     }
 
     private Cloudinary requireCloudinary() {

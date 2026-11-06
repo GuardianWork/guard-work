@@ -50,6 +50,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -360,6 +362,15 @@ public class JobApplicationService {
         boolean terminal = "REJECTED".equals(application.getStatus())
                 || "WITHDRAWN".equals(application.getStatus());
         var history = statusHistory.findByApplicationIdOrderById(applicationId);
+        // Resolve attribution only after Company authorization, in one batch.
+        Map<Long, String> actorNames = new HashMap<>();
+        var actorIds = history.stream().map(ApplicationStatusHistory::getActorUserId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (!actorIds.isEmpty()) {
+            users.findAllById(actorIds).forEach(actor -> actorNames.put(actor.getId(),
+                    actor.fullName().isBlank() ? actor.getUsername() : actor.fullName()));
+        }
+
         return new ApplicationDetailResponse(
                 application.getId(), application.getJobId(),
                 terminal ? snapshot.getFullName() : snapshot.getFullName(),
@@ -373,7 +384,8 @@ public class JobApplicationService {
                 terminal ? 0 : snapshot.getCvFileSize(),
                 history.stream()
                         .map(item -> new ApplicationStatusHistoryResponse(item.getFromStatus(), item.getToStatus(),
-                                item.getActorUserId(), item.getOccurredAt(), item.getRejectionReason(),
+                                item.getActorUserId(), actorNames.get(item.getActorUserId()),
+                                item.getOccurredAt(), item.getRejectionReason(),
                                 item.getInternalExplanation(), item.getCandidateFeedback()))
                         .toList(),
                 history.stream()
@@ -404,7 +416,7 @@ public class JobApplicationService {
                 snapshot.getCompanyName(), application.getStatus(), application.getVersion(),
                 application.getAppliedAt(), snapshot.getCvFileName(), snapshot.getCvContentType(),
                 snapshot.getCvFileSize(), history.stream().map(item -> new ApplicationStatusHistoryResponse(
-                        item.getFromStatus(), item.getToStatus(), null, item.getOccurredAt(), null, null,
+                        item.getFromStatus(), item.getToStatus(), null, null, item.getOccurredAt(), null, null,
                         item.getCandidateFeedback())).toList(),
                 history.stream().map(com.guardwork.backend.application.model.ApplicationStatusHistory::getCandidateFeedback)
                         .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null));

@@ -58,7 +58,7 @@ The list does not expose email, phone, cover letter, CV information, Candidate p
 
 `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}` returns the immutable submitted name, email, phone, cover letter, job title, Company name, current status/version and CV metadata. The Candidate-owned `GET /api/candidate/applications/{applicationId}` returns their own submitted evidence with the same envelope. Both responses use `Cache-Control: no-store`; opening details does not change status or send a notification. Company authorization and non-enumerating failures match the listing. Company personal details are removed after `REJECTED` or `WITHDRAWN`; the Candidate can continue to view their own details. CV bytes are not returned by these endpoints.
 
-`GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv` returns the application-specific PDF copy as an inline binary response. DOC and DOCX snapshots return `406` because this endpoint only views PDFs. Authorization is checked on each request, terminal Applications return a concealed 404, and successful reads create an `APPLICATION_CV_VIEWED` audit event. The response uses `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`; neither a storage key nor a signed provider URL is sent to the client. The backend fetch is limited to 10 MiB and uses provider-generated HTTPS URLs with bounded connect/read timeouts. An inline response cannot prevent a browser from saving or copying the CV.
+`GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv` returns the application-specific PDF copy as an inline binary response. DOC and DOCX snapshots return `406` because this endpoint only views PDFs. Authorization is checked on each request, terminal Applications return a concealed 404, and successful reads create an `APPLICATION_CV_VIEWED` audit event. The response uses `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`; neither a storage key nor a signed provider URL is sent to the client. The backend fetch is limited to 10 MiB and uses provider-generated HTTPS URLs with bounded connect/read timeouts. Cloudinary `privateDownload` URLs target `api.cloudinary.com/v1_1/{cloudName}/{resourceType}/download`, rather than the `res.cloudinary.com` delivery CDN. The backend validates the exact API host, configured cloud/resource path, HTTPS and default HTTPS port, rejects userinfo, and does not follow redirects. Signed query parameters remain server-side. An inline response cannot prevent a browser from saving or copying the CV.
 
 ## Review status and Candidate withdrawal
 
@@ -102,3 +102,16 @@ use the existing Company/time, job/time and active membership/job assignment ind
 Exact totals, substring name search and deep offsets can remain expensive at high
 volume. Index presence alone is not a production scale guarantee; validate page and
 count plans with representative Company sizes before claiming a capacity target.
+
+
+### History actor display names
+
+Company detail and status-update history entries include additive nullable `actorName`
+next to the existing `actorUserId`. It is the actor's current account full name, falling
+back to their username when the full name is blank. Names are resolved in one batch
+only after the existing Company authorization checks. Missing actors have a null name;
+clients should show a neutral unavailable label rather than a database ID. Attribution
+remains visible in terminal workflow history; contact, cover-letter and CV redaction is
+unchanged. Candidate-owned history exposes neither actor IDs nor actor names. No schema
+migration, dependency, or history mutation is introduced; this is current display
+attribution, not a historical name snapshot.

@@ -692,10 +692,12 @@ class JobApplicationHttpTest {
         String owner = account();
         long ownerId = userId(owner);
         database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        database.update("UPDATE users SET first_name='Nguyễn',last_name='Minh Anh' WHERE id=?", ownerId);
         long company = company();
         addOwner(company, ownerId);
         Job job = publishedJob(company, ownerId);
         String candidate = account();
+        database.update("UPDATE users SET first_name='Lê',last_name='Thảo' WHERE id=?", userId(candidate));
         UUID profile = profile(userId(candidate));
         UUID application = saveApplication(job, profile, "Applicant", "2026-10-31T12:00:00Z");
         database.update("UPDATE applications SET version=200 WHERE id=?", application);
@@ -707,7 +709,9 @@ class JobApplicationHttpTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("UNDER_REVIEW"))
                 .andExpect(jsonPath("$.data.version").value(201))
-                .andExpect(jsonPath("$.data.history.length()").value(2));
+                .andExpect(jsonPath("$.data.history.length()").value(2))
+                .andExpect(jsonPath("$.data.history[0].actorName").value("Lê Thảo"))
+                .andExpect(jsonPath("$.data.history[1].actorName").value("Nguyễn Minh Anh"));
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, application)).isEqualTo(2);
         assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_STATUS_CHANGED'",
@@ -732,6 +736,15 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.status").value("SHORTLISTED"));
         assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_STATUS_CHANGED'",
                 Long.class, application)).isEqualTo(2);
+
+        // Candidate-safe history never includes Company actors' IDs or names.
+        http.perform(get("/api/candidate/applications/{applicationId}", application)
+                        .header("Authorization", candidate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.history[*].actorName").value(
+                        org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.nullValue())))
+                .andExpect(jsonPath("$.data.history[*].actorUserId").value(
+                        org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.nullValue())));
     }
 
     @Test
@@ -848,7 +861,8 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.candidateFeedback").value("Thank you for applying"))
                 .andExpect(jsonPath("$.data.history[1].rejectionReason").doesNotExist())
                 .andExpect(jsonPath("$.data.history[1].internalExplanation").doesNotExist())
-                .andExpect(jsonPath("$.data.history[1].actorUserId").doesNotExist());
+                .andExpect(jsonPath("$.data.history[1].actorUserId").doesNotExist())
+                .andExpect(jsonPath("$.data.history[1].actorName").doesNotExist());
 
         http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv", job.id(), application)
                         .header("Authorization", owner))
