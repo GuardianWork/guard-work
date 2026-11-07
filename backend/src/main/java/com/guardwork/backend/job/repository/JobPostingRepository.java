@@ -10,6 +10,16 @@ import org.springframework.data.repository.query.Param;
 
 public interface JobPostingRepository
     extends JpaRepository<JobPosting, Long>, JpaSpecificationExecutor<JobPosting> {
+  interface ApplicationCount {
+    Long getJobId();
+    long getTotal();
+  }
+
+  @Query(value = "SELECT job_id AS jobId, count(*) AS total FROM applications "
+      + "WHERE company_id = :companyId AND job_id IN (:jobIds) GROUP BY job_id", nativeQuery = true)
+  List<ApplicationCount> countApplications(@Param("companyId") Long companyId,
+      @Param("jobIds") List<Long> jobIds);
+
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("select j from JobPosting j where j.companyId=:company and j.status='PUBLISHED' order by j.id")
   List<JobPosting> lockPublished(@Param("company") Long company);

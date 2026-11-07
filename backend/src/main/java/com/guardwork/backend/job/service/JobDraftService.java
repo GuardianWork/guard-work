@@ -204,8 +204,15 @@ public class JobDraftService {
     var result =
         jobs.findAll(
             filter, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt", "id")));
+    // Aggregate only the authorized page, rather than querying once per job.
+    var counts = new HashMap<Long, Long>();
+    if (!result.isEmpty()) {
+      jobs.countApplications(scope.company().getId(), result.stream().map(JobPosting::getId).toList())
+          .forEach(count -> counts.put(count.getJobId(), count.getTotal()));
+    }
     return PageResponse.of(
-        result.stream().map(j -> detail(j, working(j), scope)).toList(),
+        result.stream().map(j -> detail(j, working(j), scope,
+            (j.isStaffSuspended() || "SUSPENDED".equals(expiry.effectiveStatus(j))) ? null : counts.getOrDefault(j.getId(), 0L))).toList(),
         page,
         size,
         result.getTotalElements());
@@ -304,6 +311,11 @@ public class JobDraftService {
   }
 
   JobDetail detail(JobPosting job, JobRevision revision, CompanyAccessService.Access scope) {
+    return detail(job, revision, scope, null);
+  }
+
+  private JobDetail detail(JobPosting job, JobRevision revision,
+      CompanyAccessService.Access scope, Long applicationCount) {
     var current = assignments.current(job.getId());
     String status = expiry.effectiveStatus(job);
     boolean terminal = Set.of("CLOSED", "EXPIRED", "SUSPENDED").contains(status);
@@ -343,7 +355,8 @@ public class JobDraftService {
         current.stream().map(JobDetail.Assignment::from).toList(),
         actions,
         job.getCreatedAt(),
-        job.getUpdatedAt());
+        job.getUpdatedAt(),
+        applicationCount);
   }
 
   void record(
