@@ -164,18 +164,21 @@ public class JobDraftService {
   }
 
   public PageResponse<JobDetail> list(
-      Long actor, int page, int size, String status, Boolean needsReassignment) {
+      Long actor, int page, int size, String status, Boolean needsReassignment, String keyword) {
     var scope = scope(actor, false);
     if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE)
       throw DraftContent.invalid("pagination");
     if (status != null
         && !Set.of("DRAFT", "PUBLISHED", "PAUSED", "CLOSED", "EXPIRED", "SUSPENDED").contains(status))
       throw DraftContent.invalid("status");
+    String search = keyword == null ? "" : keyword.strip();
+    if (search.codePointCount(0, search.length()) > 200) throw DraftContent.invalid("keyword");
     var listedAt = clock.instant();
     Specification<JobPosting> filter =
         (root, query, cb) -> {
           List<Predicate> predicates = new ArrayList<>();
           predicates.add(cb.equal(root.get("companyId"), scope.company().getId()));
+          if (!search.isEmpty()) predicates.add(cb.exists(matchingTitle(query, cb, root, search)));
           if (status != null) {
             Predicate deadlinePassed =
                 cb.and(
@@ -206,6 +209,40 @@ public class JobDraftService {
         page,
         size,
         result.getTotalElements());
+  }
+
+  private Subquery<Long> matchingTitle(
+      CriteriaQuery<?> query, CriteriaBuilder cb, Root<JobPosting> job, String keyword) {
+    var match = query.subquery(Long.class);
+    var revision = match.from(JobRevision.class);
+    var working = match.subquery(Long.class);
+    var current = working.from(JobRevision.class);
+    working
+        .select(current.get("id"))
+        .where(
+            cb.equal(current.get("jobId"), job.get("id")),
+            current.get("state").in("DRAFT", "PENDING_REVIEW"));
+    // A working revision takes precedence even when its title is absent.
+    var selected =
+        cb.or(
+            revision.get("state").in("DRAFT", "PENDING_REVIEW"),
+            cb.and(
+                cb.equal(revision.get("id"), job.get("publishedRevisionId")),
+                cb.not(cb.exists(working))));
+    var title =
+        cb.function(
+            "jsonb_extract_path_text", String.class, revision.get("content"), cb.literal("title"));
+    String pattern =
+        "%" + keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+    return match
+        .select(revision.get("id"))
+        .where(
+            cb.equal(revision.get("jobId"), job.get("id")),
+            selected,
+            cb.like(
+                cb.function("unaccent", String.class, cb.lower(title)),
+                cb.function("unaccent", String.class, cb.lower(cb.literal(pattern))),
+                '\\'));
   }
 
   private Subquery<Long> currentAssignment(
