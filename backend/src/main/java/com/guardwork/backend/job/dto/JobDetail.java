@@ -19,7 +19,8 @@ public record JobDetail(
     List<Assignment> assignments,
     List<String> availableActions,
     Instant createdAt,
-    Instant updatedAt) {
+    Instant updatedAt,
+    Long applicationCount) {
   public record Revision(
       Long id, int revisionNumber, String state, Long version, Map<String, Object> content) {
     public static Revision from(JobRevision r, Map<String, Object> content) {

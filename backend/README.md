@@ -453,3 +453,14 @@ See the [frontend implementation guide](../docs/backend/personal-staff-activity-
 for Vietnamese UI labels, query rules, response examples and error handling.
 No migration or dependency is added. Future job-review audits include before/after
 review states; retained historical audit records are never rewritten.
+
+### Application totals in employer job lists
+
+`GET /api/companies/me/jobs` includes nullable `applicationCount` on each job.
+It counts all submitted application records across current statuses (including withdrawn),
+matching the unfiltered application-list total. A zero means no applications; null
+means unavailable (suspended jobs). Non-list job responses leave the field null.
+Counts are aggregated once for the authorized page and company, with no per-job
+application requests. Existing Owner/Recruiter assignment visibility is preserved.
+This additive display field requires no migration. Frontends may display a link
+without a count while an older backend is deployed.

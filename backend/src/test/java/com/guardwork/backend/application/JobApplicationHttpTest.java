@@ -65,6 +65,37 @@ class JobApplicationHttpTest {
     }
 
     @Test
+    void jobListIncludesScopedApplicationCounts() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        Job empty = publishedJob(company, ownerId);
+        saveApplication(job, profile(userId(account())), "First", "2026-10-31T12:00:00Z");
+        saveApplication(job, profile(userId(account())), "Second", "2026-10-31T13:00:00Z");
+        http.perform(get("/api/companies/me/jobs").header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[?(@.id == " + job.id() + ")].applicationCount").value(org.hamcrest.Matchers.contains(2)))
+                .andExpect(jsonPath("$.data.content[?(@.id == " + empty.id() + ")].applicationCount").value(org.hamcrest.Matchers.contains(0)));
+        String recruiter = account();
+        long recruiterId = userId(recruiter);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", recruiterId);
+        long membership = addRecruiter(company, recruiterId);
+        assign(job, company, membership, ownerId);
+        http.perform(get("/api/companies/me/jobs").header("Authorization", recruiter))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(job.id()))
+                .andExpect(jsonPath("$.data.content[0].applicationCount").value(2));
+        database.update("UPDATE job_postings SET staff_suspended=true WHERE id=?", job.id());
+        http.perform(get("/api/companies/me/jobs").header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content[?(@.id == " + job.id() + ")].applicationCount").value(org.hamcrest.Matchers.contains(org.hamcrest.Matchers.nullValue())));
+    }
+
+    @Test
     void formPrefillsAndSubmitStoresAnImmutableSnapshot() throws Exception {
         String candidate = account();
         long userId = userId(candidate);

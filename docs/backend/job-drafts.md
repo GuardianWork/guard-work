@@ -12,7 +12,7 @@ Hidden and absent private job IDs return the same `40478 JOB_NOT_FOUND` response
 | Method | Route | Body / parameters |
 | --- | --- | --- |
 | POST | `/api/companies/me/jobs` | `{"content": {}}`; returns HTTP and envelope 201 with private detail. |
-| GET | `/api/companies/me/jobs` | `page=0`, `size=20` (1–100), optional `status` and `needsReassignment`. |
+| GET | `/api/companies/me/jobs` | `page=0`, `size=20` (1–100), optional `keyword`, `status` and `needsReassignment`. |
 | GET | `/api/companies/me/jobs/{jobId}` | Positive numeric job ID. |
 | PUT | `/api/companies/me/jobs/{jobId}/draft` | `expectedJobVersion`, `expectedRevisionVersion`, `content`. |
 
@@ -28,6 +28,26 @@ PAUSED, CLOSED or EXPIRED. Missing versions return 400; stale versions return 40
 A save replaces the entire content object; omitted fields are removed. Even identical
 saves advance both versions. Repeated POSTs create separate jobs: do not blindly retry
 an unknown creation result.
+
+### Employer title search
+
+`GET /api/companies/me/jobs?keyword=bao%20ve&page=0&size=20` searches the current
+Company's private jobs, retaining Owner visibility and current-period Recruiter
+assignment restrictions. Combine `keyword`, `status` and `needsReassignment` with AND.
+The optional keyword is stripped of surrounding whitespace and limited to 200 Unicode
+code points after stripping; blank or omitted keywords preserve the unfiltered list.
+Longer keywords return the existing 400 job validation response.
+
+Matching is a literal, case-insensitive and Vietnamese diacritic-insensitive substring
+of the current DRAFT/PENDING_REVIEW title, or the Published Revision title when no
+working revision exists. A working revision without a title does not fall back to
+published content. Historical titles and descriptions do not match. Percent signs,
+underscores and backslashes are literal characters; URL-encode query values.
+Filtering and counting happen before pagination, using the existing response envelope
+and ordering. No matches return an empty successful page. Search does not change
+job state, audit history or versions, and introduces no schema or dependency changes.
+See [GW-SR-REC-JOB-SEARCH](../software-requirements/rec/employer-job-search-spec.md)
+for the approved conversation scope and pending human lifecycle metadata.
 
 Pending and rejected Companies may prepare drafts through eligible current members.
 For all Users, verified account email is required for every private job
