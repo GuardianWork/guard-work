@@ -331,7 +331,9 @@ public class JobDraftService {
         if (evaluation.eligible()) actions.add("SUBMIT");
       }
     }
-    if (revision != null && "PENDING_REVIEW".equals(revision.getState())) actions.add("WITHDRAW");
+    if (revision != null && "PENDING_REVIEW".equals(revision.getState())
+        && !"SUSPENDED".equals(status))
+      actions.add("WITHDRAW");
     if ("PUBLISHED".equals(status)) {
       actions.add("PAUSE");
       actions.add("CLOSE");

@@ -102,6 +102,8 @@ public class JobSubmissionService {
   public JobDetail withdraw(Long actor, Long id, Long revisionId, Confirmation request) {
     var scope = drafts.scope(actor, true);
     var job = drafts.visible(scope, id);
+    if ("SUSPENDED".equals(job.getStatus()))
+      throw conflict("40978 JOB_STATE_CONFLICT: Staff-suspended job cannot be changed");
     var revision = revision(job, revisionId);
     versions(job, revision, request);
     expiry.reconcile(job);

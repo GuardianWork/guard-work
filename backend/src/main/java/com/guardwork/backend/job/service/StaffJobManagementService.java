@@ -7,6 +7,7 @@ import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.job.model.JobAuditEvent;
 import com.guardwork.backend.job.repository.JobAuditEventRepository;
 import com.guardwork.backend.job.repository.JobPostingRepository;
+import com.guardwork.backend.job.repository.JobRevisionRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Clock;
@@ -24,6 +25,7 @@ public class StaffJobManagementService {
   private final JobReviewQueueService reviews;
   private final CompanyRepository companies;
   private final JobPostingRepository jobs;
+  private final JobRevisionRepository revisions;
   private final JobAuditEventRepository events;
   private final JobDraftService drafts;
   private final AuditService audit;
@@ -34,6 +36,7 @@ public class StaffJobManagementService {
       JobReviewQueueService reviews,
       CompanyRepository companies,
       JobPostingRepository jobs,
+      JobRevisionRepository revisions,
       JobAuditEventRepository events,
       JobDraftService drafts,
       AuditService audit,
@@ -41,6 +44,7 @@ public class StaffJobManagementService {
     this.reviews = reviews;
     this.companies = companies;
     this.jobs = jobs;
+    this.revisions = revisions;
     this.events = events;
     this.drafts = drafts;
     this.audit = audit;
@@ -52,6 +56,12 @@ public class StaffJobManagementService {
   public record HideReceipt(
       Long jobId, String publicationStatus, Long jobVersion,
       Long actorUserId, Instant suspendedAt, String reason) {}
+
+  public record RestoreRequest(Long expectedJobVersion, String reason) {}
+
+  public record RestoreReceipt(
+      Long jobId, String publicationStatus, Long jobVersion,
+      Long actorUserId, Instant restoredAt, String reason) {}
 
   public record HistoryEvent(
       Long id, Long jobId, Long revisionId, Long membershipId, Long actorUserId,
@@ -85,6 +95,40 @@ public class StaffJobManagementService {
     audit.recordLog(actor, "JOB_SUSPENDED", "JOB", jobId.toString(),
         "{\"status\":\"PUBLISHED\"}", "{\"status\":\"SUSPENDED\"}", reason, ip, agent);
     return new HideReceipt(jobId, job.getStatus(), job.getVersion(), actor, now, reason);
+  }
+
+  public RestoreReceipt restore(Long actor, Long jobId, RestoreRequest request, String ip, String agent) {
+    reviews.requireStaff(actor);
+    if (request == null || request.expectedJobVersion() == null || request.expectedJobVersion() < 0)
+      throw DraftContent.invalid("expectedJobVersion");
+    String reason = request.reason() == null ? null : request.reason().strip();
+    if (reason == null || reason.isEmpty() || reason.codePointCount(0, reason.length()) > 1000)
+      throw DraftContent.invalid("reason");
+    var hint = jobs.findById(jobId).orElseThrow(JobDraftService::notFound);
+    var company = companies.findByIdForUpdate(hint.getCompanyId()).orElseThrow(JobDraftService::notFound);
+    var job = jobs.lock(jobId, company.getId()).orElseThrow(JobDraftService::notFound);
+    entities.refresh(job);
+    if (!job.getVersion().equals(request.expectedJobVersion()))
+      throw JobSubmissionService.conflict("40022 CONCURRENT_MODIFICATION: Reload current versions");
+    Instant now = clock.instant();
+    boolean approved = job.getPublishedRevisionId() != null
+        && revisions.findById(job.getPublishedRevisionId())
+            .filter(revision -> revision.getJobId().equals(jobId)
+                && "APPROVED".equals(revision.getState())).isPresent();
+    if (!"SUSPENDED".equals(job.getStatus()) || !approved
+        || job.getApprovedDeadline() == null || !now.isBefore(job.getApprovedDeadline())
+        || job.isStaffSuspended() || company.isBanned()
+        || company.getVerificationStatus() != VerificationStatus.VERIFIED)
+      throw JobSubmissionService.conflict("40978 JOB_STATE_CONFLICT: Job is not eligible for restoration");
+    job.setStatus("PUBLISHED");
+    job.setUpdatedAt(now);
+    jobs.flush();
+    drafts.record(job, null, actor, "JOB_RESTORED", null,
+        Map.of("previousStatus", "SUSPENDED", "status", "PUBLISHED",
+            "reason", reason, "jobVersion", job.getVersion()));
+    audit.recordLog(actor, "JOB_RESTORED", "JOB", jobId.toString(),
+        "{\"status\":\"SUSPENDED\"}", "{\"status\":\"PUBLISHED\"}", reason, ip, agent);
+    return new RestoreReceipt(jobId, job.getStatus(), job.getVersion(), actor, now, reason);
   }
 
   public PageResponse<HistoryEvent> history(Long actor, Long jobId, int page, int size) {
