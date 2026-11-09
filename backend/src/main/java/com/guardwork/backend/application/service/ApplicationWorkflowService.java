@@ -19,6 +19,8 @@ import com.guardwork.backend.membership.model.CompanyRole;
 import com.guardwork.backend.membership.model.MembershipStatus;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.membership.service.CompanyAccessService;
+import com.guardwork.backend.notification.model.NotificationAudience;
+import com.guardwork.backend.notification.service.NotificationDispatcher;
 import com.guardwork.backend.notification.service.NotificationIntentService;
 import com.guardwork.backend.user.repository.UserRepository;
 import java.time.Clock;
@@ -28,6 +30,8 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -47,6 +51,7 @@ public class ApplicationWorkflowService {
     private final CandidateProfileRepository profiles;
     private final UserRepository users;
     private final NotificationIntentService notifications;
+    private final NotificationDispatcher dispatcher;
     private final Clock clock;
 
     public ApplicationWorkflowService(
@@ -61,6 +66,7 @@ public class ApplicationWorkflowService {
             CandidateProfileRepository profiles,
             UserRepository users,
             NotificationIntentService notifications,
+            NotificationDispatcher dispatcher,
             Clock clock) {
         this.companyAccess = companyAccess;
         this.jobs = jobs;
@@ -73,6 +79,7 @@ public class ApplicationWorkflowService {
         this.profiles = profiles;
         this.users = users;
         this.notifications = notifications;
+        this.dispatcher = dispatcher;
         this.clock = clock;
     }
 
@@ -160,8 +167,15 @@ public class ApplicationWorkflowService {
         String type = "REJECTED".equals(target) ? "APPLICATION_REJECTED"
                 : "INTERVIEWING".equals(target) ? "APPLICATION_INTERVIEWING"
                 : "HIRED".equals(target) ? "APPLICATION_HIRED" : "APPLICATION_STATUS_CHANGED";
-        notifications.recordApplication(candidateUserId, type, access.company(), jobId,
+        UUID notificationEvent =
+            notifications.recordApplication(candidateUserId, type, NotificationAudience.CANDIDATE, access.company(), jobId,
                 applicationId, feedback, now);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                dispatcher.dispatch(notificationEvent);
+            }
+        });
         return applicationDetails.companyDetail(actorId, jobId, applicationId);
     }
 
@@ -214,8 +228,14 @@ public class ApplicationWorkflowService {
                     .ifPresent(member -> recipients.add(member.getUserId()));
         }
         for (Long recipient : recipients) {
-            notifications.recordApplication(recipient, "APPLICATION_WITHDRAWN", company,
+            UUID notificationEvent = notifications.recordApplication(recipient, "APPLICATION_WITHDRAWN", NotificationAudience.RECRUITER, company,
                     application.getJobId(), applicationId, null, clock.instant());
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    dispatcher.dispatch(notificationEvent);
+                }
+            });
         }
         return applicationDetails.candidateDetail(candidateUserId, applicationId);
     }

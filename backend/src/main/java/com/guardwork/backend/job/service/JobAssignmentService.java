@@ -7,6 +7,7 @@ import com.guardwork.backend.job.repository.*;
 import com.guardwork.backend.membership.model.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.membership.service.CompanyAccessService;
+import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.service.*;
 import com.guardwork.backend.user.repository.UserRepository;
 import java.time.Clock;
@@ -193,7 +194,8 @@ public class JobAssignmentService {
 
   private void notify(Company company, JobPosting job, Long recipient, String type) {
     UUID event =
-        notifications.recordJob(recipient, type, company, job.getId(), null, clock.instant());
+        notifications.recordJob(
+            recipient, type, NotificationAudience.RECRUITER, company, job.getId(), null, clock.instant());
     TransactionSynchronizationManager.registerSynchronization(
         new TransactionSynchronization() {
           @Override

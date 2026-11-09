@@ -9,6 +9,7 @@ import com.guardwork.backend.invitation.repository.CompanyInvitationRepository;
 import com.guardwork.backend.membership.model.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.membership.service.*;
+import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.service.*;
 import com.guardwork.backend.user.model.User;
 import jakarta.validation.Validator;
@@ -123,7 +124,13 @@ public class RecipientInvitationService {
                   i.getId(),
                   null,
                   null);
-              UUID event = notifications.record(c.getOwnerUserId(), "RECRUITER_ACCEPTED", c, now);
+              UUID event =
+                  notifications.record(
+                      c.getOwnerUserId(),
+                      "RECRUITER_ACCEPTED",
+                      NotificationAudience.RECRUITER,
+                      c,
+                      now);
               return new Acceptance(receipt(i, c, membership), true, event);
             });
     if (result.eventId() != null) dispatcher.dispatch(result.eventId());
