@@ -113,6 +113,9 @@ class JobStaffManagementHttpTest {
       org.assertj.core.api.Assertions.assertThatThrownBy(()->management.history(actor,1L,0,20))
         .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
         .hasMessageContaining("403");
+      org.assertj.core.api.Assertions.assertThatThrownBy(()->management.restore(actor,1L,
+          new com.guardwork.backend.job.service.StaffJobManagementService.RestoreRequest(0L,"reason"),null,null))
+        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class).hasMessageContaining("403");
       String staff=staff(user);database.update("UPDATE users SET status='SUSPENDED' WHERE id=?",actor);
       org.assertj.core.api.Assertions.assertThatThrownBy(()->management.hide(actor,1L,
           new com.guardwork.backend.job.service.StaffJobManagementService.HideRequest(0L,"x"),null,null))
@@ -156,15 +159,18 @@ class JobStaffManagementHttpTest {
     @Test void suspendedDraftAndPendingReviewCannotRepublishButReviewsRemainDecidable() throws Exception {
       String owner=account();long company=createdCompany(owner);
       database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);String staff=staff(account());
-      for(String outcome:List.of("APPROVED","REJECTED","WITHDRAWN","DRAFT")) {
+      for(String outcome:List.of("APPROVED","REJECTED","PENDING_REVIEW","DRAFT")) {
         clock.now=Instant.now().truncatedTo(ChronoUnit.MICROS);
         var first=submit(owner,create(owner,complete()));decide(staff,first,"APPROVED");long job=first.path("id").asLong();
         var replacement=derive(owner,inspect(owner,job),null);
         if(!outcome.equals("DRAFT")) replacement=submit(owner,replacement);
         hide(staff,replacement,"x").andExpect(status().isOk());var hidden=inspect(owner,job);
-        assertThat(hidden.path("availableActions").toString()).doesNotContain("SUBMIT","SAVE_DRAFT","CREATE_DRAFT");
-        if(outcome.equals("WITHDRAWN")) withdraw(owner,hidden);
-        else if(outcome.equals("DRAFT")) {
+        assertThat(hidden.path("availableActions").toString()).doesNotContain("SUBMIT","SAVE_DRAFT","CREATE_DRAFT","WITHDRAW");
+        if(outcome.equals("PENDING_REVIEW")) {
+          http.perform(post(JOBS+"/"+job+"/revisions/"+hidden.path("workingRevision").path("id").asLong()+"/withdraw")
+            .header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content(confirm(hidden,true)))
+            .andExpect(status().isConflict());
+        } else if(outcome.equals("DRAFT")) {
           http.perform(put(JOBS+"/"+job+"/draft").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON)
             .content(saveBody(hidden,complete()))).andExpect(status().isConflict());
           http.perform(post(JOBS+"/"+job+"/revisions/"+hidden.path("workingRevision").path("id").asLong()+"/submit")
@@ -195,7 +201,108 @@ class JobStaffManagementHttpTest {
       var paths=mapper.readTree(http.perform(get("/v3/api-docs")).andExpect(status().isOk())
         .andReturn().getResponse().getContentAsString()).path("paths");
       assertThat(paths.has("/api/staff/jobs/{jobId}/hide")).isTrue();
+      assertThat(paths.has("/api/staff/jobs/{jobId}/restore")).isTrue();
       assertThat(paths.has("/api/staff/jobs/{jobId}/history")).isTrue();
+    }
+
+    @Test void staffRestoresEligibleJobWithAuditAndPublicVisibility() throws Exception {
+      String owner=account();long company=createdCompany(owner);
+      database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
+      String staff=staff(account());var pending=submit(owner,create(owner,complete()));decide(staff,pending,"APPROVED");
+      long job=pending.path("id").asLong();var published=inspect(owner,job);
+      hide(staff,published,"Violation resolved later").andExpect(status().isOk());
+      var hidden=inspect(owner,job);long revision=hidden.path("publishedRevisionId").asLong();
+      restore(staff,hidden,"  Violation resolved  ").andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.publicationStatus").value("PUBLISHED"))
+        .andExpect(jsonPath("$.data.reason").value("Violation resolved"))
+        .andExpect(jsonPath("$.data.jobVersion").value(hidden.path("version").asLong()+1));
+      http.perform(get("/api/jobs/"+job)).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.publicationStatus").value("PUBLISHED"));
+      assertThat(inspect(owner,job).path("publishedRevisionId").asLong()).isEqualTo(revision);
+      http.perform(get("/api/staff/jobs/"+job+"/history?size=1").header("Authorization",staff))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[0].eventType").value("JOB_RESTORED"))
+        .andExpect(jsonPath("$.data.content[0].previousStatus").value("SUSPENDED"))
+        .andExpect(jsonPath("$.data.content[0].status").value("PUBLISHED"))
+        .andExpect(jsonPath("$.data.content[0].reason").value("Violation resolved"));
+      assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE target_type='JOB' AND target_id=? AND action='JOB_RESTORED'",Long.class,Long.toString(job))).isEqualTo(1);
+      restore(staff,hidden,"again").andExpect(status().isConflict());
+    }
+
+    @Test void restoreRejectsInvalidAuthorityStateAndSeparateCompanyRestriction() throws Exception {
+      String owner=account();long company=createdCompany(owner);
+      database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
+      String staff=staff(account());var pending=submit(owner,create(owner,complete()));decide(staff,pending,"APPROVED");
+      long job=pending.path("id").asLong();var published=inspect(owner,job);
+      restore(staff,published,"reason").andExpect(status().isConflict());
+      hide(staff,published,"reason").andExpect(status().isOk());var hidden=inspect(owner,job);
+      String route="/api/staff/jobs/"+job+"/restore";
+      http.perform(put(route).contentType(MediaType.APPLICATION_JSON).content("{}" )).andExpect(status().isUnauthorized());
+      http.perform(put(route).header("Authorization",owner).contentType(MediaType.APPLICATION_JSON).content("{}" )).andExpect(status().isForbidden());
+      for(String body:List.of("{}","{\"expectedJobVersion\":0}",
+          mapper.writeValueAsString(Map.of("expectedJobVersion",hidden.path("version").asLong(),"reason"," ")),
+          mapper.writeValueAsString(Map.of("expectedJobVersion",hidden.path("version").asLong(),"reason","x".repeat(1001)))))
+        http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+      restore(staff,published,"reason").andExpect(status().isConflict());
+      database.update("UPDATE companies SET is_banned=true WHERE id=?",company);
+      restore(staff,hidden,"reason").andExpect(status().isConflict());
+      database.update("UPDATE companies SET is_banned=false WHERE id=?",company);
+      database.update("UPDATE job_postings SET staff_suspended=true WHERE id=?",job);
+      restore(staff,hidden,"reason").andExpect(status().isConflict());
+      database.update("UPDATE job_postings SET staff_suspended=false WHERE id=?",job);
+      clock.now=Instant.parse(hidden.path("approvedDeadline").asText());
+      restore(staff,hidden,"reason").andExpect(status().isConflict());
+      assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type='JOB_RESTORED'",Long.class,job)).isZero();
+    }
+
+    @Test void companyJobWritesStayFrozenUntilStaffRestoresThePosting() throws Exception {
+      String owner=account();long company=createdCompany(owner);
+      database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
+      String staff=staff(account());var pending=submit(owner,create(owner,complete()));decide(staff,pending,"APPROVED");
+      long job=pending.path("id").asLong();String recruiter=account();
+      long member=database.queryForObject("INSERT INTO company_memberships(company_id,user_id,role,status,joined_at) VALUES (?,?,'RECRUITER','ACTIVE',now()) RETURNING id",
+          Long.class,company,userId(recruiter));
+      var current=inspect(owner,job);
+      http.perform(put(JOBS+"/"+job+"/assignments/"+member).header("Authorization",owner)
+        .contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("expectedJobVersion",current.path("version").asLong()))))
+        .andExpect(status().isOk());
+      var working=submit(owner,derive(owner,inspect(owner,job),null));
+      hide(staff,working,"reason").andExpect(status().isOk());var hidden=inspect(owner,job);
+      String base=JOBS+"/"+job;long version=hidden.path("version").asLong();
+      http.perform(post(base+"/revisions/"+hidden.path("workingRevision").path("id").asLong()+"/withdraw")
+        .header("Authorization",recruiter).contentType(MediaType.APPLICATION_JSON).content(confirm(hidden,true)))
+        .andExpect(status().isConflict());
+      http.perform(get(base).header("Authorization",recruiter)).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.availableActions").value(Matchers.not(Matchers.hasItem("WITHDRAW"))));
+      http.perform(put(base+"/assignments/"+member).header("Authorization",owner).contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("expectedJobVersion",version)))).andExpect(status().isConflict());
+      http.perform(delete(base+"/assignments/"+member+"?expectedJobVersion="+version).header("Authorization",owner))
+        .andExpect(status().isConflict());
+      http.perform(put(base+"/owner-responsibility").header("Authorization",owner).contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("expectedJobVersion",version,"responsible",true))))
+        .andExpect(status().isConflict());
+      assertThat(inspect(owner,job).path("version").asLong()).isEqualTo(version);
+      restore(staff,hidden,"resolved").andExpect(status().isOk());
+      var restored=inspect(owner,job);
+      http.perform(post(base+"/revisions/"+restored.path("workingRevision").path("id").asLong()+"/withdraw")
+        .header("Authorization",recruiter).contentType(MediaType.APPLICATION_JSON).content(confirm(restored,true)))
+        .andExpect(status().isOk());
+    }
+
+    @Test void failedRestoreAuditRollsBackVisibilityAndAllowsRetry() throws Exception {
+      String owner=account();long company=createdCompany(owner);
+      database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
+      String staff=staff(account());var pending=submit(owner,create(owner,complete()));decide(staff,pending,"APPROVED");
+      long job=pending.path("id").asLong();hide(staff,inspect(owner,job),"reason").andExpect(status().isOk());
+      var hidden=inspect(owner,job);
+      database.execute("CREATE FUNCTION gw107_audit_failure() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'controlled failure'; END; $$ LANGUAGE plpgsql");
+      database.execute("CREATE TRIGGER gw107_audit_failure BEFORE INSERT ON audit_logs FOR EACH ROW WHEN (NEW.target_id='"+job+"' AND NEW.action='JOB_RESTORED') EXECUTE FUNCTION gw107_audit_failure()");
+      try {restore(staff,hidden,"resolved").andExpect(status().isInternalServerError());}
+      finally {database.execute("DROP TRIGGER gw107_audit_failure ON audit_logs");database.execute("DROP FUNCTION gw107_audit_failure()");}
+      assertThat(inspect(owner,job)).isEqualTo(hidden);
+      http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
+      assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type='JOB_RESTORED'",Long.class,job)).isZero();
+      restore(staff,hidden,"resolved").andExpect(status().isOk());
     }
 
     @Test void bothAuditFailuresRollBackSuspensionAndSuccessfulRetryRecordsOnce() throws Exception {
@@ -261,6 +368,11 @@ class JobStaffManagementHttpTest {
 
     org.springframework.test.web.servlet.ResultActions hide(String staff,JsonNode job,String reason) throws Exception {
       return http.perform(put("/api/staff/jobs/"+job.path("id").asLong()+"/hide").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("expectedJobVersion",job.path("version").asLong(),"reason",reason))));
+    }
+
+    org.springframework.test.web.servlet.ResultActions restore(String staff,JsonNode job,String reason) throws Exception {
+      return http.perform(put("/api/staff/jobs/"+job.path("id").asLong()+"/restore").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON)
         .content(mapper.writeValueAsString(Map.of("expectedJobVersion",job.path("version").asLong(),"reason",reason))));
     }
 
