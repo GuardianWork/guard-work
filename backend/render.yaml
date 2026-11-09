@@ -1,4 +1,4 @@
-# Render Blueprint for GuardianWork backend.
+# Render Blueprint for guardwork backend.
 services:
   - type: web
     name: guardwork-backend
@@ -13,23 +13,23 @@ services:
         value: "10000"
       - key: POSTGRES_HOST
         fromDatabase:
-          name: guardianwork-postgres
+          name: guardwork-postgres
           property: host
       - key: POSTGRES_PORT
         fromDatabase:
-          name: guardianwork-postgres
+          name: guardwork-postgres
           property: port
       - key: POSTGRES_DB
         fromDatabase:
-          name: guardianwork-postgres
+          name: guardwork-postgres
           property: database
       - key: POSTGRES_USER
         fromDatabase:
-          name: guardianwork-postgres
+          name: guardwork-postgres
           property: user
       - key: POSTGRES_PASSWORD
         fromDatabase:
-          name: guardianwork-postgres
+          name: guardwork-postgres
           property: password
       - key: GUARDWORK_CORS_ALLOWED_ORIGINS
         sync: false
@@ -43,7 +43,7 @@ services:
         sync: false
 
 databases:
-  - name: guardpostgres
+  - name: guardwork-postgres
     databaseName: backend_db
     user: backend_user
     plan: free
