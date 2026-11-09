@@ -55,7 +55,11 @@ class MembershipNotificationWorkerHttpTest {
     tx.executeWithoutResult(
         status ->
             intents.record(
-                recipient, "MEMBERSHIP_REMOVED", companies.findById(company).orElseThrow(), due));
+                recipient,
+                "MEMBERSHIP_REMOVED",
+                com.guardwork.backend.notification.model.NotificationAudience.RECRUITER,
+                companies.findById(company).orElseThrow(),
+                due));
     http.perform(get("/api/me/notifications").header("Authorization", owner))
         .andExpect(jsonPath("$.data.totalElements").value(0));
     clock.now = due;
@@ -78,7 +82,7 @@ class MembershipNotificationWorkerHttpTest {
     } while (System.nanoTime() < end);
     assertThat(count).isEqualTo(1);
     http.perform(get("/api/me/notifications").header("Authorization", owner))
-        .andExpect(jsonPath("$.data.content[0].companyName").value("Công ty Giải Pháp Ánh Dương"));
+        .andExpect(jsonPath("$.data.content[0].references.companyName").value("Công ty Giải Pháp Ánh Dương"));
   }
 
   long userId(String token) throws Exception {

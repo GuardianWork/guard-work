@@ -18,7 +18,7 @@ class MigrationV8Test {
     @Test void sourceEventUniquenessPreventsDuplicateInboxItemsAndScopeRejectsUnapprovedEvents() {
         long recipient=user(), company=company(); UUID event=UUID.randomUUID();
         database.update("INSERT INTO notification_outbox(event_id,recipient_user_id,event_type,company_id,company_name,created_at,next_attempt_at) VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Công ty Ánh',now(),now())",event,recipient,company);
-        String insertion="INSERT INTO user_notifications(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Công ty Ánh',now())";
+        String insertion="INSERT INTO notification_inbox(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Công ty Ánh',now())";
         database.update(insertion,event,recipient,company);
         assertThatThrownBy(() -> database.update(insertion,event,recipient,company)).isInstanceOf(DataAccessException.class).hasMessageContaining("source_event_id");
         assertThatThrownBy(() -> database.update("INSERT INTO notification_outbox(event_id,recipient_user_id,event_type,company_id,company_name,created_at,next_attempt_at) VALUES (?,?,'UNAPPROVED_EVENT',?,'Công ty Ánh',now(),now())",UUID.randomUUID(),recipient,company))

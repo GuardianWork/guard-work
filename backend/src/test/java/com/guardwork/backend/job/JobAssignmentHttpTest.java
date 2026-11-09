@@ -16,7 +16,7 @@ class JobAssignmentHttpTest extends JobDraftHttpTest {
   http.perform(get(JOBS+"/"+job.path("id").asLong()).header("Authorization",recruiter)).andExpect(status().isNotFound());
   http.perform(delete(target+"?expectedJobVersion=1").header("Authorization",owner)).andExpect(status().isOk());
   http.perform(get("/api/me/notifications").header("Authorization",recruiter)).andExpect(jsonPath("$.data.totalElements").value(2));
-  http.perform(get("/api/me/notifications").header("Authorization",owner)).andExpect(jsonPath("$.data.totalElements").value(1)).andExpect(jsonPath("$.data.content[0].eventType").value("JOB_NEEDS_REASSIGNMENT"));
+  http.perform(get("/api/me/notifications").header("Authorization",owner)).andExpect(jsonPath("$.data.totalElements").value(1)).andExpect(jsonPath("$.data.content[0].type").value("JOB_NEEDS_REASSIGNMENT"));
  }
 
  @Test void assignmentAndOwnerResponsibilityAreIndependentAndVersioned() throws Exception {
@@ -78,12 +78,12 @@ class JobAssignmentHttpTest extends JobDraftHttpTest {
   String owner=account(), recruiter=account();long company=createdCompany(owner), member=recruiter(company,recruiter);
   long id=create(recruiter,Map.of()).path("id").asLong();long recipient=userId(recruiter);
   database.execute("CREATE FUNCTION gw78_removed_inbox_fail() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'controlled failure' USING ERRCODE='23514'; END; $$ LANGUAGE plpgsql");
-  database.execute("CREATE TRIGGER gw78_removed_inbox_fail BEFORE INSERT ON user_notifications FOR EACH ROW WHEN (NEW.recipient_user_id="+recipient+") EXECUTE FUNCTION gw78_removed_inbox_fail()");
+  database.execute("CREATE TRIGGER gw78_removed_inbox_fail BEFORE INSERT ON notification_inbox FOR EACH ROW WHEN (NEW.recipient_user_id="+recipient+") EXECUTE FUNCTION gw78_removed_inbox_fail()");
   try {
    http.perform(delete("/api/companies/me/members/"+member).header("Authorization",owner)).andExpect(status().isOk());
    http.perform(get(JOBS+"/"+id).header("Authorization",recruiter)).andExpect(status().isNotFound());
    http.perform(get(JOBS+"/"+id).header("Authorization",owner)).andExpect(jsonPath("$.data.needsReassignment").value(true));
-  } finally {database.execute("DROP TRIGGER gw78_removed_inbox_fail ON user_notifications");database.execute("DROP FUNCTION gw78_removed_inbox_fail()");}
+  } finally {database.execute("DROP TRIGGER gw78_removed_inbox_fail ON notification_inbox");database.execute("DROP FUNCTION gw78_removed_inbox_fail()");}
   var events=database.queryForList("SELECT event_id FROM notification_outbox WHERE recipient_user_id=?",UUID.class,recipient);
   for(var event:events){dispatcher.replay(event);dispatcher.replay(event);}
   http.perform(get("/api/me/notifications").header("Authorization",recruiter)).andExpect(jsonPath("$.data.totalElements").value(3));

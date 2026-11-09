@@ -228,8 +228,8 @@ class JobDraftHttpTest {
         }
         http.perform(get("/api/me/notifications").header("Authorization", recruiter))
                 .andExpect(jsonPath("$.data.totalElements").value(1))
-                .andExpect(jsonPath("$.data.content[0].eventType").value("JOB_ASSIGNED"))
-                .andExpect(jsonPath("$.data.content[0].jobId").value(id));
+                .andExpect(jsonPath("$.data.content[0].type").value("JOB_ASSIGNED"))
+                .andExpect(jsonPath("$.data.content[0].references.jobId").value(id));
         http.perform(post("/api/companies/me/membership/leave").header("Authorization", recruiter))
                 .andExpect(status().isOk());
         http.perform(get(JOBS + "/" + id).header("Authorization", recruiter)).andExpect(status().isNotFound());
@@ -323,14 +323,14 @@ class JobDraftHttpTest {
         String owner = account(), recruiter = account(); long company = createdCompany(owner);
         recruiter(company, recruiter); long recipient = userId(recruiter);
         database.execute("CREATE FUNCTION gw78_fail_inbox() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'controlled failure' USING ERRCODE='23514'; END; $$ LANGUAGE plpgsql");
-        database.execute("CREATE TRIGGER gw78_fail_inbox BEFORE INSERT ON user_notifications FOR EACH ROW WHEN (NEW.recipient_user_id=" + recipient + ") EXECUTE FUNCTION gw78_fail_inbox()");
+        database.execute("CREATE TRIGGER gw78_fail_inbox BEFORE INSERT ON notification_inbox FOR EACH ROW WHEN (NEW.recipient_user_id=" + recipient + ") EXECUTE FUNCTION gw78_fail_inbox()");
         long job;
         try {
             job = create(recruiter, Map.of()).path("id").asLong();
             http.perform(get(JOBS + "/" + job).header("Authorization", recruiter)).andExpect(status().isOk());
             http.perform(get("/api/me/notifications").header("Authorization", recruiter)).andExpect(jsonPath("$.data.totalElements").value(0));
         } finally {
-            database.execute("DROP TRIGGER gw78_fail_inbox ON user_notifications");
+            database.execute("DROP TRIGGER gw78_fail_inbox ON notification_inbox");
             database.execute("DROP FUNCTION gw78_fail_inbox()");
         }
         UUID event = database.queryForObject("SELECT event_id FROM notification_outbox WHERE recipient_user_id=? AND event_type='JOB_ASSIGNED'", UUID.class, recipient);
@@ -338,9 +338,9 @@ class JobDraftHttpTest {
         database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,true,'Recruiter')", recipient);
         var item = mapper.readTree(http.perform(get("/api/me/notifications").header("Authorization", recruiter))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
-                .andExpect(jsonPath("$.data.content[0].jobId").value(job))
+                .andExpect(jsonPath("$.data.content[0].references.jobId").value(job))
                 .andReturn().getResponse().getContentAsString()).path("data").path("content").get(0);
-        long notification = item.path("id").asLong();
+        long notification = Long.parseLong(item.path("id").asText());
         http.perform(patch("/api/me/notifications/" + notification + "/read").header("Authorization", recruiter))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.readAt").isNotEmpty());
         http.perform(patch("/api/me/notifications/" + notification + "/read").header("Authorization", owner))

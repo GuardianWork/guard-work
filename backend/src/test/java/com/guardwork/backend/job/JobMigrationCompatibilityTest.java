@@ -119,7 +119,7 @@ class JobMigrationCompatibilityTest {
       assertThat(database.queryForObject("SELECT count(*) FROM " + schema
           + ".notification_outbox WHERE event_id=? AND job_id IS NULL AND revision_id IS NULL", Long.class, event)).isEqualTo(1);
       assertThat(database.queryForObject("SELECT count(*) FROM " + schema
-          + ".user_notifications WHERE source_event_id=? AND job_id IS NULL AND revision_id IS NULL", Long.class, event)).isEqualTo(1);
+          + ".notification_inbox WHERE source_event_id=? AND job_id IS NULL AND revision_id IS NULL", Long.class, event)).isEqualTo(1);
       assertThat(upgrade.migrate().migrationsExecuted).isZero();
     } finally {
       database.execute("DROP SCHEMA IF EXISTS " + schema + " CASCADE");
