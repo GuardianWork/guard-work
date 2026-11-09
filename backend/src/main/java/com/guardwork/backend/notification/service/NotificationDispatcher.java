@@ -2,8 +2,12 @@ package com.guardwork.backend.notification.service;
 
 import com.guardwork.backend.notification.model.*;
 import com.guardwork.backend.notification.repository.*;
+import com.guardwork.backend.notification.template.NotificationTemplate;
 import java.time.Clock;
 import java.util.UUID;
+import lombok.AccessLevel;
+import lombok.RequiredArgsConstructor;
+import lombok.experimental.FieldDefaults;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -16,45 +20,51 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Public operational recovery seam; every dispatch runs independently of the business transaction.
  */
 @Service
+@RequiredArgsConstructor
+@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class NotificationDispatcher {
   private static final Logger LOG = LoggerFactory.getLogger(NotificationDispatcher.class);
-  private final NotificationOutboxRepository outbox;
-  private final UserNotificationRepository inbox;
-  private final Clock clock;
-  private final TransactionTemplate transaction;
+  NotificationOutboxRepository outbox;
+  NotificationInboxRepository inbox;
+  Clock clock;
+  PlatformTransactionManager manager;
 
-  public NotificationDispatcher(
-      NotificationOutboxRepository outbox,
-      UserNotificationRepository inbox,
-      Clock clock,
-      PlatformTransactionManager manager) {
-    this.outbox = outbox;
-    this.inbox = inbox;
-    this.clock = clock;
-    transaction = new TransactionTemplate(manager);
-    transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+  private TransactionTemplate newTx() {
+    TransactionTemplate t = new TransactionTemplate(manager);
+    t.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    return t;
   }
 
   public void dispatch(UUID eventId) {
     try {
-      transaction.executeWithoutResult(
+      newTx().executeWithoutResult(
           tx -> {
             var event = outbox.findForUpdate(eventId).orElse(null);
             if (event == null
                 || event.getDeliveredAt() != null
                 || event.getNextAttemptAt().isAfter(clock.instant())) return;
             if (!inbox.existsBySourceEventId(eventId)) {
-              var item = new UserNotification();
-              item.setSourceEventId(eventId);
-              item.setRecipientUserId(event.getRecipientUserId());
-              item.setEventType(event.getEventType());
-              item.setCompanyId(event.getCompanyId());
-              item.setCompanyName(event.getCompanyName());
-              item.setCreatedAt(event.getCreatedAt());
-              item.setJobId(event.getJobId());
-              item.setRevisionId(event.getRevisionId());
-              item.setApplicationId(event.getApplicationId());
-              item.setCandidateFeedback(event.getCandidateFeedback());
+              NotificationTemplate template = NotificationTemplate.find(event.getEventType());
+              var item =
+                  NotificationInbox.builder()
+                      .sourceEventId(eventId)
+                      .recipientUserId(event.getRecipientUserId())
+                      .eventType(event.getEventType())
+                      .audience(event.getAudience())
+                      .companyId(event.getCompanyId())
+                      .companyName(event.getCompanyName())
+                      .createdAt(event.getCreatedAt())
+                      .jobId(event.getJobId())
+                      .revisionId(event.getRevisionId())
+                      .applicationId(event.getApplicationId())
+                      .candidateFeedback(event.getCandidateFeedback())
+                      .category(template.categoryValue())
+                      .title(template.title(event))
+                      .body(template.body(event))
+                      .actionHref(template.actionHref(event))
+                      .actorUserId(event.getActorUserId())
+                      .actorName(event.getActorName())
+                      .build();
               inbox.saveAndFlush(item);
             }
             event.setDeliveredAt(clock.instant());
@@ -62,7 +72,7 @@ public class NotificationDispatcher {
           });
     } catch (RuntimeException failure) {
       try {
-        transaction.executeWithoutResult(
+        newTx().executeWithoutResult(
             tx -> {
               var event = outbox.findForUpdate(eventId).orElse(null);
               if (event == null || event.getDeliveredAt() != null) return;
@@ -99,7 +109,7 @@ public class NotificationDispatcher {
 
   /** Trusted operator replay; no public HTTP endpoint. Retains failure history. */
   public void replay(UUID eventId) {
-    transaction.executeWithoutResult(
+    newTx().executeWithoutResult(
         tx ->
             outbox
                 .findForUpdate(eventId)

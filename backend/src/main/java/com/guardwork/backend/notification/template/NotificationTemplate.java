@@ -87,6 +87,20 @@ public enum NotificationTemplate {
     }
     @Override public String actionHref(NotificationOutbox e) { return withApplicationHref(e); }
   },
+  APPLICATION_INTERVIEWING(NotificationEventType.APPLICATION_INTERVIEWING, NotificationCategory.APPLICATION) {
+    @Override public String title(NotificationOutbox e) { return "Hồ sơ đã chuyển sang vòng phỏng vấn"; }
+    @Override public String body(NotificationOutbox e) {
+      return "Hồ sơ của bạn đã chuyển sang vòng phỏng vấn. Nhà tuyển dụng sẽ liên hệ để trao đổi chi tiết.";
+    }
+    @Override public String actionHref(NotificationOutbox e) { return withApplicationHref(e); }
+  },
+  APPLICATION_HIRED(NotificationEventType.APPLICATION_HIRED, NotificationCategory.APPLICATION) {
+    @Override public String title(NotificationOutbox e) { return "Bạn đã được tuyển"; }
+    @Override public String body(NotificationOutbox e) {
+      return "Công ty đã xác nhận bạn đồng ý gia nhập. Nhà tuyển dụng sẽ liên hệ với bạn về các bước tiếp theo.";
+    }
+    @Override public String actionHref(NotificationOutbox e) { return withApplicationHref(e); }
+  },
   /** Fallback for unknown keys; keeps the raw backend key as its title. */
   UNKNOWN(NotificationEventType.UNKNOWN, NotificationCategory.SYSTEM) {
     @Override public String title(NotificationOutbox e) {

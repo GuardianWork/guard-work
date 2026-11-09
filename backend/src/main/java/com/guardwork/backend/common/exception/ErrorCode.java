@@ -45,6 +45,7 @@ public enum ErrorCode {
     USER_NOT_FOUND(40401, "The user you are looking for could not be found.", HttpStatus.NOT_FOUND),
     VERIFICATION_TOKEN_NOT_FOUND(40404, "The verification token is invalid or has expired.", HttpStatus.NOT_FOUND),
     CV_NOT_FOUND(40405, "The CV could not be found.", HttpStatus.NOT_FOUND),
+    NOTIFICATION_NOT_FOUND(40406, "Notification not found.", HttpStatus.NOT_FOUND),
     JOB_NOT_FOUND(40478, "The job posting could not be found.", HttpStatus.NOT_FOUND),
 
     // --- CONFLICT (409) ---
