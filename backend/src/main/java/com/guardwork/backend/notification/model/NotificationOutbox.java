@@ -3,11 +3,17 @@ package com.guardwork.backend.notification.model;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Getter
 @Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Entity
 @Table(name = "notification_outbox")
 public class NotificationOutbox {
@@ -19,7 +25,12 @@ public class NotificationOutbox {
   private Long recipientUserId;
 
   @Column(name = "event_type", nullable = false)
-  private String eventType;
+  @Enumerated(EnumType.STRING)
+  private NotificationEventType eventType;
+
+  @Column(name = "audience", nullable = false)
+  @Enumerated(EnumType.STRING)
+  private NotificationAudience audience;
 
   @Column(name = "company_id", nullable = false)
   private Long companyId;
@@ -38,6 +49,12 @@ public class NotificationOutbox {
 
   @Column(name = "candidate_feedback", length = 1000)
   private String candidateFeedback;
+
+  @Column(name = "actor_user_id")
+  private Long actorUserId;
+
+  @Column(name = "actor_name", length = 255)
+  private String actorName;
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
