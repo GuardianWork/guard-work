@@ -10,6 +10,8 @@ Spring Boot 4 REST API for **guard-work**.
 
 ## Getting Started
 
+For the opt-in local AI workflow, see [JD scanning](../docs/backend/jd-scanning.md).
+
 ```bash
 # 1. copy environment config and adjust values
 cp .env.example .env

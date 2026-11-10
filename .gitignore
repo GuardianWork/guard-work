@@ -55,3 +55,8 @@ target/
 node_modules/
 dist/
 build/
+
+# Python local adapter
+__pycache__/
+*.py[cod]
+.venv/
