@@ -193,8 +193,8 @@ public class JobApplicationService {
         if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
             throw invalid("pagination");
         }
-        if (status != null && !java.util.List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "REJECTED",
-                "WITHDRAWN").contains(status)) {
+        if (status != null && !java.util.List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING",
+                "HIRED", "REJECTED", "WITHDRAWN").contains(status)) {
             throw invalid("status");
         }
         String normalizedSearch = normalizeCandidateSearch(search);
@@ -319,7 +319,7 @@ public class JobApplicationService {
         if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
             throw invalidRequest("pagination");
         }
-        if (status != null && !List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "REJECTED", "WITHDRAWN")
+        if (status != null && !List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING", "HIRED", "REJECTED", "WITHDRAWN")
                 .contains(status)) {
             throw invalidRequest("status");
         }

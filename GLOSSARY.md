@@ -16,6 +16,14 @@ _Avoid_: Current Candidate profile, live CV
 The current recruitment step or terminal result for one Application. Viewing submitted evidence does not itself change this status.
 _Avoid_: CV status, separate stage and outcome as synonyms
 
+**Interviewing**:
+The Application stage indicating that the Company is pursuing interviews arranged outside GuardWork; it does not establish a confirmed meeting.
+_Avoid_: Scheduled Interview, confirmed appointment
+
+**Hiring Confirmation**:
+The Company's explicit record that the Candidate agreed externally to join, concluding the Application as hired.
+_Avoid_: Offer acceptance inside GuardWork, employment contract
+
 **Application Status History**:
 The append-only record of an Application's submission and subsequent status changes, preserving who acted and when.
 _Avoid_: Editable activity log, current status

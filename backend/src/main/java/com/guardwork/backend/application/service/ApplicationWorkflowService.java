@@ -32,7 +32,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class ApplicationWorkflowService {
-    private static final Set<String> ACTIVE = Set.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED");
+    private static final Set<String> ACTIVE = Set.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING");
     private static final Set<String> REASONS = Set.of(
             "QUALIFICATIONS_MISMATCH", "EXPERIENCE_MISMATCH", "POSITION_FILLED", "OTHER");
 
@@ -128,7 +128,10 @@ public class ApplicationWorkflowService {
         if (!ACTIVE.contains(from)) throw invalid("Application is terminal");
         if (!"REJECTED".equals(target)
                 && !("UNDER_REVIEW".equals(target) && "SUBMITTED".equals(from))
-                && !("SHORTLISTED".equals(target) && ("SUBMITTED".equals(from) || "UNDER_REVIEW".equals(from)))) {
+                && !("SHORTLISTED".equals(target) && ("SUBMITTED".equals(from) || "UNDER_REVIEW".equals(from)))
+                && !("INTERVIEWING".equals(target) && ("UNDER_REVIEW".equals(from) || "SHORTLISTED".equals(from)))
+                && !("HIRED".equals(target)
+                    && Set.of("UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING").contains(from))) {
             throw invalid("Unsupported Application status transition");
         }
         if ("REJECTED".equals(target)) {
@@ -154,7 +157,9 @@ public class ApplicationWorkflowService {
         history.saveAndFlush(event);
         Long candidateUserId = profiles.findById(application.getCandidateId())
                 .orElseThrow(ApplicationWorkflowService::notFound).getUserId();
-        String type = "REJECTED".equals(target) ? "APPLICATION_REJECTED" : "APPLICATION_STATUS_CHANGED";
+        String type = "REJECTED".equals(target) ? "APPLICATION_REJECTED"
+                : "INTERVIEWING".equals(target) ? "APPLICATION_INTERVIEWING"
+                : "HIRED".equals(target) ? "APPLICATION_HIRED" : "APPLICATION_STATUS_CHANGED";
         notifications.recordApplication(candidateUserId, type, access.company(), jobId,
                 applicationId, feedback, now);
         return applicationDetails.companyDetail(actorId, jobId, applicationId);
@@ -219,8 +224,14 @@ public class ApplicationWorkflowService {
         if (request == null || request.status() == null || request.version() == null || request.version() < 0) {
             throw invalid("request");
         }
-        if (!Set.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "REJECTED").contains(request.status())) {
+        if (!Set.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING", "HIRED", "REJECTED")
+                .contains(request.status())) {
             throw invalid("status");
+        }
+        if ("HIRED".equals(request.status())) {
+            if (!Boolean.TRUE.equals(request.hiringConfirmed())) throw invalid("hiringConfirmed");
+        } else if (request.hiringConfirmed() != null) {
+            throw invalid("hiringConfirmed");
         }
         for (String text : List.of(request.internalExplanation() == null ? "" : request.internalExplanation(),
                 request.candidateFeedback() == null ? "" : request.candidateFeedback())) {
