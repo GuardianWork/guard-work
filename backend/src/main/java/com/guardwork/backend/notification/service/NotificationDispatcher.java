@@ -45,25 +45,26 @@ public class NotificationDispatcher {
                 || event.getNextAttemptAt().isAfter(clock.instant())) return;
             if (!inbox.existsBySourceEventId(eventId)) {
               NotificationTemplate template = NotificationTemplate.find(event.getEventType());
+              var payload = event.payloadView();
               var item =
                   NotificationInbox.builder()
                       .sourceEventId(eventId)
                       .recipientUserId(event.getRecipientUserId())
                       .eventType(event.getEventType())
                       .audience(event.getAudience())
-                      .companyId(event.getCompanyId())
-                      .companyName(event.getCompanyName())
+                      .companyId(payload.companyId())
+                      .companyName(payload.companyName())
                       .createdAt(event.getCreatedAt())
-                      .jobId(event.getJobId())
-                      .revisionId(event.getRevisionId())
-                      .applicationId(event.getApplicationId())
-                      .candidateFeedback(event.getCandidateFeedback())
+                      .jobId(payload.jobId())
+                      .revisionId(payload.revisionId())
+                      .applicationId(payload.applicationId())
+                      .candidateFeedback(payload.candidateFeedback())
                       .category(template.categoryValue())
                       .title(template.title(event))
                       .body(template.body(event))
                       .actionHref(template.actionHref(event))
-                      .actorUserId(event.getActorUserId())
-                      .actorName(event.getActorName())
+                      .actorUserId(payload.actorUserId())
+                      .actorName(payload.actorName())
                       .build();
               inbox.saveAndFlush(item);
             }

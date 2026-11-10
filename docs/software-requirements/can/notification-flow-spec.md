@@ -118,12 +118,7 @@ triggers (`protect_notification_outbox_context` and `protect_notification_inbox_
 | `recipient_user_id` | BIGINT | Yes | Target user; foreign key to `users`. |
 | `event_type` | VARCHAR(50) | Yes | One of the 10 keys plus `UNKNOWN` fallback. |
 | `audience` | VARCHAR(20) | Yes | `CANDIDATE` or `RECRUITER` — the role the recipient was notified as (V105). |
-| `company_id` | BIGINT | Yes | Owning Company at fact time. |
-| `company_name` | VARCHAR(255) | Yes | Frozen Company name. |
-| `job_id`, `revision_id` | BIGINT | No | Context snapshot where applicable. |
-| `application_id` | UUID | No | Required iff event is `APPLICATION_*`. |
-| `candidate_feedback` | VARCHAR(1000) | No | Candidate-facing rejection feedback. |
-| `actor_user_id`, `actor_name` | BIGINT / VARCHAR(255) | No | Frozen actor attribution, currently reserved. |
+| `payload` | JSONB | Yes | Frozen fact-time context: `companyId`, `companyName`, optional job/application context, `jobTitle` for application events, feedback, actor. |
 | `created_at` | TIMESTAMPTZ | Yes | Business fact time. |
 | `attempt_count` | INTEGER | Yes | Number of failed writes. |
 | `next_attempt_at` | TIMESTAMPTZ | Yes | Next delivery attempt. |
@@ -131,6 +126,24 @@ triggers (`protect_notification_outbox_context` and `protect_notification_inbox_
 | `error_category` | VARCHAR(50) | No | Last failure category. |
 
 Indexes: `ix_notification_outbox_due (next_attempt_at) WHERE delivered_at IS NULL`.
+
+Payload keys (camelCase; absent means null):
+
+| Key | Type | Present | Meaning |
+|---|---|---|---|
+| `companyId` | number | always | Owning Company at fact time. |
+| `companyName` | string | always | Frozen Company name. |
+| `jobId`, `revisionId` | number | job events | Context snapshot where applicable; `revisionId` requires `jobId`. |
+| `jobTitle` | string | application events | Applied-for role, copied from `application_snapshots.job_title` at intent time. |
+| `applicationId` | UUID string | `APPLICATION_*` only | Required iff event is `APPLICATION_*`. |
+| `candidateFeedback` | string | rejection only | Candidate-facing rejection feedback. |
+| `actorUserId`, `actorName` | number / string | reserved | Frozen actor attribution. |
+
+The payload is extensible without a migration: adding a key is an additive change to
+`NotificationPayload`; readers ignore unknown keys and absent keys deserialize as null. The
+database keeps only invariants shared by all events as `CHECK`s, and
+`validate_notification_outbox_payload()` re-checks Company/Job/revision/Application references
+at write time because the folded columns' foreign keys no longer exist.
 
 ### 3.2 notification_inbox — user read model
 
@@ -164,9 +177,12 @@ fallback copy when null.
   `record()` accepts the two membership events, `recordJob()` accepts the five job events, and
   `recordApplication()` accepts the three application events.
 - **FR-NOTIF-03:** Recording returns a durable `event_id` for later dispatch.
-- **FR-NOTIF-04:** Missing base context (recipient, Company) is rejected by the outbox's
-  mandatory columns and foreign keys at write time. Unsupported event/method combinations throw
-  `IllegalArgumentException`.
+- **FR-NOTIF-04:** Missing base context (recipient, Company) is rejected at write time by the
+  outbox's required columns, payload shape checks, and the payload validation trigger. Unsupported
+  event/method combinations throw `IllegalArgumentException`.
+- **FR-NOTIF-04c:** Fact-time context is stored once in `notification_outbox.payload`. Adding a
+  payload field requires no migration; the dispatcher maps payload keys to the inbox context
+  columns and renders copy from the payload, never from a live business join.
 - **FR-NOTIF-04b:** The caller supplies the `audience` (`CANDIDATE` or `RECRUITER`) the
   recipient is notified as. Membership/job events and `APPLICATION_WITHDRAWN` use
   `RECRUITER`; `APPLICATION_STATUS_CHANGED` / `APPLICATION_REJECTED` use `CANDIDATE`.
@@ -228,10 +244,11 @@ fallback copy when null.
 - **BR-NOTIF-02:** Delivered dispatch metadata never changes after `delivered_at`.
 - **BR-NOTIF-03:** Inbox context and presentation never change after insert.
 - **BR-NOTIF-04:** `read_at` is immutable once set.
-- **BR-NOTIF-05:** `company_name` is frozen at intent time. Actor fields are frozen when
-  populated; current callers leave both actor columns null (see open gaps).
-- **BR-NOTIF-06:** Application events require `application_id`; non-application events cannot
-  carry one (enforced by `ck_application_*_context`).
+- **BR-NOTIF-05:** `companyName` is frozen in the outbox payload at intent time. Application
+  events also freeze `jobTitle` from the application snapshot. Actor fields are frozen when
+  populated; current callers leave both actor keys absent (see open gaps).
+- **BR-NOTIF-06:** Application events require `applicationId`; non-application events cannot
+  carry one (enforced by `ck_application_outbox_context` / `ck_application_inbox_context`).
 - **BR-NOTIF-07:** One delivered outbox row produces exactly one inbox row.
 - **BR-NOTIF-08:** Template changes never rewrite historical notifications.
 - **BR-NOTIF-09:** A rollback of the business transaction also rolls back the notification intent.
@@ -239,8 +256,8 @@ fallback copy when null.
 - **BR-NOTIF-11:** `audience` is set by the intent caller at record time and never changes;
   it is not derived from the event type at read time (`APPLICATION_WITHDRAWN` is
   recruiter-facing while the other `APPLICATION_*` events are candidate-facing). Backfilled
-  V105 rows use the same rule. `CONTEXT` triggers freeze `audience` like the rest of the
-  context columns.
+  V105 rows use the same rule. `CONTEXT` triggers freeze `audience` and the outbox `payload`
+  like the rest of the context columns.
 
 ## 6. API specification
 

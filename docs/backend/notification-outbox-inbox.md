@@ -6,6 +6,7 @@ This document explains the outbox/inbox pattern used for in-app notifications in
 - **Inbox** — `notification_inbox`: the recipient's durable, user-visible copy.
 
 Related: [ADR 0012](../architecture/decisions/0012-notification-outbox-inbox-contract.md) ·
+[ADR 0013](../architecture/decisions/0013-notification-outbox-payload.md) ·
 [Notification flow spec](../software-requirements/can/notification-flow-spec.md)
 
 ---
@@ -48,8 +49,9 @@ COMMIT
 ```
 
 The row contains only what is needed to reproduce the event later: event identity, recipient,
-event type, context, and delivery metadata such as `attempt_count` and `next_attempt_at`. It is
-**not** the user-facing notification.
+event type, context, and delivery metadata such as `attempt_count` and `next_attempt_at`. Fact-time
+context is stored in one `payload` JSONB document, not one column per field. It is **not** the
+user-facing notification.
 
 This gives one guarantee: either both writes commit or both roll back. It becomes impossible for
 the business action to succeed while the system forgets that a notification is owed. It does not
@@ -73,7 +75,7 @@ The inbox is the recipient's durable copy: rendered title, body, category, actio
 state. The dispatcher writes it once, at delivery time.
 
 The inbox deliberately duplicates context from the outbox (`company_name`, job/application IDs,
-created time) so that:
+the applied-for job title for application events, created time) so that:
 
 - historical notifications do not change when a company is renamed or a template is edited;
 - the read path queries one table and joins no business model.
@@ -152,7 +154,7 @@ flowchart TD
 
 1. **Business service records an intent.** It calls `NotificationIntentService.record*()` while its
    transaction is active (`Propagation.MANDATORY`). This inserts one `notification_outbox` row
-   with the event ID, recipient, context, and `next_attempt_at = now`.
+   with the event ID, recipient, and `payload`, and `next_attempt_at = now`.
 
 2. **Business transaction commits.** The notification is now durable even if the process crashes.
 
@@ -195,9 +197,46 @@ No schema migration accompanies these read endpoints.
 context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`/`APPLICATION_REJECTED` →
 `CANDIDATE`, everything else including `APPLICATION_WITHDRAWN` → `RECRUITER`).
 
+### Outbox payload
+
+All fact-time outbox context lives in `payload JSONB NOT NULL DEFAULT '{}'`. The typed view is
+`NotificationPayload`; the column stores raw JSON, so rendering and inbox delivery never join a
+business table.
+
+| Key | Type | Present | Meaning |
+|---|---|---|---|
+| `companyId` | number | always | Owning Company at fact time. |
+| `companyName` | string | always | Frozen Company name. |
+| `jobId` | number | job events | Job context. |
+| `revisionId` | number | job events | Job revision context; requires `jobId`. |
+| `jobTitle` | string | application events | Applied-for role, copied from `application_snapshots.job_title`. |
+| `applicationId` | UUID string | `APPLICATION_*` only | Application context. |
+| `candidateFeedback` | string | rejection only | Candidate-facing rejection feedback. |
+| `actorUserId`, `actorName` | number / string | reserved | Frozen actor attribution. |
+
+The `NotificationDispatcher` maps payload keys to the inbox context columns at delivery; the
+inbox is still column-based because it is the join-free read model.
+
+The database enforces the invariants that the removed columns used to provide:
+
+- `CK`s require `companyId` + `companyName`, require `applicationId` exactly for `APPLICATION_*`,
+  and require `jobId` whenever `revisionId` is present.
+- `validate_notification_outbox_payload()` runs on insert and on any payload update: the Company
+  must exist, the Job must belong to the Company, the revision must belong to the Job, and the
+  Application must exist.
+- `protect_notification_outbox_context()` freezes `payload` together with the event identity.
+
+**Extending the payload.** Add a component to `NotificationPayload` and a factory argument; no
+migration is needed because the column accepts arbitrary keys. Follow these rules:
+
+- serialize null facts as absent (`NON_NULL`);
+- keep `@JsonIgnoreProperties(ignoreUnknown = true)` so older readers tolerate newer payloads;
+- treat an absent key as `null` — older rows are never rewritten;
+- do not add a `CHECK` for optional fields; only enforce invariants every event shares.
+
 ### Data rules
 
-- Outbox context is immutable after insert.
+- Outbox `payload`, event identity, recipient, type, and audience are immutable after insert.
 - Once delivered, outbox retry fields are immutable.
 - Inbox context and rendered copy are immutable.
 - `read_at` can be set once.
@@ -243,6 +282,10 @@ context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`/`APPLICATION_REJ
 - Do not write `notification_inbox` directly; only the dispatcher delivers.
 - Add a new event by updating `NotificationEventType`, `NotificationTemplate`, the allowed
   `record*` method, and the database `CHECK` in a new Flyway migration.
+- Add a new payload field by extending `NotificationPayload` and its factory; the JSONB column
+  needs no migration. Keep unknown keys readable and absent keys as `null`.
+- `jobTitle` is captured only for application events from `application_snapshots.job_title`.
+  Job/membership templates reference IDs and Company name, so their payloads omit it.
 - Dispatch after commit, not inside the business transaction.
 - Do not mutate outbox context or inbox snapshots; database triggers reject it.
 - Tests should assert post-commit delivery, not same-transaction visibility.
@@ -252,6 +295,8 @@ context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`/`APPLICATION_REJ
 ## 7. Key files
 
 - `backend/src/main/java/com/guardwork/backend/notification/`
+- `backend/src/main/java/com/guardwork/backend/notification/model/NotificationPayload.java`
 - `backend/src/main/resources/db/migration/V8__membership_notifications.sql`
 - `backend/src/main/resources/db/migration/V2026.11.03.101__application_review_history_and_notifications.sql`
-- `backend/src/main/resources/db/migration/V2026.11.08.104__notification_inbox_envelope.sql`
+- `backend/src/main/resources/db/migration/V2026.11.11.106__notification_outbox_payload.sql`
+- `docs/architecture/decisions/0013-notification-outbox-payload.md`

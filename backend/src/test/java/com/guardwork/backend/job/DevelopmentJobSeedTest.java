@@ -36,7 +36,8 @@ class DevelopmentJobSeedTest {
       assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE action='JOB_SUSPENDED'", Long.class)).isEqualTo(2);
       assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE event_type='JOB_EXPIRED' AND actor_user_id IS NULL", Long.class)).isEqualTo(1);
       assertThat(database.queryForObject("SELECT bool_and(approved_deadline>now()) FROM job_postings WHERE status='PUBLISHED'", Boolean.class)).isTrue();
-      assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox", Long.class)).isZero();
+      // Dev-seed fixtures own ten outbox intents (delivered inline); inbox copy mirrors them.
+      assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox", Long.class)).isEqualTo(10);
 
       long ready = database.queryForObject("SELECT job_id FROM job_audit_events WHERE facts->>'developmentFixture'='GW93-HIDE-READY'", Long.class);
       database.update("UPDATE job_postings SET status='PAUSED',version=version+1 WHERE id=?", ready);

@@ -4,6 +4,7 @@ import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.model.NotificationEventType;
 import com.guardwork.backend.notification.model.NotificationOutbox;
+import com.guardwork.backend.notification.model.NotificationPayload;
 import com.guardwork.backend.notification.repository.NotificationOutboxRepository;
 import java.time.Instant;
 import java.util.Set;
@@ -42,19 +43,12 @@ public class NotificationIntentService {
     if (!Set.of(NotificationEventType.RECRUITER_ACCEPTED, NotificationEventType.MEMBERSHIP_REMOVED)
         .contains(eventType))
       throw new IllegalArgumentException("Unsupported membership notification");
-    var intent =
-        NotificationOutbox.builder()
-            .eventId(UUID.randomUUID())
-            .recipientUserId(recipient)
-            .eventType(eventType)
-            .audience(requireAudience(audience))
-            .companyId(company.getId())
-            .companyName(company.getName())
-            .createdAt(eventTime)
-            .nextAttemptAt(eventTime)
-            .build();
-    outbox.saveAndFlush(intent);
-    return intent.getEventId();
+    return persist(
+        recipient,
+        eventType,
+        audience,
+        NotificationPayload.membership(company.getId(), company.getName()),
+        eventTime);
   }
 
   /** Job events are employer-facing. */
@@ -108,21 +102,12 @@ public class NotificationIntentService {
             NotificationEventType.JOB_REVISION_REJECTED)
         .contains(eventType))
       throw new IllegalArgumentException("Unsupported job notification");
-    var intent =
-        NotificationOutbox.builder()
-            .eventId(UUID.randomUUID())
-            .recipientUserId(recipient)
-            .eventType(eventType)
-            .audience(requireAudience(audience))
-            .companyId(company.getId())
-            .companyName(company.getName())
-            .jobId(jobId)
-            .revisionId(revisionId)
-            .createdAt(eventTime)
-            .nextAttemptAt(eventTime)
-            .build();
-    outbox.saveAndFlush(intent);
-    return intent.getEventId();
+    return persist(
+        recipient,
+        eventType,
+        audience,
+        NotificationPayload.job(company.getId(), company.getName(), jobId, revisionId),
+        eventTime);
   }
 
   /** Application status/rejection notify the candidate; withdrawal notifies the employer. */
@@ -133,6 +118,7 @@ public class NotificationIntentService {
       NotificationAudience audience,
       Company company,
       Long jobId,
+      String jobTitle,
       UUID applicationId,
       String candidateFeedback,
       Instant eventTime) {
@@ -142,6 +128,7 @@ public class NotificationIntentService {
         audience,
         company,
         jobId,
+        jobTitle,
         applicationId,
         candidateFeedback,
         eventTime);
@@ -154,6 +141,7 @@ public class NotificationIntentService {
       NotificationAudience audience,
       Company company,
       Long jobId,
+      String jobTitle,
       UUID applicationId,
       String candidateFeedback,
       Instant eventTime) {
@@ -165,17 +153,28 @@ public class NotificationIntentService {
             NotificationEventType.APPLICATION_HIRED)
         .contains(eventType))
       throw new IllegalArgumentException("Unsupported application notification");
+    return persist(
+        recipient,
+        eventType,
+        audience,
+        NotificationPayload.application(
+            company.getId(), company.getName(), jobId, jobTitle, applicationId, candidateFeedback),
+        eventTime);
+  }
+
+  private UUID persist(
+      Long recipient,
+      NotificationEventType eventType,
+      NotificationAudience audience,
+      NotificationPayload payload,
+      Instant eventTime) {
     var intent =
         NotificationOutbox.builder()
             .eventId(UUID.randomUUID())
             .recipientUserId(recipient)
             .eventType(eventType)
             .audience(requireAudience(audience))
-            .companyId(company.getId())
-            .companyName(company.getName())
-            .jobId(jobId)
-            .applicationId(applicationId)
-            .candidateFeedback(candidateFeedback)
+            .payload(payload.toJson())
             .createdAt(eventTime)
             .nextAttemptAt(eventTime)
             .build();

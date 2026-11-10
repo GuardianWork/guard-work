@@ -8,6 +8,8 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Getter
 @Setter
@@ -32,29 +34,10 @@ public class NotificationOutbox {
   @Enumerated(EnumType.STRING)
   private NotificationAudience audience;
 
-  @Column(name = "company_id", nullable = false)
-  private Long companyId;
-
-  @Column(name = "company_name", nullable = false)
-  private String companyName;
-
-  @Column(name = "job_id")
-  private Long jobId;
-
-  @Column(name = "revision_id")
-  private Long revisionId;
-
-  @Column(name = "application_id")
-  private UUID applicationId;
-
-  @Column(name = "candidate_feedback", length = 1000)
-  private String candidateFeedback;
-
-  @Column(name = "actor_user_id")
-  private Long actorUserId;
-
-  @Column(name = "actor_name", length = 255)
-  private String actorName;
+  /** Frozen fact-time context; see {@link NotificationPayload}. */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "payload", nullable = false, columnDefinition = "jsonb")
+  private String payload;
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
@@ -70,4 +53,9 @@ public class NotificationOutbox {
 
   @Column(name = "error_category")
   private String errorCategory;
+
+  /** Typed view of {@link #payload} for templates and the dispatcher. */
+  public NotificationPayload payloadView() {
+    return NotificationPayload.fromJson(payload);
+  }
 }

@@ -309,8 +309,9 @@ class JobDraftHttpTest {
             http.perform(post(JOBS).header("Authorization", recruiter).contentType(MediaType.APPLICATION_JSON).content("{\"content\":{}}"))
                     .andExpect(status().isInternalServerError());
             http.perform(get(JOBS).header("Authorization", owner)).andExpect(jsonPath("$.data.totalElements").value(0));
-            for (String table : new String[] {"job_postings", "job_assignments", "job_audit_events", "notification_outbox"})
+            for (String table : new String[] {"job_postings", "job_assignments", "job_audit_events"})
                 assertThat(database.queryForObject("SELECT count(*) FROM " + table + " WHERE company_id=?", Long.class, company)).isZero();
+            assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'companyId'=?", Long.class, String.valueOf(company))).isZero();
             assertThat(database.queryForObject("SELECT count(*) FROM job_posting_revisions r JOIN job_postings j ON j.id=r.job_id WHERE j.company_id=?", Long.class, company)).isZero();
         } finally {
             database.execute("DROP TRIGGER gw78_fail_intent ON notification_outbox");

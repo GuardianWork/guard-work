@@ -276,7 +276,7 @@ class JobPublicationHttpTest {
         finally {database.execute("DROP TRIGGER fail_job04_audit ON job_audit_events");database.execute("DROP FUNCTION fail_job04_audit()");}
         http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
         http.perform(get("/api/staff/job-revisions/"+revision).header("Authorization",staff)).andExpect(jsonPath("$.data.state").value("PENDING_REVIEW"));
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE job_id=?",Long.class,job)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'jobId'=?",Long.class,String.valueOf(job))).isZero();
         database.execute("CREATE FUNCTION fail_job04_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.job_id="+job+" THEN RAISE EXCEPTION 'controlled delivery failure'; END IF; RETURN NEW; END $$");
         database.execute("CREATE TRIGGER fail_job04_delivery BEFORE INSERT ON notification_inbox FOR EACH ROW EXECUTE FUNCTION fail_job04_delivery()");
         try {http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());}

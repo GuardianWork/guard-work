@@ -4,8 +4,10 @@ import com.guardwork.backend.application.dto.ApplicationDetailResponse;
 import com.guardwork.backend.application.dto.ApplicationStatusChangeRequest;
 import com.guardwork.backend.application.dto.ApplicationStatusHistoryResponse;
 import com.guardwork.backend.application.dto.ApplicationWithdrawalRequest;
+import com.guardwork.backend.application.model.ApplicationSnapshot;
 import com.guardwork.backend.application.model.ApplicationStatusHistory;
 import com.guardwork.backend.application.model.JobApplication;
+import com.guardwork.backend.application.repository.ApplicationSnapshotRepository;
 import com.guardwork.backend.application.repository.ApplicationStatusHistoryRepository;
 import com.guardwork.backend.application.repository.JobApplicationRepository;
 import com.guardwork.backend.candidate.CandidateProfileRepository;
@@ -46,6 +48,7 @@ public class ApplicationWorkflowService {
     private final JobAssignmentRepository assignments;
     private final CompanyMembershipRepository memberships;
     private final JobApplicationRepository applications;
+    private final ApplicationSnapshotRepository snapshots;
     private final JobApplicationService applicationDetails;
     private final ApplicationStatusHistoryRepository history;
     private final CandidateProfileRepository profiles;
@@ -61,6 +64,7 @@ public class ApplicationWorkflowService {
             JobAssignmentRepository assignments,
             CompanyMembershipRepository memberships,
             JobApplicationRepository applications,
+            ApplicationSnapshotRepository snapshots,
             JobApplicationService applicationDetails,
             ApplicationStatusHistoryRepository history,
             CandidateProfileRepository profiles,
@@ -74,6 +78,7 @@ public class ApplicationWorkflowService {
         this.assignments = assignments;
         this.memberships = memberships;
         this.applications = applications;
+        this.snapshots = snapshots;
         this.applicationDetails = applicationDetails;
         this.history = history;
         this.profiles = profiles;
@@ -164,12 +169,14 @@ public class ApplicationWorkflowService {
         history.saveAndFlush(event);
         Long candidateUserId = profiles.findById(application.getCandidateId())
                 .orElseThrow(ApplicationWorkflowService::notFound).getUserId();
+        String jobTitle = snapshots.findById(applicationId)
+                .map(ApplicationSnapshot::getJobTitle).orElse(null);
         String type = "REJECTED".equals(target) ? "APPLICATION_REJECTED"
                 : "INTERVIEWING".equals(target) ? "APPLICATION_INTERVIEWING"
                 : "HIRED".equals(target) ? "APPLICATION_HIRED" : "APPLICATION_STATUS_CHANGED";
         UUID notificationEvent =
             notifications.recordApplication(candidateUserId, type, NotificationAudience.CANDIDATE, access.company(), jobId,
-                applicationId, feedback, now);
+                jobTitle, applicationId, feedback, now);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -227,9 +234,11 @@ public class ApplicationWorkflowService {
                             && member.getJoinedAt().equals(assignment.getMembershipJoinedAt()))
                     .ifPresent(member -> recipients.add(member.getUserId()));
         }
+        String jobTitle = snapshots.findById(applicationId)
+                .map(ApplicationSnapshot::getJobTitle).orElse(null);
         for (Long recipient : recipients) {
             UUID notificationEvent = notifications.recordApplication(recipient, "APPLICATION_WITHDRAWN", NotificationAudience.RECRUITER, company,
-                    application.getJobId(), applicationId, null, clock.instant());
+                    application.getJobId(), jobTitle, applicationId, null, clock.instant());
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {

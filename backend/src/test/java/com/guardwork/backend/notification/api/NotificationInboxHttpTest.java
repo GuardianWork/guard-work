@@ -141,21 +141,18 @@ class NotificationInboxHttpTest {
     boolean needsApplication = eventType.startsWith("APPLICATION_");
     UUID applicationId = needsApplication ? UUID.randomUUID() : null;
     database.update(
-        "INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, application_id, created_at, attempt_count, next_attempt_at, delivered_at, error_category, actor_user_id, actor_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category) VALUES (?,?,?,?,jsonb_strip_nulls(jsonb_build_object('companyId',?, 'companyName',?, 'applicationId',CAST(? AS UUID))),?,?,?,?,?)",
         event,
         recipient,
         eventType,
         audience,
         company,
         companyName,
-        null,
         applicationId,
         createdTs,
         0,
         createdTs,
         createdTs,
-        null,
-        null,
         null);
     database.update(
         "INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, application_id, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

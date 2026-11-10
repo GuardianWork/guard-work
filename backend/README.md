@@ -443,9 +443,11 @@ three demo applications for the `demo_candidate` so `APPLICATION_*` rows satisfy
 | `demo_owner` | `JOB_NEEDS_REASSIGNMENT` (unread), `JOB_REVISION_APPROVED` (read), `JOB_REVISION_REJECTED` (unread), `APPLICATION_WITHDRAWN` (unread), `RECRUITER_ACCEPTED` (read) | Mark one unread read via `PATCH`; rerun must not reset it. |
 | `demo_candidate` | `APPLICATION_STATUS_CHANGED` (unread), `APPLICATION_REJECTED` (read) | Read one via `PATCH`; rerun preserves the read timestamp. |
 
-Outbox rows are inserted already `delivered_at`-ed, so the dispatcher never re-sends them.
-`title`/`body` mirror `NotificationTemplate` copy for manual browsing only; the frozen snapshot
-never rewrites history. Reruns identify fixtures by fixed `event_id` UUIDs and
+Outbox rows are inserted already `delivered_at`-ed, so the dispatcher never re-sends them. Each
+outbox fixture stores its context in `payload` (`companyId`, `companyName`, `jobId`,
+`revisionId`, and `applicationId`/`jobTitle` for application rows); the dispatcher maps those keys
+to the inbox columns. `title`/`body` mirror `NotificationTemplate` copy for manual browsing only;
+the frozen snapshot never rewrites history. Reruns identify fixtures by fixed `event_id` UUIDs and
 `ON CONFLICT DO NOTHING`, so they are idempotent and preserve existing reads.
 Each fixture also carries its `audience`: `APPLICATION_STATUS_CHANGED` and
 `APPLICATION_REJECTED` are `CANDIDATE`; all other fixtures, including
