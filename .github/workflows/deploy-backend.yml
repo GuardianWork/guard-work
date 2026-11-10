@@ -1,4 +1,4 @@
-name: Deploy to Render
+name: Deploy Backend to Render
 
 on:
   release:
@@ -45,11 +45,16 @@ jobs:
           java-version: "25"
           cache: maven
 
+      - name: Grant execute permission for Maven wrapper
+        run: chmod +x backend/mvnw
+
       - name: Build and test
         run: ./mvnw -B test
+        working-directory: backend
 
       - name: Package
         run: ./mvnw -B -DskipTests package
+        working-directory: backend
 
   deploy:
     name: Trigger Render deploy
