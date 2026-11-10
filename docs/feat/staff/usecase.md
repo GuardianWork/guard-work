@@ -4,10 +4,10 @@
 |---|---|
 | Document ID | GW-ADM-UC |
 | Work item | GW-81 — Scope Staff documentation |
-| Status | Draft — UC-11–21 plus scoped personal-history addition UC-22 |
+| Status | Draft — UC-11–21 plus scoped personal-history addition UC-22; UC-21 backend contract approved separately |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-10-30 |
+| Last updated | 2026-11-03 |
 | Primary actor | Platform Staff (`STAFF`) |
 | Source | Existing UC-11–21 from GW-81; UC-22 personal-history scope confirmed in session on 2026-10-30 |
 
@@ -19,7 +19,7 @@ All use cases describe an authenticated Platform Staff member with Platform role
 
 Read operations do not change business state. Private evidence is available only within the authorized review context. Passwords, password hashes, tokens, and unrelated private communications must not be exposed.
 
-The use-case descriptions remain Draft. The user separately approved the GW-81 role and route migration for the implemented verification APIs; other product behavior remains governed by existing approved requirements. See [the Staff specification](spec.md) for UC-11–20 requirements and implementation boundaries. UC-21 is a draft addition in this document; its detailed requirements and implementation contract remain to be aligned and approved.
+The use-case descriptions remain Draft. The user separately approved the GW-81 role and route migration for the implemented verification APIs; other product behavior remains governed by existing approved requirements. See [the Staff specification](spec.md) for UC-11–20 requirements and implementation boundaries. UC-21 has a separately approved [focused backend contract](../../software-requirements/adm/staff-job-restoration-contract.md); the browser flow remains outside this checkout.
 
 ## 2. Use-case inventory
 

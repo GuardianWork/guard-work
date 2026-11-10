@@ -13,6 +13,11 @@
 
 The requesting maintainer explicitly answered `yes` on 2026-10-31 to the linked implementation contract and approval request. This approves this focused extension of the approved GW-78 job lifecycle and its additive database migration. The Staff source specification remains Draft for all other capabilities. Approval does not include UC-21 restoration, frontend implementation, new dependencies, notification delivery, or search/cache infrastructure.
 
+The later approved [GW-107 restoration contract](staff-job-restoration-contract.md)
+supersedes the allowance below for pending-revision withdrawal and Company
+assignment/responsibility changes while the individual posting is `SUSPENDED`.
+Those mutations now remain blocked until Staff restoration.
+
 ## UC-13: Hide a public Job Posting
 
 - Add `PUT /api/staff/jobs/{jobId}/hide` with JSON `{ "expectedJobVersion": 0, "reason": "Policy violation details" }`.

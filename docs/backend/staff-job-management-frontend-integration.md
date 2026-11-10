@@ -1,6 +1,6 @@
-# GW-93 frontend integration: hide jobs and inspect posting history
+# Staff job moderation frontend integration: hide, history and restore
 
-Backend scope: UC-13 (hide a public Job Posting) and UC-14 (view posting events), under the [approved contract](../software-requirements/adm/staff-job-management-contract.md). These APIs are implemented on `feat/GW-93-jd-management`. No frontend code is included in this checkout.
+Backend scope: UC-13 (hide a public Job Posting), UC-14 (view posting events), and UC-21 (restore a hidden Job Posting), under the [GW-93 contract](../software-requirements/adm/staff-job-management-contract.md) and [GW-107 contract](../software-requirements/adm/staff-job-restoration-contract.md). No frontend code is included in this checkout.
 
 ## Authentication and existing job context
 
@@ -58,7 +58,43 @@ Recommended interaction:
 
 Only effectively public `PUBLISHED` jobs of verified, non-suspended Companies with a future approved deadline can be hidden. `PAUSED`, `CLOSED`, `EXPIRED`, `DRAFT` and already `SUSPENDED` jobs cannot be hidden. A deadline exactly equal to the current instant has already passed. Concurrent requests serialize: one can succeed, while a stale competitor receives 409.
 
-The backend records the job transition and both audit records atomically. A successful HTTP response is the confirmation; if the connection fails before a response arrives, reload the job context/history to check the outcome rather than blindly retrying. There is no hide notification, delete, unhide or republish endpoint in this scope.
+The backend records the job transition and both audit records atomically. A successful HTTP response is the confirmation; if the connection fails before a response arrives, reload the job context/history to check the outcome rather than blindly retrying. There is no hide notification or delete endpoint. GW-107 adds restoration below.
+
+## UC-21: Restore a Staff-hidden Job Posting
+
+`PUT /api/staff/jobs/{jobId}/restore`
+
+```json
+{
+  "expectedJobVersion": 8,
+  "reason": "Đã xử lý nội dung vi phạm và xác nhận đăng lại"
+}
+```
+
+Use the current `jobVersion` from a reloaded Staff submitted-revision response.
+The reason is mandatory and must contain 1–1000 Unicode code points after
+stripping surrounding whitespace. On success the receipt contains `jobId`,
+`publicationStatus: "PUBLISHED"`, resulting `jobVersion`, `actorUserId`,
+`restoredAt`, and the trimmed `reason`.
+
+Offer **Công khai lại tin tuyển dụng** from a job context after Staff reviews the
+hidden content, the recorded hiding reason and history. The Staff revision response
+does not contain an authoritative current publication status. Use event history to
+identify a possible hidden posting and let the restore endpoint determine current
+eligibility; hide the action again after a 409. Do not treat a public 404 as proof
+that the job is Staff-hidden. The backend rechecks all conditions:
+status `SUSPENDED`, approved published content, a future approved deadline,
+verified unbanned Company, and no independent `staff_suspended` restriction.
+The reason is the Staff member's recorded assessment that the problem is resolved.
+Do not infer that a public 404 means the job is restorable. A 409 `40022` means
+the version changed; a 409 `40978` means current eligibility failed. Reload and
+require another deliberate confirmation. On success, refresh job/revision/history
+data and invalidate client public-detail/search caches. Do not automatically
+retry after an uncertain network result; inspect history first.
+
+Company job action controls return only after a successful Staff restoration and
+still depend on existing Company permissions. The separate Company-ban
+`staff_suspended` flag is never cleared by this action.
 
 ## UC-14: View posting-event history
 
@@ -154,9 +190,9 @@ Failures retain the existing envelope, for example:
 
 ## Company and public application changes
 
-Add `SUSPENDED` to the client's Job Posting status union and Vietnamese labels, distinct from Company-controlled `PAUSED`. The Company list accepts `GET /api/companies/me/jobs?status=SUSPENDED`; authorized Company reads still work. Honor the returned `availableActions`: suspended jobs cannot create/edit/submit drafts, pause/resume/close, or restore visibility. A retained draft can be previewed; a retained pending review may be withdrawn. Staff can still approve/reject a retained pending revision without clearing suspension.
+Add `SUSPENDED` to the client's Job Posting status union and Vietnamese labels, distinct from Company-controlled `PAUSED`. The Company list accepts `GET /api/companies/me/jobs?status=SUSPENDED`; authorized Company job reads still work. Honor the returned `availableActions`: suspended jobs cannot create/edit/submit drafts, withdraw a pending revision, pause/resume/close, change assignments or owner responsibility, or restore visibility. A retained draft can be previewed. Staff can still approve/reject a retained pending revision without clearing suspension. The separate GW-100 requirement conceals Application lists from every Company Member during suspension.
 
-A public `GET /api/jobs/{jobId}` for a suspended job returns 404 with no content, including for authenticated readers. Show **Tin tuyển dụng không còn khả dụng**; do not promise that every 404 means Staff suspension. Discard stale job content from application caches/service workers. Public detail now sends `Cache-Control: no-store` on successes and errors. Responses cached before deployment may require operational invalidation. There is no backend public search/listing endpoint or server content cache in this scope; any separately owned frontend index/cache must also respect unavailability.
+A public `GET /api/jobs/{jobId}` for a suspended job returns 404 with no content, including for authenticated readers. Show **Tin tuyển dụng không còn khả dụng**; do not promise that every 404 means Staff suspension. Discard stale job content from application caches/service workers. Public detail now sends `Cache-Control: no-store` on successes and errors. Responses cached before deployment may require operational invalidation. Backend public search also excludes suspended jobs; any separately owned frontend index/cache must respect hide and restoration.
 
 ## Frontend acceptance checklist
 

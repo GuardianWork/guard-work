@@ -365,7 +365,21 @@ reviewed treatment of suspended rows. Public job details send `Cache-Control:
 no-store`; existing responses cached before rollout may require invalidation.
 See [job workflow documentation](../docs/backend/job-drafts.md#staff-hiding-and-posting-event-history-gw-93)
 and the [approved contract](../docs/software-requirements/adm/staff-job-management-contract.md).
-No new dependency, notification channel, public search or restoration workflow is added.
+GW-93 added no dependency, notification channel, public search or restoration workflow.
+
+### Staff Job Posting restoration (GW-107)
+
+UC-21 adds `PUT /api/staff/jobs/{jobId}/restore` for active Platform Staff. Supply
+the current job version and a required resolution reason. Restoration requires a
+`SUSPENDED` posting, approved published revision, future approved deadline,
+verified unbanned Company, and no independent `staff_suspended` restriction.
+It atomically changes the status to `PUBLISHED` and records job/platform audits.
+During individual Staff suspension, Company job mutations including pending
+withdrawal, assignment and owner-responsibility changes are blocked; authorized
+job reads remain. GW-100 continues to hide Application lists during suspension.
+See the [GW-107 contract](../docs/software-requirements/adm/staff-job-restoration-contract.md)
+and [frontend handoff](../docs/backend/staff-job-management-frontend-integration.md).
+No migration, dependency or new notification channel is needed.
 
 
 ### GW-93 development Job Postings

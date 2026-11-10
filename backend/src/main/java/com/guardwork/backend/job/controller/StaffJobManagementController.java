@@ -25,6 +25,14 @@ public class StaffJobManagementController {
         http.getRemoteAddr(), http.getHeader("User-Agent")));
   }
 
+  @PutMapping("/{jobId}/restore")
+  public ApiResponse<StaffJobManagementService.RestoreReceipt> restore(
+      @AuthenticationPrincipal UserPrincipal actor, @PathVariable Long jobId,
+      @RequestBody StaffJobManagementService.RestoreRequest request, HttpServletRequest http) {
+    return ApiResponse.ok(service.restore(actor.getId(), jobId, request,
+        http.getRemoteAddr(), http.getHeader("User-Agent")));
+  }
+
   @GetMapping("/{jobId}/history")
   public ApiResponse<PageResponse<StaffJobManagementService.HistoryEvent>> history(
       @AuthenticationPrincipal UserPrincipal actor, @PathVariable Long jobId,

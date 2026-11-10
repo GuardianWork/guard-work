@@ -57,6 +57,7 @@ public class JobAssignmentService {
   public JobDetail assign(Long actor, Long id, Long memberId, Long version, boolean enabled) {
     var company = owner(actor);
     var job = job(company, id);
+    requireMutable(job);
     checkVersion(job, version);
     var member =
         members
@@ -98,6 +99,7 @@ public class JobAssignmentService {
   public JobDetail responsibility(Long actor, Long id, Long version, Boolean responsible) {
     var company = owner(actor);
     var job = job(company, id);
+    requireMutable(job);
     checkVersion(job, version);
     if (responsible == null) throw DraftContent.invalid("responsible");
     if (job.isOwnerResponsible() != responsible) {
@@ -137,6 +139,11 @@ public class JobAssignmentService {
     if (!version.equals(job.getVersion()))
       throw new ResponseStatusException(
           HttpStatus.CONFLICT, "40022 CONCURRENT_MODIFICATION: Reload current versions");
+  }
+
+  private void requireMutable(JobPosting job) {
+    if ("SUSPENDED".equals(job.getStatus()))
+      throw JobSubmissionService.conflict("40978 JOB_STATE_CONFLICT: Staff-suspended job cannot be changed");
   }
 
   private boolean responsible(JobPosting job) {
