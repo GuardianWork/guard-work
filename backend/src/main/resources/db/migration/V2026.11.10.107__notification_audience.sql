@@ -2,7 +2,8 @@
 -- One User can be both a Candidate and a company member, so the inbox is
 -- partitioned by the role the recipient was notified as (CANDIDATE vs
 -- RECRUITER). Past rows are backfilled from the event kind:
--- APPLICATION_STATUS_CHANGED / APPLICATION_REJECTED are candidate-facing;
+-- APPLICATION_STATUS_CHANGED, APPLICATION_REJECTED, APPLICATION_INTERVIEWING and
+-- APPLICATION_HIRED are candidate-facing;
 -- everything else, including APPLICATION_WITHDRAWN (owner/recruiter
 -- recipients), is recruiter-facing. No API field is renamed; the new
 -- audience column is frozen with the rest of the notification context.
@@ -11,11 +12,13 @@ ALTER TABLE notification_outbox ADD COLUMN IF NOT EXISTS audience VARCHAR(20);
 ALTER TABLE notification_inbox ADD COLUMN IF NOT EXISTS audience VARCHAR(20);
 
 UPDATE notification_outbox SET audience = CASE
-  WHEN event_type IN ('APPLICATION_STATUS_CHANGED', 'APPLICATION_REJECTED') THEN 'CANDIDATE'
+  WHEN event_type IN ('APPLICATION_STATUS_CHANGED', 'APPLICATION_REJECTED',
+          'APPLICATION_INTERVIEWING', 'APPLICATION_HIRED') THEN 'CANDIDATE'
   ELSE 'RECRUITER'
 END WHERE audience IS NULL;
 UPDATE notification_inbox SET audience = CASE
-  WHEN event_type IN ('APPLICATION_STATUS_CHANGED', 'APPLICATION_REJECTED') THEN 'CANDIDATE'
+  WHEN event_type IN ('APPLICATION_STATUS_CHANGED', 'APPLICATION_REJECTED',
+          'APPLICATION_INTERVIEWING', 'APPLICATION_HIRED') THEN 'CANDIDATE'
   ELSE 'RECRUITER'
 END WHERE audience IS NULL;
 

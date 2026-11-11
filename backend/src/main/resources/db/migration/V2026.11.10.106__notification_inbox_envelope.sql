@@ -34,17 +34,20 @@ BEGIN
 END $$;
 
 -- Keep the code-level unknown fallback readable if an older/unmapped event key is ever needed.
+-- This runs after GW-117's V2026.11.10.103/104, so its interview/hiring keys must be retained.
 ALTER TABLE notification_outbox DROP CONSTRAINT IF EXISTS notification_outbox_event_type_check;
 ALTER TABLE notification_outbox ADD CONSTRAINT notification_outbox_event_type_check CHECK(event_type IN (
     'RECRUITER_ACCEPTED','MEMBERSHIP_REMOVED','JOB_ASSIGNED','JOB_UNASSIGNED',
     'JOB_REVISION_APPROVED','JOB_REVISION_REJECTED','JOB_NEEDS_REASSIGNMENT',
-    'APPLICATION_STATUS_CHANGED','APPLICATION_REJECTED','APPLICATION_WITHDRAWN','UNKNOWN'));
+    'APPLICATION_STATUS_CHANGED','APPLICATION_REJECTED','APPLICATION_WITHDRAWN',
+    'APPLICATION_INTERVIEWING','APPLICATION_HIRED','UNKNOWN'));
 ALTER TABLE notification_inbox DROP CONSTRAINT IF EXISTS user_notifications_event_type_check;
 ALTER TABLE notification_inbox DROP CONSTRAINT IF EXISTS notification_inbox_event_type_check;
 ALTER TABLE notification_inbox ADD CONSTRAINT notification_inbox_event_type_check CHECK(event_type IN (
     'RECRUITER_ACCEPTED','MEMBERSHIP_REMOVED','JOB_ASSIGNED','JOB_UNASSIGNED',
     'JOB_REVISION_APPROVED','JOB_REVISION_REJECTED','JOB_NEEDS_REASSIGNMENT',
-    'APPLICATION_STATUS_CHANGED','APPLICATION_REJECTED','APPLICATION_WITHDRAWN','UNKNOWN'));
+    'APPLICATION_STATUS_CHANGED','APPLICATION_REJECTED','APPLICATION_WITHDRAWN',
+    'APPLICATION_INTERVIEWING','APPLICATION_HIRED','UNKNOWN'));
 
 -- Drop the shared transition trigger/functions before installing the table-specific ones.
 DROP TRIGGER IF EXISTS trg_job_outbox_context ON notification_outbox;
