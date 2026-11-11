@@ -150,6 +150,22 @@ flowchart TD
 | `MembershipNotificationWorker` | Polls undelivered outbox rows and retries them. |
 | `NotificationInboxService` | Lists the user's inbox and marks items read. |
 
+### Migration order
+
+GW-117's `V2026.11.10.103__application_interview_stage.sql` and
+`V2026.11.10.104__application_hiring_confirmation.sql` are shared `dev` migrations and stay
+byte-identical here; they therefore run before this branch's notification migrations and still
+target the legacy `user_notifications` table. Order on a fresh database:
+
+`V2026.11.10.103/104` (application lifecycle, legacy table) →
+`V2026.11.10.105` (rename to `notification_inbox`) →
+`V2026.11.10.106` (envelope, re-adds event-type checks with the GW-117 keys and `UNKNOWN`) →
+`V2026.11.10.107` (audience) →
+`V2026.11.11.106` (outbox payload).
+
+Do not renumber or edit `103/104`; environments have already applied them with their published
+checksums. New notification changes belong in migrations versioned above `2026.11.10.104`.
+
 ### Flow
 
 1. **Business service records an intent.** It calls `NotificationIntentService.record*()` while its
@@ -193,9 +209,10 @@ Detail/single-read return `40406` for cross-audience IDs; unknown `audience` →
 | `PATCH /api/me/notifications/read` (+ `audience`) | Mark every unread row read in one transaction; returns `{ updatedCount, readAt }`. Replaces client per-item fan-out. |
 
 No schema migration accompanies these read endpoints.
-`audience` itself is added by `V2026.11.09.105__notification_audience.sql` (frozen intent
-context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`/`APPLICATION_REJECTED` →
-`CANDIDATE`, everything else including `APPLICATION_WITHDRAWN` → `RECRUITER`).
+`audience` itself is added by `V2026.11.10.107__notification_audience.sql` (frozen intent
+context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`,
+`APPLICATION_INTERVIEWING`, and `APPLICATION_HIRED` → `CANDIDATE`, everything else including
+`APPLICATION_WITHDRAWN` → `RECRUITER`). Only withdrawal is recruiter-facing.
 
 ### Outbox payload
 
