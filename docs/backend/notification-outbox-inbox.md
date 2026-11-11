@@ -207,12 +207,42 @@ Detail/single-read return `40406` for cross-audience IDs; unknown `audience` →
 | `GET /api/me/notifications/{id}` (+ `audience`) | One recipient-owned item (detail view / deep-link check). Missing/foreign/cross-audience → `40406`. |
 | `PATCH /api/me/notifications/{id}/read` (+ `audience`) | Mark one row read (`read_at` set once, idempotent). |
 | `PATCH /api/me/notifications/read` (+ `audience`) | Mark every unread row read in one transaction; returns `{ updatedCount, readAt }`. Replaces client per-item fan-out. |
+| `GET /api/me/notifications/sync` (+ `audience`, `sinceId`, `limit`) | One polling round: the rows with `id > sinceId` (no `read` filter) plus `unreadCount`, `totalCount`, `latestId` and `hasMore`. The response carries an entity tag; repeating the current tag answers `304 Not Modified` without a body. |
 
 No schema migration accompanies these read endpoints.
 `audience` itself is added by `V2026.11.10.107__notification_audience.sql` (frozen intent
 context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`,
 `APPLICATION_INTERVIEWING`, and `APPLICATION_HIRED` → `CANDIDATE`, everything else including
 `APPLICATION_WITHDRAWN` → `RECRUITER`). Only withdrawal is recruiter-facing.
+
+### Polling the inbox
+
+A client that wants to know whether something new arrived does not reload the inbox. It keeps
+the highest inbox id it has seen (the *watermark*) and asks for the rows above it:
+
+```http
+GET /api/me/notifications/sync?audience=CANDIDATE&sinceId=137
+If-None-Match: W/"7:CANDIDATE:137:4:37"
+```
+
+The answer holds the rows above the watermark **and** the counters of the inbox, so one
+request is enough for the bell badge, the tab badges and the list. Two properties make the
+protocol safe:
+
+- **The watermark is monotonic.** `notification_inbox.id` is assigned when the row is
+  inserted, so a notification that is delivered late (after a failed dispatch) always gets a
+  higher id than the rows delivered before it. A client that only moves its watermark up
+  never skips a notification.
+- **The delta has no `read` filter.** The rows above the watermark are the same on every
+  tab, so the client detects a new notification no matter which tab is open and applies its
+  own tab filter when it merges the result.
+
+The round is also conditional. The response carries an entity tag built from the recipient,
+the audience and the state of the inbox; repeating the tag answers `304 Not Modified`
+without a body, so a poll that finds nothing new costs one indexed query and no payload.
+
+The counters of the round describe the whole inbox, not the delta, so the badge is correct
+even when the delta is empty.
 
 ### Outbox payload
 

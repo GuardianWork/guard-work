@@ -6,12 +6,12 @@
 | **Project** | GuardWork |
 | **Module** | Notifications |
 | **File** | `notification-flow-spec.md` |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Date** | 2026-11-09 |
-| **Last Updated** | 2026-11-09 |
+| **Last Updated** | 2026-11-11 |
 | **Owner** | GuardWork thesis team |
 | **Named human approver** | chiko |
-| **Status** | Draft — ADR 0012 two-table contract approved 2026-11-09 |
+| **Status** | Draft — ADR 0012 two-table contract approved 2026-11-09; FR-NOTIF-25 (polling round) drafted 2026-11-11 |
 | **Related architecture** | `docs/architecture/decisions/0012-notification-outbox-inbox-contract.md` |
 
 ---
@@ -239,6 +239,16 @@ fallback copy when null.
 - **FR-NOTIF-24 (audience presentation):** `NotificationResponse` includes `audience`
   (wire value) so clients can confirm which portal an item belongs to. Candidate portals
   request `CANDIDATE`; recruiter portals request `RECRUITER`.
+- **FR-NOTIF-25 (polling round):** `GET /api/me/notifications/sync` returns one polling
+  round for the authenticated active User: the inbox rows with `id > sinceId` (no `read`
+  filter, `id` DESC order kept, at most `limit` rows, default and maximum 100) plus the
+  counters `unreadCount`, `totalCount` and the watermark `latestId` (the highest inbox id
+  of the recipient). A round that had more rows than `limit` sets `hasMore`. The response
+  carries an entity tag; a request that repeats the current tag of the same recipient and
+  audience is answered with `304 Not Modified` and no body. Unknown `audience`, a negative
+  `sinceId`, or a `limit` below 1 return `40000 INVALID_INPUT`; a `limit` above 100 is
+  clamped to 100. The delta of a round never carries a `read` filter: the client applies
+  its own tab filter, so a new notification is detected on every tab.
 
 ## 5. Business rules
 
@@ -355,6 +365,45 @@ Example item:
 - **Errors:** `NOTIFICATION_NOT_FOUND` (`40406`) for missing/foreign IDs, and for IDs whose
   `audience` does not match a provided `audience` parameter.
 
+### 6.7 Polling round
+
+- **Endpoint:** `GET /api/me/notifications/sync?audience=&sinceId=&limit=`
+- **Auth:** Authenticated active User.
+- **Query:**
+  - `audience` — `CANDIDATE` or `RECRUITER` (case-insensitive); omitted returns every
+    audience of the recipient.
+  - `sinceId` — return only rows with `id > sinceId` (newer than the watermark the client
+    holds); omitted returns the newest page and seeds a client without a watermark.
+  - `limit` — maximum number of rows of the round; default 100, clamped to 100.
+  - `If-None-Match` — optional entity tag of a previous round of the same recipient and
+    audience.
+- **Response:** `ApiResponse<NotificationSyncResponse>`:
+
+```json
+{
+  "items": [ /* NotificationResponse, id DESC */ ],
+  "unreadCount": 4,
+  "totalCount": 37,
+  "latestId": 137,
+  "hasMore": false,
+  "serverTime": "2026-11-11T10:00:00Z"
+}
+```
+
+- **Conditional response:** the round carries an entity tag
+  (`W/"<recipientId>:<audience>:<latestId>:<unreadCount>:<totalCount>"`). A request that
+  repeats the current tag of the same recipient and audience is answered with
+  `304 Not Modified` and no body; the client keeps the rows and the counters it holds.
+  The recipient and the audience are part of the tag, so the tag of one user never
+  matches the inbox of another one.
+- **Errors:** `40000 INVALID_INPUT` for a negative `sinceId` or an unknown `audience`;
+  `401` without a session; the recipient scoping of the other read endpoints applies
+  unchanged (a user never sees another user's rows).
+- **Watermark invariant:** `notification_inbox.id` is assigned on insert, so a row that is
+  delivered late always gets a higher id than the rows delivered before it. A client that
+  keeps the highest id it has seen therefore never misses a notification with the
+  `sinceId` protocol.
+
 ## 7. Error catalogue
 
 | Condition | Code / status | Message |
@@ -362,6 +411,7 @@ Example item:
 | Unsupported event type | internal `IllegalArgumentException` | `Unsupported … notification` |
 | Missing or foreign notification | `40406 NOTIFICATION_NOT_FOUND` | `Notification not found.` |
 | Invalid `category` / `eventType` / `audience` / negative `sinceId` | `40000 INVALID_INPUT` | `Invalid input. Please check your data` |
+| Polling round with a negative `sinceId` or unknown `audience` | `40000 INVALID_INPUT` | `Invalid input. Please check your data` |
 | Missing application context | DB `CHECK` violation; internal error | `ck_application_*_context` |
 | Unknown/legacy event type | `UNKNOWN` is accepted by the DB `CHECK`; other values cannot be stored | n/a |
 | DB write failure during delivery | no API response; retry state and warning | `INBOX_WRITE_FAILED` |
@@ -384,6 +434,10 @@ Example item:
 - `NotificationInboxHttpTest` proves filtered list (`read`/`category`/`eventType`/`sinceId`),
   `unread-count`, `mark-all-read`, single-item detail (P0+P1 read endpoints), and
   audience scoping (`CANDIDATE` vs `RECRUITER` isolation + backwards-compatible unscoped calls).
+- `NotificationInboxHttpTest.syncReturnsTheDeltaAboveTheWatermarkAndTheInboxCounters` proves the
+  polling round: the delta above the watermark, the counters, the truncation flag, the
+  audience scoping, the `304` answer for an unchanged inbox, the changed tag after a
+  delivered row, the recipient isolation, and the rejection of invalid input.
 - `JobMigrationCompatibilityTest` and `MigrationV8Test` prove migration history.
 - Mutating outbox context in SQL should raise SQLSTATE `23514`.
 
