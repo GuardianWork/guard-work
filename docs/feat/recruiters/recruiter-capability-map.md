@@ -1,5 +1,7 @@
 # Recruiter Capability Map
 
+> Plan update (2026-11-10): [GW-117 Application Lifecycle Completion](../../software-requirements/rec/application-lifecycle-completion-spec.md) records the human-confirmed replacement scope: INTERVIEWING tracks externally arranged interviews; Company-confirmed HIRED requires no Offer. Interview scheduling and Offer management are excluded from the current plan. Older descriptions below are historical where they conflict with GW-117. Typst is unchanged.
+
 | Field | Value |
 |---|---|
 | Project | GuardWork |

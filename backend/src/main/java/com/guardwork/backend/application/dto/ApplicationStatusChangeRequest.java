@@ -5,5 +5,6 @@ public record ApplicationStatusChangeRequest(
         Long version,
         String rejectionReason,
         String internalExplanation,
-        String candidateFeedback) {
+        String candidateFeedback,
+        Boolean hiringConfirmed) {
 }

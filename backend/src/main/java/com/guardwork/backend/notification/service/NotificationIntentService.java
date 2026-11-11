@@ -58,7 +58,8 @@ public class NotificationIntentService {
   @Transactional(propagation = Propagation.MANDATORY)
   public UUID recordApplication(Long recipient, String eventType, Company company, Long jobId,
       UUID applicationId, String candidateFeedback, Instant eventTime) {
-    if (!Set.of("APPLICATION_STATUS_CHANGED", "APPLICATION_REJECTED", "APPLICATION_WITHDRAWN")
+    if (!Set.of("APPLICATION_STATUS_CHANGED", "APPLICATION_REJECTED", "APPLICATION_WITHDRAWN",
+        "APPLICATION_INTERVIEWING", "APPLICATION_HIRED")
         .contains(eventType)) throw new IllegalArgumentException("Unsupported application notification");
     var intent = new NotificationOutbox();
     intent.setEventId(UUID.randomUUID());

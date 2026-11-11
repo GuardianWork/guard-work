@@ -22,6 +22,10 @@ class ApplicationReviewMigrationTest {
 
     private static final String MIGRATION =
             "db/migration/V2026.11.03.101__application_review_history_and_notifications.sql";
+    private static final String INTERVIEW_MIGRATION =
+            "db/migration/V2026.11.10.103__application_interview_stage.sql";
+    private static final String HIRING_MIGRATION =
+            "db/migration/V2026.11.10.104__application_hiring_confirmation.sql";
     private static final UUID CANDIDATE_ID = UUID.fromString("f154d665-bce2-4bcb-b7a9-22be2981121c");
     private static final UUID APPLICATION_ID = UUID.fromString("b50ab773-a38a-4e5a-8fb3-0ef717bb2ddf");
 
@@ -78,6 +82,97 @@ class ApplicationReviewMigrationTest {
         }
     }
 
+    @Test
+    void interviewMigrationPreservesSubmittedHistoryAndAllowsInterviewEvents() throws Exception {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try (var sql = connection.createStatement()) {
+                useIsolatedSchema(sql);
+                createLegacySchema(sql);
+                sql.execute("INSERT INTO users(id) VALUES (1001)");
+                sql.execute("INSERT INTO candidate_profiles(id,user_id) VALUES ('" + CANDIDATE_ID + "',1001)");
+                sql.execute("INSERT INTO applications(id,candidate_id,status,applied_at) " +
+                        "VALUES ('" + APPLICATION_ID + "','" + CANDIDATE_ID + "','SUBMITTED','2026-10-15T12:34:56Z')");
+
+                executeMigration(sql);
+                executeInterviewMigration(sql);
+
+                sql.execute("UPDATE applications SET status='UNDER_REVIEW' WHERE id='" + APPLICATION_ID + "'");
+                sql.execute("UPDATE applications SET status='INTERVIEWING' WHERE id='" + APPLICATION_ID + "'");
+                sql.execute("INSERT INTO application_status_history(application_id,from_status,to_status,actor_user_id,occurred_at) " +
+                        "VALUES ('" + APPLICATION_ID + "','UNDER_REVIEW','INTERVIEWING',1001,now())");
+                sql.execute("INSERT INTO notification_outbox(id,recipient_user_id,event_type,company_id,company_name,created_at, " +
+                        "next_attempt_at,application_id) VALUES (1,1001,'APPLICATION_INTERVIEWING',1,'Công ty Ánh',now(),now(),'" +
+                        APPLICATION_ID + "')");
+                sql.execute("INSERT INTO user_notifications(id,recipient_user_id,event_type,company_id,company_name,created_at,application_id) " +
+                        "VALUES (1,1001,'APPLICATION_INTERVIEWING',1,'Công ty Ánh',now(),'" + APPLICATION_ID + "')");
+
+                try (var result = sql.executeQuery("SELECT count(*) FROM application_status_history WHERE application_id='" +
+                        APPLICATION_ID + "' AND from_status IS NULL AND to_status='SUBMITTED'")) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getInt(1)).isEqualTo(1);
+                }
+                try (var result = sql.executeQuery("SELECT status FROM applications WHERE id='" + APPLICATION_ID + "'")) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getString(1)).isEqualTo("INTERVIEWING");
+                }
+
+                assertThatThrownBy(() -> sql.execute("INSERT INTO application_status_history(" +
+                        "application_id,from_status,to_status,actor_user_id,occurred_at) VALUES ('" + APPLICATION_ID +
+                        "','INTERVIEWING','UNDER_REVIEW',1001,now())"))
+                        .hasMessageContaining("ck_application_history_status");
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    @Test
+    void hiringMigrationPreservesHistoryAndAllowsHiredStateEdgesAndNotifications() throws Exception {
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try (var sql = connection.createStatement()) {
+                useIsolatedSchema(sql);
+                createLegacySchema(sql);
+                sql.execute("INSERT INTO users(id) VALUES (1001)");
+                sql.execute("INSERT INTO candidate_profiles(id,user_id) VALUES ('" + CANDIDATE_ID + "',1001)");
+                sql.execute("INSERT INTO applications(id,candidate_id,status,applied_at) " +
+                        "VALUES ('" + APPLICATION_ID + "','" + CANDIDATE_ID + "','SUBMITTED','2026-10-15T12:34:56Z')");
+
+                executeMigration(sql);
+                executeInterviewMigration(sql);
+                executeHiringMigration(sql);
+
+                sql.execute("UPDATE applications SET status='UNDER_REVIEW' WHERE id='" + APPLICATION_ID + "'");
+                sql.execute("UPDATE applications SET status='HIRED' WHERE id='" + APPLICATION_ID + "'");
+                sql.execute("INSERT INTO application_status_history(application_id,from_status,to_status,actor_user_id,occurred_at) " +
+                        "VALUES ('" + APPLICATION_ID + "','UNDER_REVIEW','HIRED',1001,now())");
+                sql.execute("INSERT INTO notification_outbox(id,recipient_user_id,event_type,company_id,company_name,created_at, " +
+                        "next_attempt_at,application_id) VALUES (1,1001,'APPLICATION_HIRED',1,'Công ty Ánh',now(),now(),'" +
+                        APPLICATION_ID + "')");
+                sql.execute("INSERT INTO user_notifications(id,recipient_user_id,event_type,company_id,company_name,created_at,application_id) " +
+                        "VALUES (1,1001,'APPLICATION_HIRED',1,'Công ty Ánh',now(),'" + APPLICATION_ID + "')");
+
+                try (var result = sql.executeQuery("SELECT status FROM applications WHERE id='" + APPLICATION_ID + "'")) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getString(1)).isEqualTo("HIRED");
+                }
+                try (var result = sql.executeQuery("SELECT count(*) FROM application_status_history WHERE application_id='" +
+                        APPLICATION_ID + "' AND from_status IS NULL AND to_status='SUBMITTED'")) {
+                    assertThat(result.next()).isTrue();
+                    assertThat(result.getInt(1)).isEqualTo(1);
+                }
+
+                assertThatThrownBy(() -> sql.execute("INSERT INTO application_status_history(" +
+                        "application_id,from_status,to_status,actor_user_id,occurred_at) VALUES ('" + APPLICATION_ID +
+                        "','HIRED','REJECTED',1001,now())"))
+                        .hasMessageContaining("ck_application_history_status");
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
     private static void createLegacySchema(java.sql.Statement sql) throws SQLException {
         sql.execute("CREATE TABLE users (id BIGINT PRIMARY KEY)");
         sql.execute("CREATE TABLE candidate_profiles (id UUID PRIMARY KEY,user_id BIGINT NOT NULL)");
@@ -107,6 +202,18 @@ class ApplicationReviewMigrationTest {
 
     private static void executeMigration(java.sql.Statement sql) throws Exception {
         try (var input = new ClassPathResource(MIGRATION).getInputStream()) {
+            sql.execute(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+        }
+    }
+
+    private static void executeInterviewMigration(java.sql.Statement sql) throws Exception {
+        try (var input = new ClassPathResource(INTERVIEW_MIGRATION).getInputStream()) {
+            sql.execute(new String(input.readAllBytes(), StandardCharsets.UTF_8));
+        }
+    }
+
+    private static void executeHiringMigration(java.sql.Statement sql) throws Exception {
+        try (var input = new ClassPathResource(HIRING_MIGRATION).getInputStream()) {
             sql.execute(new String(input.readAllBytes(), StandardCharsets.UTF_8));
         }
     }
