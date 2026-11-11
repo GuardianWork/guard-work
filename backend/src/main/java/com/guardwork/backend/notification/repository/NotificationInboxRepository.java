@@ -15,6 +15,54 @@ public interface NotificationInboxRepository
 
   Page<NotificationInbox> findByRecipientUserId(Long recipient, Pageable page);
 
+  /**
+   * Counters of the recipient inbox in one pass: the highest id (the client
+   * watermark), the row count, and the rows without a read receipt.
+   */
+  @Query(
+      value =
+          """
+          SELECT max(id) AS "latestId", count(*) AS "total",
+                 count(*) FILTER (WHERE read_at IS NULL) AS "unread"
+          FROM notification_inbox
+          WHERE recipient_user_id = :recipient
+          """,
+      nativeQuery = true)
+  NotificationInboxAggregate aggregateByRecipient(@Param("recipient") Long recipient);
+
+  /**
+   * Audience-scoped counterpart of {@link #aggregateByRecipient(Long)}.
+   *
+   * <p>The audience is bound as its wire value: a native query has no entity
+   * mapping for the enum and would bind its ordinal instead.
+   */
+  @Query(
+      value =
+          """
+          SELECT max(id) AS "latestId", count(*) AS "total",
+                 count(*) FILTER (WHERE read_at IS NULL) AS "unread"
+          FROM notification_inbox
+          WHERE recipient_user_id = :recipient AND audience = :audience
+          """,
+      nativeQuery = true)
+  NotificationInboxAggregate aggregateByRecipientAndAudience(
+      @Param("recipient") Long recipient, @Param("audience") String audience);
+
+  /** Rows newer than the watermark, newest first; no count query is executed. */
+  @Query(
+      "select n from NotificationInbox n where n.recipientUserId = :recipient and n.id > :sinceId order by n.id desc")
+  List<NotificationInbox> findDeltaByRecipient(
+      @Param("recipient") Long recipient, @Param("sinceId") Long sinceId, Pageable pageable);
+
+  /** Audience-scoped counterpart of {@link #findDeltaByRecipient(Long, Long, Pageable)}. */
+  @Query(
+      "select n from NotificationInbox n where n.recipientUserId = :recipient and n.audience = :audience and n.id > :sinceId order by n.id desc")
+  List<NotificationInbox> findDeltaByRecipientAndAudience(
+      @Param("recipient") Long recipient,
+      @Param("audience") NotificationAudience audience,
+      @Param("sinceId") Long sinceId,
+      Pageable pageable);
+
   Optional<NotificationInbox> findByRecipientUserIdAndId(Long recipient, Long id);
 
   Optional<NotificationInbox> findByRecipientUserIdAndAudienceAndId(

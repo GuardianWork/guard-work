@@ -10,8 +10,10 @@ import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.model.NotificationCategory;
 import com.guardwork.backend.notification.model.NotificationEventType;
 import com.guardwork.backend.notification.model.NotificationInbox;
+import com.guardwork.backend.notification.repository.NotificationInboxAggregate;
 import com.guardwork.backend.notification.repository.NotificationInboxRepository;
 import java.time.Clock;
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
@@ -28,6 +30,12 @@ public class NotificationInboxService {
   CompanyAccessService access;
   NotificationInboxRepository inbox;
   Clock clock;
+
+  /** Rows one polling round may carry when the client does not ask for a size. */
+  public static final int DEFAULT_SYNC_LIMIT = 100;
+
+  /** Upper bound of one polling round. */
+  public static final int MAX_SYNC_LIMIT = 100;
 
   public PageResponse<NotificationResponse> list(Long actor, Pageable pageable) {
     return list(actor, pageable, null, null, null, null, null);
@@ -168,5 +176,77 @@ public class NotificationInboxService {
     }
     if (item.getReadAt() == null) item.setReadAt(clock.instant());
     return NotificationReadResponse.builder().id(item.getId()).readAt(item.getReadAt()).build();
+  }
+
+  /**
+   * One polling round: the rows newer than the client watermark and the counters
+   * of the inbox.
+   *
+   * <p>The delta carries no {@code read} filter, so the client detects a new
+   * notification on every tab and applies its own tab filter afterwards. When
+   * {@code sinceId} is omitted the newest page is returned, which seeds a client
+   * that has no watermark yet.
+   */
+  public NotificationSyncResponse sync(Long actor, String audience, Long sinceId, Integer limit) {
+    access.requireActiveUser(actor);
+    NotificationAudience audienceValue = resolveAudience(audience);
+    if (sinceId != null && sinceId < 0) {
+      throw new AppException(ErrorCode.INVALID_INPUT);
+    }
+    int rows = limit == null ? DEFAULT_SYNC_LIMIT : Math.min(MAX_SYNC_LIMIT, Math.max(1, limit));
+    NotificationInboxAggregate aggregate =
+        audienceValue == null
+            ? inbox.aggregateByRecipient(actor)
+            : inbox.aggregateByRecipientAndAudience(actor, audienceValue.wireValue());
+    long unreadCount = aggregate.getUnread() == null ? 0L : aggregate.getUnread();
+    long totalCount = aggregate.getTotal() == null ? 0L : aggregate.getTotal();
+    Long latestId = aggregate.getLatestId();
+
+    List<NotificationResponse> items = List.of();
+    boolean hasMore = false;
+    // Nothing newer than the watermark: the counters still describe the inbox.
+    if (latestId != null && (sinceId == null || sinceId < latestId)) {
+      Long floor = sinceId == null ? 0L : sinceId;
+      // One row beyond the limit reveals a truncated delta.
+      var rowsPage =
+          audienceValue == null
+              ? inbox.findDeltaByRecipient(actor, floor, PageRequest.of(0, rows + 1))
+              : inbox.findDeltaByRecipientAndAudience(
+                  actor, audienceValue, floor, PageRequest.of(0, rows + 1));
+      hasMore = rowsPage.size() > rows;
+      items = rowsPage.stream().limit(rows).map(NotificationResponse::from).toList();
+    }
+    return NotificationSyncResponse.builder()
+        .items(items)
+        .unreadCount(unreadCount)
+        .totalCount(totalCount)
+        .latestId(latestId)
+        .hasMore(hasMore)
+        .serverTime(clock.instant())
+        .build();
+  }
+
+  /**
+   * Entity tag of one polling round.
+   *
+   * <p>The tag carries the recipient and the audience, so the tag of one user
+   * never matches the inbox of another one, and it changes whenever a row is
+   * delivered or read.
+   */
+  public String syncEtag(Long actor, String audience, NotificationSyncResponse sync) {
+    NotificationAudience audienceValue = resolveAudience(audience);
+    String scope = audienceValue == null ? "ALL" : audienceValue.wireValue();
+    long latest = sync.latestId() == null ? 0L : sync.latestId();
+    return "W/\""
+        + actor
+        + ":"
+        + scope
+        + ":"
+        + latest
+        + ":"
+        + sync.unreadCount()
+        + ":"
+        + sync.totalCount()
+        + "\"";
   }
 }

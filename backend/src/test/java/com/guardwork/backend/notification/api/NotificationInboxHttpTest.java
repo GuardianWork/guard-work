@@ -1,6 +1,7 @@
 package com.guardwork.backend.notification.api;
 
 import static com.guardwork.backend.CompanyDossierFixtures.completeDossier;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -233,6 +234,115 @@ class NotificationInboxHttpTest {
     // Unscoped mark-all still clears the remaining audience (backwards compatibility).
     http.perform(patch("/api/me/notifications/read").header("Authorization", owner))
         .andExpect(jsonPath("$.data.updatedCount").value(1));
+  }
+
+  /**
+   * The polling endpoint: a delta above the client watermark plus the counters of
+   * the inbox, with a conditional response for an unchanged inbox.
+   */
+  @Test
+  void syncReturnsTheDeltaAboveTheWatermarkAndTheInboxCounters() throws Exception {
+    String owner = account();
+    long ownerId = userId(owner);
+    long company = createdCompany(owner);
+    String companyName = "Công ty Giải Pháp Ánh Dương";
+    // Oldest -> newest: two unread rows and two read rows.
+    long jobAssigned =
+        insert(ownerId, company, companyName, "JOB_ASSIGNED", "RECRUITER", "job", false);
+    insert(ownerId, company, companyName, "JOB_UNASSIGNED", "RECRUITER", "job", true);
+    insert(ownerId, company, companyName, "RECRUITER_ACCEPTED", "RECRUITER", "company", false);
+    long membershipRemoved =
+        insert(ownerId, company, companyName, "MEMBERSHIP_REMOVED", "RECRUITER", "company", true);
+
+    // Without a watermark the newest page seeds the client.
+    var seeded =
+        http.perform(get("/api/me/notifications/sync").header("Authorization", owner))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.items.length()").value(4))
+            .andExpect(jsonPath("$.data.items[0].id").value(String.valueOf(membershipRemoved)))
+            .andExpect(jsonPath("$.data.unreadCount").value(2))
+            .andExpect(jsonPath("$.data.totalCount").value(4))
+            .andExpect(jsonPath("$.data.latestId").value(String.valueOf(membershipRemoved)))
+            .andExpect(jsonPath("$.data.hasMore").value(false))
+            .andExpect(jsonPath("$.data.serverTime").isNotEmpty())
+            .andReturn();
+    String etag = seeded.getResponse().getHeader("ETag");
+    assertNotNull(etag);
+
+    // The watermark narrows the delta to the rows above it.
+    http.perform(
+            get("/api/me/notifications/sync")
+                .param("sinceId", String.valueOf(jobAssigned))
+                .header("Authorization", owner))
+        .andExpect(jsonPath("$.data.items.length()").value(3))
+        .andExpect(jsonPath("$.data.items[0].id").value(String.valueOf(membershipRemoved)))
+        .andExpect(jsonPath("$.data.unreadCount").value(2))
+        .andExpect(jsonPath("$.data.totalCount").value(4));
+
+    // Nothing newer than the watermark: no rows, but the counters still describe
+    // the inbox so the badge can be corrected.
+    http.perform(
+            get("/api/me/notifications/sync")
+                .param("sinceId", String.valueOf(membershipRemoved))
+                .header("Authorization", owner))
+        .andExpect(jsonPath("$.data.items.length()").value(0))
+        .andExpect(jsonPath("$.data.unreadCount").value(2))
+        .andExpect(jsonPath("$.data.totalCount").value(4))
+        .andExpect(jsonPath("$.data.latestId").value(String.valueOf(membershipRemoved)));
+
+    // A truncated delta is announced so the client reloads instead of skipping.
+    http.perform(
+            get("/api/me/notifications/sync").param("limit", "2").header("Authorization", owner))
+        .andExpect(jsonPath("$.data.items.length()").value(2))
+        .andExpect(jsonPath("$.data.hasMore").value(true));
+
+    // Audience scoping keeps the portals apart.
+    http.perform(
+            get("/api/me/notifications/sync").param("audience", "RECRUITER").header("Authorization", owner))
+        .andExpect(jsonPath("$.data.items.length()").value(4))
+        .andExpect(jsonPath("$.data.unreadCount").value(2));
+    http.perform(
+            get("/api/me/notifications/sync").param("audience", "CANDIDATE").header("Authorization", owner))
+        .andExpect(jsonPath("$.data.items.length()").value(0))
+        .andExpect(jsonPath("$.data.unreadCount").value(0))
+        .andExpect(jsonPath("$.data.totalCount").value(0));
+
+    // An unchanged inbox answers with 304 only when the client repeats its tag.
+    http.perform(get("/api/me/notifications/sync").header("Authorization", owner))
+        .andExpect(status().isOk());
+    http.perform(
+            get("/api/me/notifications/sync")
+                .header("Authorization", owner)
+                .header("If-None-Match", etag))
+        .andExpect(status().isNotModified());
+
+    // A delivered row changes the inbox and answers with the new row again.
+    long delivered =
+        insert(ownerId, company, companyName, "JOB_NEEDS_REASSIGNMENT", "RECRUITER", "job", false);
+    http.perform(
+            get("/api/me/notifications/sync")
+                .header("Authorization", owner)
+                .header("If-None-Match", etag))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.items[0].id").value(String.valueOf(delivered)))
+        .andExpect(jsonPath("$.data.unreadCount").value(3))
+        .andExpect(jsonPath("$.data.totalCount").value(5));
+
+    // Another recipient never sees these rows.
+    String stranger = account();
+    http.perform(get("/api/me/notifications/sync").header("Authorization", stranger))
+        .andExpect(jsonPath("$.data.items.length()").value(0))
+        .andExpect(jsonPath("$.data.unreadCount").value(0))
+        .andExpect(jsonPath("$.data.totalCount").value(0));
+
+    // Invalid input is rejected, not silently ignored.
+    http.perform(
+            get("/api/me/notifications/sync").param("sinceId", "-1").header("Authorization", owner))
+        .andExpect(status().isBadRequest());
+    http.perform(
+            get("/api/me/notifications/sync").param("audience", "nope").header("Authorization", owner))
+        .andExpect(status().isBadRequest());
+    http.perform(get("/api/me/notifications/sync")).andExpect(status().isUnauthorized());
   }
 
   long userId(String token) throws Exception {
