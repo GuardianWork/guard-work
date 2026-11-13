@@ -489,4 +489,169 @@ BEGIN
 END;
 $$;
 
+-- Seeded notification inbox fixtures (synthetic histories, not evidence of real delivery).
+-- Each fixture uses a fixed event_id so reruns preserve manual reads and never duplicate delivery.
+DO $$
+DECLARE
+    company_id_value BIGINT;
+    company_name_value TEXT;
+    owner_id_value BIGINT;
+    recruiter_id_value BIGINT;
+    candidate_user_id_value BIGINT;
+    candidate_id_value UUID;
+    staff_id_value BIGINT;
+    job_a_id BIGINT;
+    job_b_id BIGINT;
+    job_c_id BIGINT;
+    rev_a_id BIGINT;
+    rev_b_id BIGINT;
+    rev_c_id BIGINT;
+    app_a_id UUID := 'a04a0000-0000-4000-8000-000000000001';
+    app_b_id UUID := 'a04a0000-0000-4000-8000-000000000002';
+    app_c_id UUID := 'a04a0000-0000-4000-8000-000000000003';
+    app_a_at TIMESTAMPTZ := now() - interval '3 days';
+    app_b_at TIMESTAMPTZ := now() - interval '2 days 12 hours';
+    app_c_at TIMESTAMPTZ := now() - interval '2 days';
+    base_time TIMESTAMPTZ := now() - interval '2 days 6 hours';
+BEGIN
+    SELECT c.id, c.name, c.owner_user_id INTO STRICT company_id_value, company_name_value, owner_id_value
+    FROM companies c WHERE c.tax_code = 'GW-DEMO-LOCAL-001';
+    SELECT id INTO STRICT owner_id_value FROM users WHERE username = 'demo_owner';
+    SELECT id INTO STRICT recruiter_id_value FROM users WHERE username = 'demo_recruiter';
+    SELECT id INTO STRICT candidate_user_id_value FROM users WHERE username = 'demo_candidate';
+    SELECT id INTO STRICT staff_id_value FROM users WHERE username = 'demo_staff';
+    SELECT id INTO STRICT candidate_id_value FROM candidate_profiles WHERE user_id = candidate_user_id_value;
+    SELECT e.job_id INTO STRICT job_a_id FROM job_audit_events e WHERE e.event_type = 'JOB_CREATED' AND e.facts ->> 'developmentFixture' = 'GW93-HIDE-READY';
+    SELECT e.job_id INTO STRICT job_b_id FROM job_audit_events e WHERE e.event_type = 'JOB_CREATED' AND e.facts ->> 'developmentFixture' = 'GW93-PUBLISHED-EDIT';
+    SELECT e.job_id INTO STRICT job_c_id FROM job_audit_events e WHERE e.event_type = 'JOB_CREATED' AND e.facts ->> 'developmentFixture' = 'PUBLISHED-JOB-001';
+    SELECT published_revision_id INTO STRICT rev_a_id FROM job_postings WHERE id = job_a_id;
+    SELECT published_revision_id INTO STRICT rev_b_id FROM job_postings WHERE id = job_b_id;
+    SELECT published_revision_id INTO STRICT rev_c_id FROM job_postings WHERE id = job_c_id;
+    IF rev_a_id IS NULL OR rev_b_id IS NULL OR rev_c_id IS NULL THEN
+        RAISE EXCEPTION 'Seeded notification jobs require published revisions.';
+    END IF;
+
+    -- Companion demo applications so APPLICATION_* fixtures satisfy ck_application_inbox_context.
+    INSERT INTO applications (id, candidate_id, job_id, company_id, submitted_revision_id, status, version, applied_at, updated_at)
+    VALUES (app_a_id, candidate_id_value, job_a_id, company_id_value, rev_a_id, 'UNDER_REVIEW', 0, app_a_at, app_a_at)
+    ON CONFLICT (candidate_id, job_id) DO NOTHING;
+    INSERT INTO application_snapshots (
+        application_id, full_name, email, phone_number, cover_letter, job_title, company_name,
+        cv_storage_key, cv_storage_provider, cv_file_name, cv_content_type, cv_file_size,
+        snapshot_schema_version, captured_at)
+    VALUES (
+        app_a_id, 'An Nguyen Van', 'candidate@demo.guardwork.test', '0900000001',
+        'Mong duoc gia nhan vao cong ty GuardWork.', (SELECT content ->> 'title' FROM job_posting_revisions WHERE id = rev_a_id),
+        company_name_value, 'candidates/demo/app_a/cv', 'CLOUDINARY', 'Nguyen_Van_An_CV.pdf',
+        'application/pdf', 204800, 1, app_a_at)
+    ON CONFLICT (application_id) DO NOTHING;
+    INSERT INTO applications (id, candidate_id, job_id, company_id, submitted_revision_id, status, version, applied_at, updated_at)
+    VALUES (app_b_id, candidate_id_value, job_b_id, company_id_value, rev_b_id, 'REJECTED', 0, app_b_at, app_b_at)
+    ON CONFLICT (candidate_id, job_id) DO NOTHING;
+    INSERT INTO application_snapshots (
+        application_id, full_name, email, phone_number, cover_letter, job_title, company_name,
+        cv_storage_key, cv_storage_provider, cv_file_name, cv_content_type, cv_file_size,
+        snapshot_schema_version, captured_at)
+    VALUES (
+        app_b_id, 'An Nguyen Van', 'candidate@demo.guardwork.test', '0900000001',
+        'Mong duoc gia nhan vao cong ty GuardWork.', (SELECT content ->> 'title' FROM job_posting_revisions WHERE id = rev_b_id),
+        company_name_value, 'candidates/demo/app_b/cv', 'CLOUDINARY', 'Nguyen_Van_An_CV.pdf',
+        'application/pdf', 204800, 1, app_b_at)
+    ON CONFLICT (application_id) DO NOTHING;
+    INSERT INTO applications (id, candidate_id, job_id, company_id, submitted_revision_id, status, version, applied_at, updated_at)
+    VALUES (app_c_id, candidate_id_value, job_c_id, company_id_value, rev_c_id, 'WITHDRAWN', 0, app_c_at, app_c_at)
+    ON CONFLICT (candidate_id, job_id) DO NOTHING;
+    INSERT INTO application_snapshots (
+        application_id, full_name, email, phone_number, cover_letter, job_title, company_name,
+        cv_storage_key, cv_storage_provider, cv_file_name, cv_content_type, cv_file_size,
+        snapshot_schema_version, captured_at)
+    VALUES (
+        app_c_id, 'An Nguyen Van', 'candidate@demo.guardwork.test', '0900000001',
+        'Mong duoc gia nhan vao cong ty GuardWork.', (SELECT content ->> 'title' FROM job_posting_revisions WHERE id = rev_c_id),
+        company_name_value, 'candidates/demo/app_c/cv', 'CLOUDINARY', 'Nguyen_Van_An_CV.pdf',
+        'application/pdf', 204800, 1, app_c_at)
+    ON CONFLICT (application_id) DO NOTHING;
+
+    -- 1. JOB_ASSIGNED -> demo_recruiter (read)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a04b0000-0000-4000-8000-000000000101', recruiter_id_value, 'JOB_ASSIGNED', 'RECRUITER', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'jobId', job_a_id, 'revisionId', rev_a_id, 'actorUserId', owner_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value))), base_time, 0, base_time, base_time + interval '5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, revision_id, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a04b0000-0000-4000-8000-000000000101', recruiter_id_value, 'JOB_ASSIGNED', 'RECRUITER', company_id_value, company_name_value, job_a_id, rev_a_id, 'job', 'Bạn được giao một tin tuyển dụng', 'Bạn được giao phụ trách tin tuyển dụng #' || job_a_id || ' tại ' || company_name_value || '.', '/jobs/' || job_a_id, owner_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value), base_time, base_time + interval '1 hour')
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 2. JOB_UNASSIGNED -> demo_recruiter (unread)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a04c0000-0000-4000-8000-000000000201', recruiter_id_value, 'JOB_UNASSIGNED', 'RECRUITER', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'jobId', job_b_id, 'revisionId', rev_b_id, 'actorUserId', owner_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value))), base_time + interval '1 hour', 0, base_time + interval '1 hour', base_time + interval '1 hour 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, revision_id, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a04c0000-0000-4000-8000-000000000201', recruiter_id_value, 'JOB_UNASSIGNED', 'RECRUITER', company_id_value, company_name_value, job_b_id, rev_b_id, 'job', 'Bạn không còn phụ trách tin tuyển dụng', 'Bạn không còn phụ trách tin tuyển dụng #' || job_b_id || ' tại ' || company_name_value || '.', NULL, owner_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value), base_time + interval '1 hour', NULL)
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 3. JOB_NEEDS_REASSIGNMENT -> demo_owner (unread)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a04d0000-0000-4000-8000-000000000301', owner_id_value, 'JOB_NEEDS_REASSIGNMENT', 'RECRUITER', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'jobId', job_c_id, 'revisionId', rev_c_id)), base_time + interval '2 hours', 0, base_time + interval '2 hours', base_time + interval '2 hours 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, revision_id, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a04d0000-0000-4000-8000-000000000301', owner_id_value, 'JOB_NEEDS_REASSIGNMENT', 'RECRUITER', company_id_value, company_name_value, job_c_id, rev_c_id, 'job', 'Tin tuyển dụng cần chuyển người phụ trách', 'Tin tuyển dụng #' || job_c_id || ' tại ' || company_name_value || ' cần chuyển người phụ trách mới.', '/jobs/' || job_c_id, NULL, NULL, base_time + interval '2 hours', NULL)
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 4. JOB_REVISION_APPROVED -> demo_owner (read, actor demo_staff)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a04e0000-0000-4000-8000-000000000401', owner_id_value, 'JOB_REVISION_APPROVED', 'RECRUITER', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'jobId', job_b_id, 'revisionId', rev_b_id, 'actorUserId', staff_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = staff_id_value))), base_time + interval '3 hours', 0, base_time + interval '3 hours', base_time + interval '3 hours 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, revision_id, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a04e0000-0000-4000-8000-000000000401', owner_id_value, 'JOB_REVISION_APPROVED', 'RECRUITER', company_id_value, company_name_value, job_b_id, rev_b_id, 'job', 'Tin tuyển dụng đã được duyệt', 'Tin tuyển dụng #' || job_b_id || ' tại ' || company_name_value || ' đã được phê duyệt và đăng công khai.', '/jobs/' || job_b_id, staff_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = staff_id_value), base_time + interval '3 hours', base_time + interval '4 hours')
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 5. JOB_REVISION_REJECTED -> demo_owner (unread, actor demo_staff)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a04f0000-0000-4000-8000-000000000501', owner_id_value, 'JOB_REVISION_REJECTED', 'RECRUITER', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'jobId', job_c_id, 'revisionId', rev_c_id, 'actorUserId', staff_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = staff_id_value))), base_time + interval '4 hours', 0, base_time + interval '4 hours', base_time + interval '4 hours 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, revision_id, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a04f0000-0000-4000-8000-000000000501', owner_id_value, 'JOB_REVISION_REJECTED', 'RECRUITER', company_id_value, company_name_value, job_c_id, rev_c_id, 'job', 'Tin tuyển dụng cần chỉnh sửa', 'Ban quản trị chưa thể phê duyệt tin tuyển dụng #' || job_c_id || ' tại ' || company_name_value || '. Vui lòng xem xét và chỉnh sửa.', '/jobs/' || job_c_id, staff_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = staff_id_value), base_time + interval '4 hours', NULL)
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 6. APPLICATION_STATUS_CHANGED -> demo_candidate (unread, actor demo_owner)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a0500000-0000-4000-8000-000000000601', candidate_user_id_value, 'APPLICATION_STATUS_CHANGED', 'CANDIDATE', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'jobId', job_a_id, 'jobTitle', (SELECT content ->> 'title' FROM job_posting_revisions WHERE id = rev_a_id), 'applicationId', app_a_id, 'actorUserId', owner_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value))), base_time + interval '5 hours', 0, base_time + interval '5 hours', base_time + interval '5 hours 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, application_id, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a0500000-0000-4000-8000-000000000601', candidate_user_id_value, 'APPLICATION_STATUS_CHANGED', 'CANDIDATE', company_id_value, company_name_value, job_a_id, app_a_id, 'application', 'Trạng thái hồ sơ đã thay đổi', company_name_value || ' vừa cập nhật trạng thái hồ sơ ứng tuyển của bạn cho vị trí ' || (SELECT content ->> 'title' FROM job_posting_revisions WHERE id = rev_a_id) || '.', '/applications/' || app_a_id, owner_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value), base_time + interval '5 hours', NULL)
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 7. APPLICATION_REJECTED -> demo_candidate (read, actor demo_owner, with feedback)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a0510000-0000-4000-8000-000000000701', candidate_user_id_value, 'APPLICATION_REJECTED', 'CANDIDATE', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'jobId', job_b_id, 'jobTitle', (SELECT content ->> 'title' FROM job_posting_revisions WHERE id = rev_b_id), 'applicationId', app_b_id, 'candidateFeedback', 'Kinh nghiệm chưa đáp ứng yêu cầu vị trí.', 'actorUserId', owner_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value))), base_time + interval '6 hours', 0, base_time + interval '6 hours', base_time + interval '6 hours 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, application_id, candidate_feedback, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a0510000-0000-4000-8000-000000000701', candidate_user_id_value, 'APPLICATION_REJECTED', 'CANDIDATE', company_id_value, company_name_value, job_b_id, app_b_id, 'Kinh nghiệm chưa đáp ứng yêu cầu vị trí.', 'application', 'Hồ sơ ứng tuyển đã bị từ chối', 'Hồ sơ ứng tuyển của bạn tại ' || company_name_value || ' đã bị từ chối. Kinh nghiệm chưa đáp ứng yêu cầu vị trí.', '/applications/' || app_b_id, owner_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value), base_time + interval '6 hours', base_time + interval '7 hours')
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 8. APPLICATION_WITHDRAWN -> demo_owner (unread)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a0520000-0000-4000-8000-000000000801', owner_id_value, 'APPLICATION_WITHDRAWN', 'RECRUITER', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'jobId', job_c_id, 'jobTitle', (SELECT content ->> 'title' FROM job_posting_revisions WHERE id = rev_c_id), 'applicationId', app_c_id, 'actorUserId', candidate_user_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = candidate_user_id_value))), base_time + interval '7 hours', 0, base_time + interval '7 hours', base_time + interval '7 hours 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, job_id, application_id, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a0520000-0000-4000-8000-000000000801', owner_id_value, 'APPLICATION_WITHDRAWN', 'RECRUITER', company_id_value, company_name_value, job_c_id, app_c_id, 'application', 'Hồ sơ ứng tuyển đã bị rút', 'Hồ sơ ứng tuyển tại ' || company_name_value || ' đã được rút.', '/applications/' || app_c_id, candidate_user_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = candidate_user_id_value), base_time + interval '7 hours', NULL)
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 9. RECRUITER_ACCEPTED -> demo_owner (read)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a0530000-0000-4000-8000-000000000901', owner_id_value, 'RECRUITER_ACCEPTED', 'RECRUITER', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'actorUserId', recruiter_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = recruiter_id_value))), base_time + interval '8 hours', 0, base_time + interval '8 hours', base_time + interval '8 hours 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a0530000-0000-4000-8000-000000000901', owner_id_value, 'RECRUITER_ACCEPTED', 'RECRUITER', company_id_value, company_name_value, 'company', 'Bạn đã được chấp nhận vào ' || company_name_value, 'Bạn đã chính thức trở thành thành viên của ' || company_name_value || '. Hãy hoàn thiện hồ sơ để ứng tuyển và nhận các thông báo liên quan.', '/companies/' || company_id_value, recruiter_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = recruiter_id_value), base_time + interval '8 hours', base_time + interval '9 hours')
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    -- 10. MEMBERSHIP_REMOVED -> demo_recruiter (unread)
+    INSERT INTO notification_outbox(event_id, recipient_user_id, event_type, audience, payload, created_at, attempt_count, next_attempt_at, delivered_at, error_category)
+    VALUES ('a0540000-0000-4000-8000-000000001001', recruiter_id_value, 'MEMBERSHIP_REMOVED', 'RECRUITER', jsonb_strip_nulls(jsonb_build_object('companyId', company_id_value, 'companyName', company_name_value, 'actorUserId', owner_id_value, 'actorName', (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value))), base_time + interval '9 hours', 0, base_time + interval '9 hours', base_time + interval '9 hours 5 seconds', NULL)
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox(source_event_id, recipient_user_id, event_type, audience, company_id, company_name, category, title, body, action_href, actor_user_id, actor_name, created_at, read_at)
+    VALUES ('a0540000-0000-4000-8000-000000001001', recruiter_id_value, 'MEMBERSHIP_REMOVED', 'RECRUITER', company_id_value, company_name_value, 'company', 'Quyền truy cập đã bị thu hồi', 'Quyền truy cập của bạn vào ' || company_name_value || ' đã bị thu hồi. Liên hệ quản trị viên của công ty nếu bạn tin rằng điều này xảy ra nhầm lẫn.', NULL, owner_id_value, (SELECT first_name || ' ' || last_name FROM users WHERE id = owner_id_value), base_time + interval '9 hours', NULL)
+    ON CONFLICT (source_event_id) DO NOTHING;
+END;
+$$;
+
 COMMIT;

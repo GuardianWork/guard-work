@@ -6,6 +6,7 @@ import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.job.model.*;
 import com.guardwork.backend.job.repository.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
+import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.service.*;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -185,6 +186,7 @@ public class JobPublicationService {
           notifications.recordJob(
               recipient,
               "JOB_REVISION_" + request.outcome(),
+              NotificationAudience.RECRUITER,
               company,
               job.getId(),
               revisionId,

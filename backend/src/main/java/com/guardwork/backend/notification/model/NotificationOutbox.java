@@ -3,11 +3,19 @@ package com.guardwork.backend.notification.model;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Getter
 @Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Entity
 @Table(name = "notification_outbox")
 public class NotificationOutbox {
@@ -19,25 +27,17 @@ public class NotificationOutbox {
   private Long recipientUserId;
 
   @Column(name = "event_type", nullable = false)
-  private String eventType;
+  @Enumerated(EnumType.STRING)
+  private NotificationEventType eventType;
 
-  @Column(name = "company_id", nullable = false)
-  private Long companyId;
+  @Column(name = "audience", nullable = false)
+  @Enumerated(EnumType.STRING)
+  private NotificationAudience audience;
 
-  @Column(name = "company_name", nullable = false)
-  private String companyName;
-
-  @Column(name = "job_id")
-  private Long jobId;
-
-  @Column(name = "revision_id")
-  private Long revisionId;
-
-  @Column(name = "application_id")
-  private UUID applicationId;
-
-  @Column(name = "candidate_feedback", length = 1000)
-  private String candidateFeedback;
+  /** Frozen fact-time context; see {@link NotificationPayload}. */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(name = "payload", nullable = false, columnDefinition = "jsonb")
+  private String payload;
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
@@ -53,4 +53,9 @@ public class NotificationOutbox {
 
   @Column(name = "error_category")
   private String errorCategory;
+
+  /** Typed view of {@link #payload} for templates and the dispatcher. */
+  public NotificationPayload payloadView() {
+    return NotificationPayload.fromJson(payload);
+  }
 }

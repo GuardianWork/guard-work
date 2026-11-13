@@ -323,7 +323,7 @@ class JobApplicationHttpTest {
         Long auditBefore = database.queryForObject(
                 "SELECT count(*) FROM job_audit_events WHERE job_id=?", Long.class, job.id());
         Long notificationsBefore = database.queryForObject(
-                "SELECT count(*) FROM notification_outbox WHERE job_id=?", Long.class, job.id());
+                "SELECT count(*) FROM notification_outbox WHERE payload->>'jobId'=?", Long.class, String.valueOf(job.id()));
 
         http.perform(get("/api/companies/me/jobs/{jobId}/applications", job.id())
                         .header("Authorization", owner))
@@ -343,7 +343,7 @@ class JobApplicationHttpTest {
         assertThat(database.queryForObject(
                 "SELECT count(*) FROM job_audit_events WHERE job_id=?", Long.class, job.id())).isEqualTo(auditBefore);
         assertThat(database.queryForObject(
-                "SELECT count(*) FROM notification_outbox WHERE job_id=?", Long.class, job.id()))
+                "SELECT count(*) FROM notification_outbox WHERE payload->>'jobId'=?", Long.class, String.valueOf(job.id())))
                 .isEqualTo(notificationsBefore);
     }
 
@@ -800,8 +800,16 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.history[1].actorName").value("Nguyễn Minh Anh"));
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, application)).isEqualTo(2);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_STATUS_CHANGED'",
-                Long.class, application)).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? AND event_type='APPLICATION_STATUS_CHANGED'",
+                Long.class, application.toString())).isEqualTo(1);
+        assertThat(database.queryForObject(
+                        "SELECT payload->>'jobTitle' FROM notification_outbox WHERE payload->>'applicationId'=? AND event_type='APPLICATION_STATUS_CHANGED'",
+                        String.class, application.toString())).isEqualTo("Backend Engineer");
+        assertThat(database.queryForObject(
+                        "SELECT body FROM notification_inbox WHERE source_event_id="
+                                + "(SELECT event_id FROM notification_outbox WHERE payload->>'applicationId'=? AND event_type='APPLICATION_STATUS_CHANGED')",
+                        String.class, application.toString()))
+                .isEqualTo("Công ty Ánh vừa cập nhật trạng thái hồ sơ ứng tuyển của bạn cho vị trí Backend Engineer.");
 
         http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), application)
                         .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
@@ -820,8 +828,8 @@ class JobApplicationHttpTest {
                         .content(mapper.writeValueAsString(Map.of("status", "SHORTLISTED", "version", 201))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("SHORTLISTED"));
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_STATUS_CHANGED'",
-                Long.class, application)).isEqualTo(2);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? AND event_type='APPLICATION_STATUS_CHANGED'",
+                Long.class, application.toString())).isEqualTo(2);
 
         // Candidate-safe history never includes Company actors' IDs or names.
         http.perform(get("/api/candidate/applications/{applicationId}", application)
@@ -903,19 +911,19 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.history[2].toStatus").value("INTERVIEWING"))
                 .andExpect(jsonPath("$.data.history[2].actorUserId").doesNotExist());
 
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id IN (?,?) " +
-                        "AND event_type='APPLICATION_INTERVIEWING' AND recipient_user_id=? AND candidate_feedback IS NULL",
-                Long.class, underReview, shortlisted, candidateId)).isEqualTo(2);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId' IN (?,?) " +
+                        "AND event_type='APPLICATION_INTERVIEWING' AND recipient_user_id=? AND payload->>'candidateFeedback' IS NULL",
+                Long.class, underReview.toString(), shortlisted.toString(), candidateId)).isEqualTo(2);
         UUID notificationEvent = database.queryForObject("SELECT event_id FROM notification_outbox " +
-                "WHERE application_id=? AND event_type='APPLICATION_INTERVIEWING'", UUID.class, underReview);
+                "WHERE payload->>'applicationId'=? AND event_type='APPLICATION_INTERVIEWING'", UUID.class, underReview.toString());
         notificationDispatcher.dispatch(notificationEvent);
         notificationDispatcher.dispatch(notificationEvent);
-        assertThat(database.queryForObject("SELECT count(*) FROM user_notifications WHERE source_event_id=?",
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE source_event_id=?",
                 Long.class, notificationEvent)).isEqualTo(1);
         http.perform(get("/api/me/notifications").header("Authorization", candidate))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content[?(@.eventType == 'APPLICATION_INTERVIEWING')].applicationId")
-                        .value(org.hamcrest.Matchers.contains(underReview.toString())));
+                .andExpect(jsonPath("$.data.content[?(@.type == 'APPLICATION_INTERVIEWING')].references.applicationId")
+                        .value(org.hamcrest.Matchers.hasItem(underReview.toString())));
 
         http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), underReview)
                         .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
@@ -923,8 +931,8 @@ class JobApplicationHttpTest {
                 .andExpect(status().isOk());
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, underReview)).isEqualTo(3);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? " +
-                        "AND event_type='APPLICATION_INTERVIEWING'", Long.class, underReview)).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? " +
+                        "AND event_type='APPLICATION_INTERVIEWING'", Long.class, underReview.toString())).isEqualTo(1);
         http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(route, job.id(), underReview)
                         .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"status\":\"UNDER_REVIEW\",\"version\":2}"))
@@ -1076,20 +1084,21 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.history[*].actorUserId")
                         .value(org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.nullValue())));
         assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE recipient_user_id=? " +
-                        "AND application_id IN (?,?,?,?) AND event_type='APPLICATION_HIRED' AND candidate_feedback IS NULL",
-                Long.class, candidateId, reviewApplication, shortlistApplication, interviewApplication, closedApplication))
+                        "AND payload->>'applicationId' IN (?,?,?,?) AND event_type='APPLICATION_HIRED' AND payload->>'candidateFeedback' IS NULL",
+                Long.class, candidateId, reviewApplication.toString(), shortlistApplication.toString(),
+                interviewApplication.toString(), closedApplication.toString()))
                 .isEqualTo(4);
 
-        UUID hiredEvent = database.queryForObject("SELECT event_id FROM notification_outbox WHERE application_id=? " +
-                "AND event_type='APPLICATION_HIRED'", UUID.class, reviewApplication);
+        UUID hiredEvent = database.queryForObject("SELECT event_id FROM notification_outbox WHERE payload->>'applicationId'=? " +
+                "AND event_type='APPLICATION_HIRED'", UUID.class, reviewApplication.toString());
         notificationDispatcher.dispatch(hiredEvent);
         notificationDispatcher.dispatch(hiredEvent);
-        assertThat(database.queryForObject("SELECT count(*) FROM user_notifications WHERE source_event_id=?",
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE source_event_id=?",
                 Long.class, hiredEvent)).isEqualTo(1);
         http.perform(get("/api/me/notifications").header("Authorization", candidate))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content[?(@.eventType == 'APPLICATION_HIRED')].applicationId")
-                        .value(org.hamcrest.Matchers.contains(reviewApplication.toString())));
+                .andExpect(jsonPath("$.data.content[?(@.type == 'APPLICATION_HIRED')].references.applicationId")
+                        .value(org.hamcrest.Matchers.hasItem(reviewApplication.toString())));
 
         for (String confirmation : new String[]{"", ",\"hiringConfirmed\":false"}) {
             http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(statusRoute, reviewJob.id(), reviewApplication)
@@ -1120,8 +1129,8 @@ class JobApplicationHttpTest {
                 .andExpect(status().isBadRequest());
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, reviewApplication)).isEqualTo(3);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? " +
-                "AND event_type='APPLICATION_HIRED'", Long.class, reviewApplication)).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? " +
+                "AND event_type='APPLICATION_HIRED'", Long.class, reviewApplication.toString())).isEqualTo(1);
 
         String cvKey = "applications/" + shortlistApplication + "/cv/test.pdf";
         storage.put(new CandidateCvStorage.StoredCvAsset(cvKey, "pdf", PDF, 4, "image", "test"));
@@ -1202,8 +1211,8 @@ class JobApplicationHttpTest {
                 .isEqualTo("UNDER_REVIEW");
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, application)).isEqualTo(2);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? " +
-                "AND event_type='APPLICATION_HIRED'", Long.class, application)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? " +
+                "AND event_type='APPLICATION_HIRED'", Long.class, application.toString())).isZero();
     }
 
     @Test
@@ -1251,8 +1260,8 @@ class JobApplicationHttpTest {
         assertThat(java.util.List.of("HIRED", "REJECTED")).contains(finalStatus);
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, application)).isEqualTo(3);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=?",
-                Long.class, application)).isEqualTo(2);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=?",
+                Long.class, application.toString())).isEqualTo(2);
     }
 
     @Test
@@ -1273,8 +1282,8 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, application)).isEqualTo(1);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=?",
-                Long.class, application)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=?",
+                Long.class, application.toString())).isZero();
     }
 
     @Test
@@ -1290,7 +1299,7 @@ class JobApplicationHttpTest {
         database.execute("""
                 CREATE FUNCTION gw_application_fail_intent() RETURNS trigger AS $$
                 BEGIN
-                    IF NEW.application_id IS NOT NULL THEN
+                    IF NEW.payload ? 'applicationId' THEN
                         RAISE EXCEPTION 'controlled application notification failure' USING ERRCODE='23514';
                     END IF;
                     RETURN NEW;
@@ -1314,8 +1323,8 @@ class JobApplicationHttpTest {
                 .isEqualTo("SUBMITTED");
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, application)).isEqualTo(1);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=?",
-                Long.class, application)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=?",
+                Long.class, application.toString())).isZero();
     }
 
     @Test
@@ -1345,9 +1354,9 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.status").value("REJECTED"))
                 .andExpect(jsonPath("$.data.history[3].fromStatus").value("INTERVIEWING"));
 
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? " +
-                        "AND event_type='APPLICATION_REJECTED' AND candidate_feedback='Thank you for meeting with us'",
-                Long.class, application)).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? " +
+                        "AND event_type='APPLICATION_REJECTED' AND payload->>'candidateFeedback'='Thank you for meeting with us'",
+                Long.class, application.toString())).isEqualTo(1);
         http.perform(get(APPLICATIONS + "/{applicationId}", application).header("Authorization", candidate))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.email").value("candidate@example.vn"))
@@ -1391,8 +1400,8 @@ class JobApplicationHttpTest {
                 .isEqualTo("UNDER_REVIEW");
         assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                 Long.class, application)).isEqualTo(2);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND " +
-                "event_type='APPLICATION_INTERVIEWING'", Long.class, application)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? AND " +
+                "event_type='APPLICATION_INTERVIEWING'", Long.class, application.toString())).isZero();
     }
 
     @Test
@@ -1452,10 +1461,10 @@ class JobApplicationHttpTest {
         http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv", job.id(), application)
                         .header("Authorization", owner))
                 .andExpect(status().isNotFound());
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_REJECTED' AND candidate_feedback=?",
-                Long.class, application, "Thank you for applying")).isEqualTo(1);
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND candidate_feedback='internal only'",
-                Long.class, application)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? AND event_type='APPLICATION_REJECTED' AND payload->>'candidateFeedback'=?",
+                Long.class, application.toString(), "Thank you for applying")).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? AND payload->>'candidateFeedback'='internal only'",
+                Long.class, application.toString())).isZero();
     }
 
     @Test
@@ -1554,14 +1563,14 @@ class JobApplicationHttpTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"version\":0}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("WITHDRAWN"));
-        assertThat(database.queryForList("SELECT recipient_user_id FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_WITHDRAWN' ORDER BY recipient_user_id",
-                Long.class, application)).containsExactlyInAnyOrder(ownerId, recruiterId);
+        assertThat(database.queryForList("SELECT recipient_user_id FROM notification_outbox WHERE payload->>'applicationId'=? AND event_type='APPLICATION_WITHDRAWN' ORDER BY recipient_user_id",
+                Long.class, application.toString())).containsExactlyInAnyOrder(ownerId, recruiterId);
 
         http.perform(post(route, application).header("Authorization", candidate)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"version\":1}"))
                 .andExpect(status().isOk());
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=? AND event_type='APPLICATION_WITHDRAWN'",
-                Long.class, application)).isEqualTo(2);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=? AND event_type='APPLICATION_WITHDRAWN'",
+                Long.class, application.toString())).isEqualTo(2);
 
         http.perform(post(route, application).header("Authorization", candidate)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"version\":0}"))
@@ -1660,8 +1669,8 @@ class JobApplicationHttpTest {
             assertThat(java.util.List.of(rejectStatus, withdrawStatus)).contains(200).contains(409);
             assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=?",
                     Long.class, application)).isEqualTo(2);
-            assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE application_id=?",
-                    Long.class, application)).isEqualTo(1);
+            assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'applicationId'=?",
+                    Long.class, application.toString())).isEqualTo(1);
             assertThat(database.queryForObject("SELECT status FROM applications WHERE id=?", String.class, application))
                     .isIn("REJECTED", "WITHDRAWN");
         } finally {

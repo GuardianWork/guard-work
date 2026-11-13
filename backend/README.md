@@ -429,6 +429,31 @@ is no longer eligible, creating missing jobs fails atomically with a clear error
 rather than overriding its state. Duplicate or foreign fixture markers fail as
 identifier collisions. No schema migration or dependency is added.
 
+### Notification inbox fixtures
+
+The local seed also inserts ten synthetic notifications covering every current event type
+(`JOB_*`, `APPLICATION_*`, `RECRUITER_ACCEPTED`, `MEMBERSHIP_REMOVED`), so graders can
+open the inbox without triggering real business flows. They reuse `GW93` jobs and create
+three demo applications for the `demo_candidate` so `APPLICATION_*` rows satisfy the
+`ck_application_inbox_context` check without mail or outbox delivery.
+
+| Recipient | Fixture | Manual check |
+| --- | --- | --- |
+| `demo_recruiter` | `JOB_ASSIGNED` (read), `JOB_UNASSIGNED` (unread), `MEMBERSHIP_REMOVED` (unread) | Last: title and receiver survive `GET /api/me/notifications`. |
+| `demo_owner` | `JOB_NEEDS_REASSIGNMENT` (unread), `JOB_REVISION_APPROVED` (read), `JOB_REVISION_REJECTED` (unread), `APPLICATION_WITHDRAWN` (unread), `RECRUITER_ACCEPTED` (read) | Mark one unread read via `PATCH`; rerun must not reset it. |
+| `demo_candidate` | `APPLICATION_STATUS_CHANGED` (unread), `APPLICATION_REJECTED` (read) | Read one via `PATCH`; rerun preserves the read timestamp. |
+
+Outbox rows are inserted already `delivered_at`-ed, so the dispatcher never re-sends them. Each
+outbox fixture stores its context in `payload` (`companyId`, `companyName`, `jobId`,
+`revisionId`, and `applicationId`/`jobTitle` for application rows); the dispatcher maps those keys
+to the inbox columns. `title`/`body` mirror `NotificationTemplate` copy for manual browsing only;
+the frozen snapshot never rewrites history. Reruns identify fixtures by fixed `event_id` UUIDs and
+`ON CONFLICT DO NOTHING`, so they are idempotent and preserve existing reads.
+Each fixture also carries its `audience`: `APPLICATION_STATUS_CHANGED` and
+`APPLICATION_REJECTED` are `CANDIDATE`; all other fixtures, including
+`APPLICATION_WITHDRAWN`, are `RECRUITER`. Browsing as `demo_candidate` with
+`?audience=CANDIDATE` shows only the candidate items.
+
 ### Own account control (GW-95)
 
 See [account-control integration and rollout](../docs/backend/account-control.md) for

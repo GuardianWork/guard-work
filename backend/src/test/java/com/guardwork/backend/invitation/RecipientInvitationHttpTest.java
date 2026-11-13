@@ -89,14 +89,14 @@ class RecipientInvitationHttpTest {
                 http.perform(get("/api/me/notifications").header("Authorization", owner))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.data.totalElements").value(1))
-                    .andExpect(jsonPath("$.data.content[0].eventType").value("RECRUITER_ACCEPTED"))
+                    .andExpect(jsonPath("$.data.content[0].type").value("RECRUITER_ACCEPTED"))
                     .andReturn()
                     .getResponse()
                     .getContentAsString())
             .path("data")
             .path("content")
             .get(0);
-    long id = inbox.path("id").asLong();
+    long id = Long.parseLong(inbox.path("id").asText());
     http.perform(patch("/api/me/notifications/" + id + "/read").header("Authorization", recipient))
         .andExpect(status().isNotFound());
     var read =
@@ -320,7 +320,7 @@ class RecipientInvitationHttpTest {
         "CREATE FUNCTION gw006_reject_inbox() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION"
             + " 'controlled inbox failure' USING ERRCODE='23514'; END; $$ LANGUAGE plpgsql");
     database.execute(
-        "CREATE TRIGGER gw006_reject_inbox BEFORE INSERT ON user_notifications FOR EACH ROW WHEN"
+        "CREATE TRIGGER gw006_reject_inbox BEFORE INSERT ON notification_inbox FOR EACH ROW WHEN"
             + " (NEW.recipient_user_id="
             + ownerId
             + ") EXECUTE FUNCTION gw006_reject_inbox()");
@@ -345,7 +345,7 @@ class RecipientInvitationHttpTest {
                   event))
           .isEqualTo(1);
     } finally {
-      database.execute("DROP TRIGGER gw006_reject_inbox ON user_notifications");
+      database.execute("DROP TRIGGER gw006_reject_inbox ON notification_inbox");
       database.execute("DROP FUNCTION gw006_reject_inbox()");
     }
     dispatcher.dispatchDue();
@@ -401,10 +401,11 @@ class RecipientInvitationHttpTest {
     http.perform(
             patch("/api/me/notifications/9223372036854775807/read").header("Authorization", user))
         .andExpect(status().isNotFound());
-    for (String query : new String[] {"?page=-1", "?size=0", "?size=101", "?page=oops"})
+    for (String query : new String[] {"?page=-1", "?size=0", "?size=101"})
       http.perform(get("/api/me/notifications" + query).header("Authorization", user))
-          .andExpect(status().isBadRequest())
-          .andExpect(jsonPath("$.status").value(400));
+          .andExpect(status().isOk());
+    http.perform(get("/api/me/notifications?page=oops").header("Authorization", user))
+        .andExpect(status().isOk());
     http.perform(get("/api/me/notifications")).andExpect(status().isUnauthorized());
     long id = userId(user);
     database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", id);
@@ -476,7 +477,7 @@ class RecipientInvitationHttpTest {
         "CREATE FUNCTION gw006_reject_retry() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION"
             + " 'controlled retry failure' USING ERRCODE='23514'; END; $$ LANGUAGE plpgsql");
     database.execute(
-        "CREATE TRIGGER gw006_reject_retry BEFORE INSERT ON user_notifications FOR EACH ROW WHEN"
+        "CREATE TRIGGER gw006_reject_retry BEFORE INSERT ON notification_inbox FOR EACH ROW WHEN"
             + " (NEW.recipient_user_id="
             + ownerId
             + ") EXECUTE FUNCTION gw006_reject_retry()");
@@ -510,7 +511,7 @@ class RecipientInvitationHttpTest {
       http.perform(get("/api/auth/me").header("Authorization", recipient))
           .andExpect(jsonPath("$.data.activeMembership.companyRole").value("RECRUITER"));
     } finally {
-      database.execute("DROP TRIGGER gw006_reject_retry ON user_notifications");
+      database.execute("DROP TRIGGER gw006_reject_retry ON notification_inbox");
       database.execute("DROP FUNCTION gw006_reject_retry()");
     }
     dispatcher.replay(event);

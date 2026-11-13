@@ -5,6 +5,7 @@ import com.guardwork.backend.job.service.JobAssignmentService;
 import com.guardwork.backend.membership.dto.*;
 import com.guardwork.backend.membership.model.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
+import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.service.*;
 import com.guardwork.backend.user.repository.UserRepository;
 import java.time.Clock;
@@ -109,7 +110,11 @@ public class MembershipManagementService {
                   null);
               UUID event =
                   notifications.record(
-                      target.getUserId(), "MEMBERSHIP_REMOVED", company, target.getEndedAt());
+                      target.getUserId(),
+                      "MEMBERSHIP_REMOVED",
+                      NotificationAudience.RECRUITER,
+                      company,
+                      target.getEndedAt());
               return new Removal(MembershipEndResponse.from(target), event);
             });
     dispatcher.dispatch(result.eventId());
