@@ -74,20 +74,20 @@ class JobPersistenceTest {
     assertThatThrownBy(() -> db.update("DELETE FROM job_audit_events WHERE id=?", audit)).isInstanceOf(DataAccessException.class);
     assertThatThrownBy(() -> db.execute("TRUNCATE job_audit_events")).isInstanceOf(DataAccessException.class);
     UUID event = UUID.randomUUID();
-    db.update("INSERT INTO notification_outbox(event_id,recipient_user_id,event_type,company_id,company_name,created_at,next_attempt_at) VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Legacy',now(),now())", event, user, company);
-    db.update("INSERT INTO user_notifications(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Legacy',now())", event, user, company);
+    db.update("INSERT INTO notification_outbox(event_id,recipient_user_id,event_type,payload,created_at,next_attempt_at) VALUES (?,?,'MEMBERSHIP_REMOVED',jsonb_build_object('companyId',?,'companyName','Legacy'),now(),now())", event, user, company);
+    db.update("INSERT INTO notification_inbox(source_event_id,recipient_user_id,event_type,company_id,company_name,created_at) VALUES (?,?,'MEMBERSHIP_REMOVED',?,'Legacy',now())", event, user, company);
   }
 
   @Test void notificationContextCannotBeRewrittenOrPointAcrossCompanies() {
     long user = user(), company = company(), job = job(company, user), other = company();
     UUID event = UUID.randomUUID();
-    String insert = "INSERT INTO notification_outbox(event_id,recipient_user_id,event_type,company_id,company_name,job_id,created_at,next_attempt_at) VALUES (?,?,'JOB_ASSIGNED',?,'Company',?,now(),now())";
+    String insert = "INSERT INTO notification_outbox(event_id,recipient_user_id,event_type,payload,created_at,next_attempt_at) VALUES (?,?,'JOB_ASSIGNED',jsonb_build_object('companyId',?,'companyName','Company','jobId',?),now(),now())";
     assertThatThrownBy(() -> db.update(insert, UUID.randomUUID(), user, other, job)).isInstanceOf(DataAccessException.class);
     db.update(insert, event, user, company, job);
-    assertThatThrownBy(() -> db.update("UPDATE notification_outbox SET job_id=null WHERE event_id=?", event)).isInstanceOf(DataAccessException.class);
-    long notification = db.queryForObject("INSERT INTO user_notifications(source_event_id,recipient_user_id,event_type,company_id,company_name,job_id,created_at) VALUES (?,?,'JOB_ASSIGNED',?,'Company',?,now()) RETURNING id", Long.class, event, user, company, job);
-    db.update("UPDATE user_notifications SET read_at=now() WHERE id=?", notification);
-    assertThatThrownBy(() -> db.update("UPDATE user_notifications SET recipient_user_id=? WHERE id=?", user(), notification)).isInstanceOf(DataAccessException.class);
+    assertThatThrownBy(() -> db.update("UPDATE notification_outbox SET payload=jsonb_set(payload,'{jobId}','null'::jsonb) WHERE event_id=?", event)).isInstanceOf(DataAccessException.class);
+    long notification = db.queryForObject("INSERT INTO notification_inbox(source_event_id,recipient_user_id,event_type,company_id,company_name,job_id,created_at) VALUES (?,?,'JOB_ASSIGNED',?,'Company',?,now()) RETURNING id", Long.class, event, user, company, job);
+    db.update("UPDATE notification_inbox SET read_at=now() WHERE id=?", notification);
+    assertThatThrownBy(() -> db.update("UPDATE notification_inbox SET recipient_user_id=? WHERE id=?", user(), notification)).isInstanceOf(DataAccessException.class);
   }
 
   void submit(long revision, long user) {

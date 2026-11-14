@@ -8,7 +8,12 @@ public record JobApplicationSummaryResponse(
         Long jobId,
         String jobTitle,
         String companyName,
+        String location,
+        String workMode,
+        Instant deadline,
         String status,
         Instant appliedAt,
-        String cvFileName
+        String cvFileName,
+        long version,
+        String candidateFeedback
 ) {}

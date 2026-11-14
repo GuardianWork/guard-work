@@ -174,7 +174,7 @@ class RecruitingAccessHttpTest {
                 .andExpect(status().isNotFound());
         database.update("UPDATE users SET email_verified=FALSE WHERE id=?", recruiter.id());
         String inbox = http.perform(get("/api/me/notifications").header("Authorization", recruiter.authorization()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[?(@.eventType == 'MEMBERSHIP_REMOVED')]").isNotEmpty())
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[?(@.type == 'MEMBERSHIP_REMOVED')]").isNotEmpty())
                 .andReturn().getResponse().getContentAsString();
         long notification = json.readTree(inbox).path("data").path("content").get(0).path("id").asLong();
         http.perform(patch("/api/me/notifications/" + notification + "/read").header("Authorization", recruiter.authorization()))

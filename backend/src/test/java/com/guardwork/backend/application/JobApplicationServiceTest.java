@@ -3,8 +3,10 @@ package com.guardwork.backend.application;
 import com.guardwork.backend.application.dto.JobApplicationResponse;
 import com.guardwork.backend.application.dto.SubmitApplicationRequest;
 import com.guardwork.backend.application.model.ApplicationSnapshot;
+import com.guardwork.backend.application.model.ApplicationStatusHistory;
 import com.guardwork.backend.application.model.JobApplication;
 import com.guardwork.backend.application.repository.ApplicationSnapshotRepository;
+import com.guardwork.backend.application.repository.ApplicationStatusHistoryRepository;
 import com.guardwork.backend.application.repository.JobApplicationRepository;
 import com.guardwork.backend.application.service.JobApplicationService;
 import com.guardwork.backend.candidate.CandidateProfile;
@@ -15,6 +17,11 @@ import com.guardwork.backend.candidate.cvs.CandidateCvService;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.job.service.JobPublicationService;
+import com.guardwork.backend.company.model.Company;
+import com.guardwork.backend.membership.model.CompanyMembership;
+import com.guardwork.backend.membership.model.CompanyRole;
+import com.guardwork.backend.membership.service.CompanyAccessService;
+import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.user.model.User;
 import com.guardwork.backend.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,8 +69,11 @@ class JobApplicationServiceTest {
     @Mock CandidateCvRepository cvs;
     @Mock CandidateCvService cvService;
     @Mock JobPublicationService jobs;
+    @Mock CompanyMembershipRepository memberships;
+    @Mock CompanyAccessService companyAccess;
     @Mock JobApplicationRepository applications;
     @Mock ApplicationSnapshotRepository snapshots;
+    @Mock ApplicationStatusHistoryRepository statusHistory;
     @Mock Clock clock;
 
     @InjectMocks JobApplicationService service;
@@ -84,6 +94,23 @@ class JobApplicationServiceTest {
         profile.setPhoneNumber("0901234567");
     }
 
+    @Test
+    void companyInboxRejectsAnOwnerMembershipThatDoesNotMatchCompanyOwnership() {
+        var company = new Company();
+        company.setId(COMPANY_ID);
+        company.setOwnerUserId(USER_ID + 1);
+        var membership = new CompanyMembership();
+        membership.setRole(CompanyRole.OWNER);
+        when(companyAccess.findCurrentCompanyAccess(USER_ID)).thenReturn(
+                new CompanyAccessService.Access(company, membership));
+
+        var failure = assertThrows(ResponseStatusException.class,
+                () -> service.listCompanyApplications(USER_ID, null, null, null, 0, 20));
+
+        assertEquals(HttpStatus.FORBIDDEN, failure.getStatusCode());
+        verifyNoInteractions(applications);
+    }
+
     private User user(String status) {
         User user = new User();
         user.setId(USER_ID);
@@ -94,7 +121,7 @@ class JobApplicationServiceTest {
     private JobPublicationService.ApplicationContext availableJob() {
         return new JobPublicationService.ApplicationContext(
                 JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
-                Instant.parse("2026-11-30T17:00:00Z"), true, null);
+                "Ha Noi", "HYBRID", Instant.parse("2026-11-30T17:00:00Z"), true, null);
     }
 
     private CandidateCv cv(boolean isDefault) {
@@ -162,6 +189,27 @@ class JobApplicationServiceTest {
             assertEquals("Acme", snapshot.getValue().getCompanyName());
             assertEquals(cvId, snapshot.getValue().getSourceCvId());
             assertEquals("applications/abc/cv/snapshot.pdf", snapshot.getValue().getCvStorageKey());
+
+            ArgumentCaptor<ApplicationStatusHistory> history = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
+            verify(statusHistory).saveAndFlush(history.capture());
+            assertEquals(application.getValue().getId(), history.getValue().getApplicationId());
+            assertEquals("SUBMITTED", history.getValue().getToStatus());
+            assertEquals(USER_ID, history.getValue().getActorUserId());
+            assertEquals(APPLIED_AT, history.getValue().getOccurredAt());
+        }
+
+        @Test
+        void rejectsCurrentCompanyMemberBeforeCopyingCvOrWritingApplication() {
+            when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
+            when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
+            when(jobs.applicationContext(JOB_ID)).thenReturn(availableJob());
+            when(memberships.findActiveCompanyId(USER_ID)).thenReturn(Optional.of(COMPANY_ID));
+
+            AppException failure = assertThrows(AppException.class,
+                    () -> service.submit(USER_ID, request("Nguyễn Văn An", null)));
+
+            assertEquals(ErrorCode.FORBIDDEN, failure.getErrorCode());
+            verifyNoInteractions(cvService, applications, snapshots);
         }
 
         @Test
@@ -222,7 +270,7 @@ class JobApplicationServiceTest {
             when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
             when(jobs.applicationContext(JOB_ID)).thenReturn(new JobPublicationService.ApplicationContext(
                     JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
-                    Instant.parse("2026-11-30T17:00:00Z"), false, "EXPIRED"));
+                    "Ha Noi", "HYBRID", Instant.parse("2026-11-30T17:00:00Z"), false, "EXPIRED"));
 
             AppException failure = assertThrows(AppException.class,
                     () -> service.submit(USER_ID, request("Nguyễn Văn An", null)));

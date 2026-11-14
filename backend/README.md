@@ -293,6 +293,9 @@ envelopes before the catch-all maps unexpected exceptions to a generic HTTP 500.
 See [private Job Posting drafts](../docs/backend/job-drafts.md) for the Company job APIs,
 content bounds, eligibility, single migration, and notification compatibility.
 
+See [Recruiter Application listing](../docs/backend/recruiter-application-listing.md)
+for its access rules, query parameters, privacy boundary, and response contract.
+
 ## Database
 
 - Schema managed via Flyway: `src/main/resources/db/migration` (`V{version}__{description}.sql`).
@@ -362,7 +365,21 @@ reviewed treatment of suspended rows. Public job details send `Cache-Control:
 no-store`; existing responses cached before rollout may require invalidation.
 See [job workflow documentation](../docs/backend/job-drafts.md#staff-hiding-and-posting-event-history-gw-93)
 and the [approved contract](../docs/software-requirements/adm/staff-job-management-contract.md).
-No new dependency, notification channel, public search or restoration workflow is added.
+GW-93 added no dependency, notification channel, public search or restoration workflow.
+
+### Staff Job Posting restoration (GW-107)
+
+UC-21 adds `PUT /api/staff/jobs/{jobId}/restore` for active Platform Staff. Supply
+the current job version and a required resolution reason. Restoration requires a
+`SUSPENDED` posting, approved published revision, future approved deadline,
+verified unbanned Company, and no independent `staff_suspended` restriction.
+It atomically changes the status to `PUBLISHED` and records job/platform audits.
+During individual Staff suspension, Company job mutations including pending
+withdrawal, assignment and owner-responsibility changes are blocked; authorized
+job reads remain. GW-100 continues to hide Application lists during suspension.
+See the [GW-107 contract](../docs/software-requirements/adm/staff-job-restoration-contract.md)
+and [frontend handoff](../docs/backend/staff-job-management-frontend-integration.md).
+No migration, dependency or new notification channel is needed.
 
 
 ### GW-93 development Job Postings
@@ -412,6 +429,31 @@ is no longer eligible, creating missing jobs fails atomically with a clear error
 rather than overriding its state. Duplicate or foreign fixture markers fail as
 identifier collisions. No schema migration or dependency is added.
 
+### Notification inbox fixtures
+
+The local seed also inserts ten synthetic notifications covering every current event type
+(`JOB_*`, `APPLICATION_*`, `RECRUITER_ACCEPTED`, `MEMBERSHIP_REMOVED`), so graders can
+open the inbox without triggering real business flows. They reuse `GW93` jobs and create
+three demo applications for the `demo_candidate` so `APPLICATION_*` rows satisfy the
+`ck_application_inbox_context` check without mail or outbox delivery.
+
+| Recipient | Fixture | Manual check |
+| --- | --- | --- |
+| `demo_recruiter` | `JOB_ASSIGNED` (read), `JOB_UNASSIGNED` (unread), `MEMBERSHIP_REMOVED` (unread) | Last: title and receiver survive `GET /api/me/notifications`. |
+| `demo_owner` | `JOB_NEEDS_REASSIGNMENT` (unread), `JOB_REVISION_APPROVED` (read), `JOB_REVISION_REJECTED` (unread), `APPLICATION_WITHDRAWN` (unread), `RECRUITER_ACCEPTED` (read) | Mark one unread read via `PATCH`; rerun must not reset it. |
+| `demo_candidate` | `APPLICATION_STATUS_CHANGED` (unread), `APPLICATION_REJECTED` (read) | Read one via `PATCH`; rerun preserves the read timestamp. |
+
+Outbox rows are inserted already `delivered_at`-ed, so the dispatcher never re-sends them. Each
+outbox fixture stores its context in `payload` (`companyId`, `companyName`, `jobId`,
+`revisionId`, and `applicationId`/`jobTitle` for application rows); the dispatcher maps those keys
+to the inbox columns. `title`/`body` mirror `NotificationTemplate` copy for manual browsing only;
+the frozen snapshot never rewrites history. Reruns identify fixtures by fixed `event_id` UUIDs and
+`ON CONFLICT DO NOTHING`, so they are idempotent and preserve existing reads.
+Each fixture also carries its `audience`: `APPLICATION_STATUS_CHANGED` and
+`APPLICATION_REJECTED` are `CANDIDATE`; all other fixtures, including
+`APPLICATION_WITHDRAWN`, are `RECRUITER`. Browsing as `demo_candidate` with
+`?audience=CANDIDATE` shows only the candidate items.
+
 ### Own account control (GW-95)
 
 See [account-control integration and rollout](../docs/backend/account-control.md) for
@@ -440,3 +482,24 @@ PNG or JPEG files of at most 5 MiB each, with matching signatures/media types.
 Only the exact report-intake servlet has a 16 MiB request allowance; default
 Company multipart limits stay at 10 MiB per file and 11 MiB per request. No
 dependency, external storage, report adjudication or notification channel is added.
+
+### Personal Staff activity history (GW-104)
+
+Staff can query their own committed account-management, job-review and Company
+verification activity with `GET /api/staff/me/activities`. Filtering and fixed
+20-record pagination run in PostgreSQL; responses allowlist historical facts.
+See the [frontend implementation guide](../docs/backend/personal-staff-activity-history.md)
+for Vietnamese UI labels, query rules, response examples and error handling.
+No migration or dependency is added. Future job-review audits include before/after
+review states; retained historical audit records are never rewritten.
+
+### Application totals in employer job lists
+
+`GET /api/companies/me/jobs` includes nullable `applicationCount` on each job.
+It counts all submitted application records across current statuses (including withdrawn),
+matching the unfiltered application-list total. A zero means no applications; null
+means unavailable (suspended jobs). Non-list job responses leave the field null.
+Counts are aggregated once for the authorized page and company, with no per-job
+application requests. Existing Owner/Recruiter assignment visibility is preserved.
+This additive display field requires no migration. Frontends may display a link
+without a count while an older backend is deployed.

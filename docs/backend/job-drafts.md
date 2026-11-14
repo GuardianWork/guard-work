@@ -12,7 +12,7 @@ Hidden and absent private job IDs return the same `40478 JOB_NOT_FOUND` response
 | Method | Route | Body / parameters |
 | --- | --- | --- |
 | POST | `/api/companies/me/jobs` | `{"content": {}}`; returns HTTP and envelope 201 with private detail. |
-| GET | `/api/companies/me/jobs` | `page=0`, `size=20` (1–100), optional `status` and `needsReassignment`. |
+| GET | `/api/companies/me/jobs` | `page=0`, `size=20` (1–100), optional `keyword`, `status` and `needsReassignment`. |
 | GET | `/api/companies/me/jobs/{jobId}` | Positive numeric job ID. |
 | PUT | `/api/companies/me/jobs/{jobId}/draft` | `expectedJobVersion`, `expectedRevisionVersion`, `content`. |
 
@@ -28,6 +28,26 @@ PAUSED, CLOSED or EXPIRED. Missing versions return 400; stale versions return 40
 A save replaces the entire content object; omitted fields are removed. Even identical
 saves advance both versions. Repeated POSTs create separate jobs: do not blindly retry
 an unknown creation result.
+
+### Employer title search
+
+`GET /api/companies/me/jobs?keyword=bao%20ve&page=0&size=20` searches the current
+Company's private jobs, retaining Owner visibility and current-period Recruiter
+assignment restrictions. Combine `keyword`, `status` and `needsReassignment` with AND.
+The optional keyword is stripped of surrounding whitespace and limited to 200 Unicode
+code points after stripping; blank or omitted keywords preserve the unfiltered list.
+Longer keywords return the existing 400 job validation response.
+
+Matching is a literal, case-insensitive and Vietnamese diacritic-insensitive substring
+of the current DRAFT/PENDING_REVIEW title, or the Published Revision title when no
+working revision exists. A working revision without a title does not fall back to
+published content. Historical titles and descriptions do not match. Percent signs,
+underscores and backslashes are literal characters; URL-encode query values.
+Filtering and counting happen before pagination, using the existing response envelope
+and ordering. No matches return an empty successful page. Search does not change
+job state, audit history or versions, and introduces no schema or dependency changes.
+See [GW-SR-REC-JOB-SEARCH](../software-requirements/rec/employer-job-search-spec.md)
+for the approved conversation scope and pending human lifecycle metadata.
 
 Pending and rejected Companies may prepare drafts through eligible current members.
 For all Users, verified account email is required for every private job
@@ -259,7 +279,7 @@ The approved [UC-13/UC-14 contract](../software-requirements/adm/staff-job-manag
 
 Hiding locks actor, Company and posting, checks the current version and effective public eligibility, then commits `SUSPENDED` and both attributable audit records atomically. A stale version returns 409 `40022`; a non-public job returns 409 `40978`; a missing job returns 404 `40478`. The receipt returns `jobId`, `publicationStatus`, `jobVersion`, `actorUserId`, `suspendedAt` and trimmed `reason`.
 
-Public job detail returns content-free 404 for suspended jobs and sets `Cache-Control: no-store` on successes and errors. Authorized Company reads and `status=SUSPENDED` filtering remain available; draft creation/edit/submission and pause/resume/close cannot restore the job. Retained pending reviews may complete or be withdrawn; approval keeps `SUSPENDED`. Deadline expiry does not override Staff suspension. UC-21 restoration is excluded.
+Public job detail returns content-free 404 for suspended jobs and sets `Cache-Control: no-store` on successes and errors. Authorized Company job reads and `status=SUSPENDED` filtering remain available; GW-107 blocks all Company job mutations while hidden, including withdrawal, assignment and owner-responsibility changes. Retained pending Staff reviews may complete without changing `SUSPENDED`. Deadline expiry does not override Staff suspension. The separately approved UC-21 restoration flow is described below.
 
 Migration `V2026.10.31.86__staff_job_suspension.sql` extends the job status constraint without changing committed migration history or adding tables/dependencies. Deploy clients that understand the additive private status together with this backend, and stop older writers. Rollback requires reviewed handling of suspended rows; never silently republish them. Existing audit immutability and reviewed-content protections remain active.
 
@@ -268,6 +288,26 @@ There is no current public job search/listing or server content cache. Future in
 Use the existing isolated PostgreSQL tests. If another branch owns the default test database, create a separate database matching `backend_test_db_<suffix>` in that test PostgreSQL instance and select it with `BACKEND_TEST_DATABASE_URL`. Do not reset another branch's database or disable the test database safety guard.
 
 Frontend handoff: [Staff job hiding and history integration](staff-job-management-frontend-integration.md) includes request/response examples, version sourcing, state handling, errors and acceptance checks.
+
+## Staff restoration of a hidden posting (GW-107)
+
+The [focused UC-21 contract](../software-requirements/adm/staff-job-restoration-contract.md)
+adds `PUT /api/staff/jobs/{jobId}/restore` with current `expectedJobVersion` and a
+required trimmed 1–1000 code-point `reason`. Active Staff may restore only a
+`SUSPENDED` posting with an approved published revision, a future approved
+deadline, a verified unbanned Company, and no independent `staff_suspended`
+restriction. A successful action changes status to `PUBLISHED`, advances the job
+version and atomically records `JOB_RESTORED` in job history and platform audit.
+It preserves content, revisions, Applications, assignments and earlier events.
+
+While the job remains `SUSPENDED`, Company job writes are rejected; existing
+authorized job detail, preview and revision reads remain. The separately approved
+GW-100 rule continues to conceal Application lists from every Company Member
+during suspension. After restoration, existing Company authority and state rules
+govern writes again. This backend has no server content cache; clients must
+invalidate stale visibility after hide and restore. No migration or dependency is
+needed. See the [frontend integration guide](staff-job-management-frontend-integration.md)
+for payload and UI handling.
 
 ## Public search
 

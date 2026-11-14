@@ -75,7 +75,7 @@ class JobPublicationHttpTest {
             .andExpect(jsonPath("$.data.assignments").doesNotExist()).andExpect(jsonPath("$.data.reviewerUserId").doesNotExist());
         http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(decision(pending,"REJECTED","Needs correction"))).andExpect(status().isConflict());
         http.perform(get("/api/me/notifications").header("Authorization",staff)).andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isNotEmpty());
+            .andExpect(jsonPath("$.data.content[?(@.type == 'JOB_REVISION_APPROVED')]").isNotEmpty());
     }
 
     @Test void jobWithoutHeadcountOrCompensationCanBeSubmittedApprovedAndPublished() throws Exception {
@@ -276,16 +276,16 @@ class JobPublicationHttpTest {
         finally {database.execute("DROP TRIGGER fail_job04_audit ON job_audit_events");database.execute("DROP FUNCTION fail_job04_audit()");}
         http.perform(get("/api/jobs/"+job)).andExpect(status().isNotFound());
         http.perform(get("/api/staff/job-revisions/"+revision).header("Authorization",staff)).andExpect(jsonPath("$.data.state").value("PENDING_REVIEW"));
-        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE job_id=?",Long.class,job)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'jobId'=?",Long.class,String.valueOf(job))).isZero();
         database.execute("CREATE FUNCTION fail_job04_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.job_id="+job+" THEN RAISE EXCEPTION 'controlled delivery failure'; END IF; RETURN NEW; END $$");
-        database.execute("CREATE TRIGGER fail_job04_delivery BEFORE INSERT ON user_notifications FOR EACH ROW EXECUTE FUNCTION fail_job04_delivery()");
+        database.execute("CREATE TRIGGER fail_job04_delivery BEFORE INSERT ON notification_inbox FOR EACH ROW EXECUTE FUNCTION fail_job04_delivery()");
         try {http.perform(put(route).header("Authorization",staff).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());}
-        finally {database.execute("DROP TRIGGER fail_job04_delivery ON user_notifications");database.execute("DROP FUNCTION fail_job04_delivery()");}
+        finally {database.execute("DROP TRIGGER fail_job04_delivery ON notification_inbox");database.execute("DROP FUNCTION fail_job04_delivery()");}
         http.perform(get("/api/jobs/"+job)).andExpect(status().isOk());
-        assertThat(database.queryForObject("SELECT count(*) FROM user_notifications WHERE job_id=?",Long.class,job)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE job_id=?",Long.class,job)).isZero();
         clock.now=clock.now.plusSeconds(31);dispatcher.dispatchDue();dispatcher.dispatchDue();
-        http.perform(get("/api/me/notifications").header("Authorization",staff)).andExpect(jsonPath("$.data.content[?(@.jobId == "+job+")]").isNotEmpty());
-        assertThat(database.queryForObject("SELECT count(*) FROM user_notifications WHERE job_id=?",Long.class,job)).isEqualTo(1);
+        http.perform(get("/api/me/notifications").header("Authorization",staff)).andExpect(jsonPath("$.data.content[?(@.references.jobId == "+job+")]").isNotEmpty());
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE job_id=?",Long.class,job)).isEqualTo(1);
     }
     @Test void requestRollbackDoesNotPersistExpiryAndWorkerCommitsItExactlyOnce() throws Exception {
         String owner=account();long company=createdCompany(owner);database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?",company);
@@ -333,10 +333,10 @@ class JobPublicationHttpTest {
         var p=pending(recruiter,complete());long job=p.path("id").asLong(),revision=p.path("workingRevision").path("id").asLong();
         database.update("INSERT INTO job_assignments(job_id,company_id,membership_id,membership_joined_at,assigned_by_user_id,assigned_at,ended_at,end_reason,ended_by_user_id) SELECT ?,company_id,id,joined_at,?,now(),now(),'UNASSIGNED',user_id FROM company_memberships WHERE id=?",job,userId(owner),oldMember);
         http.perform(put("/api/staff/job-revisions/"+revision+"/decision").header("Authorization",staff(owner)).contentType(MediaType.APPLICATION_JSON).content(decision(p,"APPROVED",null))).andExpect(status().isOk());
-        http.perform(get("/api/me/notifications").header("Authorization",owner)).andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isNotEmpty());
-        http.perform(get("/api/me/notifications").header("Authorization",recruiter)).andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isNotEmpty());
-        http.perform(get("/api/me/notifications").header("Authorization",former)).andExpect(jsonPath("$.data.content[?(@.eventType == 'JOB_REVISION_APPROVED')]").isEmpty());
-        assertThat(database.queryForObject("SELECT count(*) FROM user_notifications WHERE job_id=? AND event_type='JOB_REVISION_APPROVED'",Long.class,job)).isEqualTo(2);
+        http.perform(get("/api/me/notifications").header("Authorization",owner)).andExpect(jsonPath("$.data.content[?(@.type == 'JOB_REVISION_APPROVED')]").isNotEmpty());
+        http.perform(get("/api/me/notifications").header("Authorization",recruiter)).andExpect(jsonPath("$.data.content[?(@.type == 'JOB_REVISION_APPROVED')]").isNotEmpty());
+        http.perform(get("/api/me/notifications").header("Authorization",former)).andExpect(jsonPath("$.data.content[?(@.type == 'JOB_REVISION_APPROVED')]").isEmpty());
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE job_id=? AND event_type='JOB_REVISION_APPROVED'",Long.class,job)).isEqualTo(2);
     }
     String decision(JsonNode pending,String outcome,String reason)throws Exception {
         var body=new LinkedHashMap<String,Object>(); body.put("expectedJobVersion",pending.path("version").asLong());

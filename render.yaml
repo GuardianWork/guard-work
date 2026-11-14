@@ -1,0 +1,50 @@
+# Render Blueprint for guardwork backend.
+services:
+  - type: web
+    name: guardwork-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: guardwork-postgres
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: guardwork-postgres
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: guardwork-postgres
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: guardwork-postgres
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: guardwork-postgres
+          property: password
+      - key: GUARDWORK_CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: GUARDWORK_JWT_ACCESS_EXPIRATION_MS
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+
+databases:
+  - name: guardwork-postgres
+    databaseName: backend_db
+    user: backend_user
+    plan: free
+    region: oregon

@@ -65,7 +65,7 @@ class CandidateProfileServiceTest {
 
         @Test
         void returnsExistingWhenFound() {
-            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.of(profile));
 
             CandidateProfile result = service.getOrCreateProfile(user.getId());
@@ -77,7 +77,7 @@ class CandidateProfileServiceTest {
 
         @Test
         void createsSkeletonWhenMissing() {
-            when(userRepository.findByIdForUpdate(user.getId())).thenReturn(Optional.of(user));
+            when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
             when(profileRepository.findByUserId(user.getId())).thenReturn(Optional.empty());
             when(profileRepository.save(any(CandidateProfile.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -93,7 +93,7 @@ class CandidateProfileServiceTest {
 
         @Test
         void throwsWhenUserMissing() {
-            when(userRepository.findByIdForUpdate(anyLong())).thenReturn(Optional.empty());
+            when(userRepository.findById(anyLong())).thenReturn(Optional.empty());
 
             AppException ex = assertThrows(AppException.class,
                     () -> service.getOrCreateProfile(999L));

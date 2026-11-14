@@ -81,10 +81,10 @@ class MembershipDepartureHttpTest {
                 .andExpect(jsonPath("$.data.membershipStatus").value("REMOVED"));
         var notification = mapper.readTree(http.perform(get("/api/me/notifications").header("Authorization", recipient))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
-                .andExpect(jsonPath("$.data.content[0].eventType").value("MEMBERSHIP_REMOVED")).andReturn()
+                .andExpect(jsonPath("$.data.content[0].type").value("MEMBERSHIP_REMOVED")).andReturn()
                 .getResponse().getContentAsString())
                 .path("data").path("content").get(0);
-        long notificationId = notification.path("id").asLong();
+        long notificationId = Long.parseLong(notification.path("id").asText());
         http.perform(patch("/api/me/notifications/" + notificationId + "/read").header("Authorization", recipient))
                 .andExpect(status().isOk());
         http.perform(patch("/api/me/notifications/" + notificationId + "/read").header("Authorization", owner))
@@ -163,7 +163,7 @@ class MembershipDepartureHttpTest {
         http.perform(get("/api/companies/" + originalCompany).header("Authorization", recipient))
                 .andExpect(status().isNotFound());
         http.perform(get("/api/me/notifications").header("Authorization", recipient))
-                .andExpect(jsonPath("$.data.content[0].companyId").value(originalCompany));
+                .andExpect(jsonPath("$.data.content[0].references.companyId").value(originalCompany));
     }
 
     @Test
@@ -220,7 +220,7 @@ class MembershipDepartureHttpTest {
         database.execute(
                 "CREATE FUNCTION gw007_reject_inbox() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'controlled inbox failure' USING ERRCODE='23514'; END; $$ LANGUAGE plpgsql");
         database.execute(
-                "CREATE TRIGGER gw007_reject_inbox BEFORE INSERT ON user_notifications FOR EACH ROW WHEN (NEW.recipient_user_id="
+                "CREATE TRIGGER gw007_reject_inbox BEFORE INSERT ON notification_inbox FOR EACH ROW WHEN (NEW.recipient_user_id="
                         + recipientId + ") EXECUTE FUNCTION gw007_reject_inbox()");
         try {
             http.perform(delete("/api/companies/me/members/" + membership).header("Authorization", owner))
@@ -229,7 +229,7 @@ class MembershipDepartureHttpTest {
             http.perform(get("/api/me/notifications").header("Authorization", recipient))
                     .andExpect(jsonPath("$.data.totalElements").value(0));
         } finally {
-            database.execute("DROP TRIGGER gw007_reject_inbox ON user_notifications");
+            database.execute("DROP TRIGGER gw007_reject_inbox ON notification_inbox");
             database.execute("DROP FUNCTION gw007_reject_inbox()");
         }
         UUID event = database.queryForObject(

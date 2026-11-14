@@ -1,8 +1,40 @@
 # GuardWork
 
-Language for employer onboarding and Company participation. Company authority and Company approval are separate concepts.
+Language for employer onboarding, Company participation, and Applications. Company authority and Company approval are separate concepts.
 
 ## Language
+
+**Application**:
+A Candidate's submission to one Job Posting, carrying the submitted evidence and its current recruitment status.
+_Avoid_: Candidate profile, CV as a synonym for Application
+
+**Application Snapshot**:
+The immutable record of the Candidate information and evidence captured when an Application was submitted.
+_Avoid_: Current Candidate profile, live CV
+
+**Application Status**:
+The current recruitment step or terminal result for one Application. Viewing submitted evidence does not itself change this status.
+_Avoid_: CV status, separate stage and outcome as synonyms
+
+**Interviewing**:
+The Application stage indicating that the Company is pursuing interviews arranged outside GuardWork; it does not establish a confirmed meeting.
+_Avoid_: Scheduled Interview, confirmed appointment
+
+**Hiring Confirmation**:
+The Company's explicit record that the Candidate agreed externally to join, concluding the Application as hired.
+_Avoid_: Offer acceptance inside GuardWork, employment contract
+
+**Application Status History**:
+The append-only record of an Application's submission and subsequent status changes, preserving who acted and when.
+_Avoid_: Editable activity log, current status
+
+**Candidate-facing Feedback**:
+Rejection feedback intentionally shared with the Candidate, separate from the Company's internal reason and explanation.
+_Avoid_: Internal rejection reason, Internal Note
+
+**Application Withdrawal**:
+A Candidate's terminal decision to stop recruitment for their own Application. Company Members cannot reverse it or perform it on the Candidate's behalf.
+_Avoid_: Company rejection, Job Posting closure
 
 **Employer Applicant**:
 A registered person entering the employer journey who has not yet obtained a Company membership through invitation acceptance or successful new-Company dossier submission.

@@ -30,8 +30,9 @@ public class JobDraftController {
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size,
       @RequestParam(required = false) String status,
-      @RequestParam(required = false) Boolean needsReassignment) {
-    return ApiResponse.ok(service.list(actor.getId(), page, size, status, needsReassignment));
+      @RequestParam(required = false) Boolean needsReassignment,
+      @RequestParam(required = false) String keyword) {
+    return ApiResponse.ok(service.list(actor.getId(), page, size, status, needsReassignment, keyword));
   }
 
   @GetMapping("/{id}")

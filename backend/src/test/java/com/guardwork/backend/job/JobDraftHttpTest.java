@@ -74,6 +74,137 @@ class JobDraftHttpTest {
                 .andExpect(jsonPath("$.data.workingRevision.content.title").value("Mới"));
     }
 
+    @Test void employerSearchMatchesVietnameseTitlesBeforePaginationAndCounting() throws Exception {
+        String owner = account(); createdCompany(owner);
+        var first = create(owner, Map.of("title", "Bảo vệ ca sáng"));
+        create(owner, Map.of("title", "Kế toán", "description", "Bảo vệ"));
+        var latest = create(owner, Map.of("title", "BẢO VỆ ca đêm"));
+        create(owner, Map.of());
+
+        http.perform(get(JOBS).header("Authorization", owner)
+                .param("keyword", "  bao VE  ").param("size", "1")
+                .param("status", "DRAFT").param("needsReassignment", "false"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.totalPages").value(2))
+                .andExpect(jsonPath("$.data.content.length()").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(latest.path("id").asLong()));
+        http.perform(get(JOBS).header("Authorization", owner)
+                .param("keyword", "BẢO vệ").param("size", "1").param("page", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2))
+                .andExpect(jsonPath("$.data.content[0].id").value(first.path("id").asLong()));
+        http.perform(get(JOBS).header("Authorization", owner).param("keyword", "missing"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0))
+                .andExpect(jsonPath("$.data.content").isEmpty());
+    }
+
+    @Test void employerSearchTreatsWildcardsLiterallyAndValidatesTrimmedUnicodeLength() throws Exception {
+        String owner = account(); createdCompany(owner);
+        var literal = create(owner, Map.of("title", "100%_\\ bảo vệ"));
+        create(owner, Map.of("title", "100abc bảo vệ"));
+        create(owner, Map.of("title", "😀".repeat(200)));
+        for (String keyword : List.of("%", "_", "\\", "%_\\")) {
+            http.perform(get(JOBS).header("Authorization", owner).param("keyword", keyword))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                    .andExpect(jsonPath("$.data.content[0].id").value(literal.path("id").asLong()));
+        }
+        http.perform(get(JOBS).header("Authorization", owner).param("keyword", "  " + "😀".repeat(200) + "  "))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        http.perform(get(JOBS).header("Authorization", owner).param("keyword", "😀".repeat(201)))
+                .andExpect(status().isBadRequest());
+        for (String keyword : List.of("", " \t\n ")) {
+            http.perform(get(JOBS).header("Authorization", owner).param("keyword", keyword))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(3));
+        }
+    }
+
+    @Test void employerSearchCannotExpandCompanyOrCurrentRecruiterAssignmentScope() throws Exception {
+        String owner = account(), recruiter = account(), otherOwner = account();
+        long company = createdCompany(owner); createdCompany(otherOwner);
+        long member = recruiter(company, recruiter);
+        create(owner, Map.of("title", "Bảo vệ"));
+        var assigned = create(recruiter, Map.of("title", "Bảo vệ"));
+        create(otherOwner, Map.of("title", "Bảo vệ"));
+        http.perform(get(JOBS).header("Authorization", owner).param("keyword", "bao ve"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2));
+        http.perform(get(JOBS).header("Authorization", recruiter).param("keyword", "bao ve"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(assigned.path("id").asLong()));
+        http.perform(get(JOBS).header("Authorization", owner).param("keyword", "bao ve")
+                .param("needsReassignment", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        database.update("UPDATE company_memberships SET joined_at=joined_at+interval '1 second' WHERE id=?", member);
+        http.perform(get(JOBS).header("Authorization", recruiter).param("keyword", "bao ve"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        database.update("UPDATE company_memberships SET role='ADMIN' WHERE id=?", member);
+        http.perform(get(JOBS).header("Authorization", recruiter).param("keyword", "bao ve"))
+                .andExpect(status().isForbidden());
+        http.perform(get(JOBS).param("keyword", "bao ve")).andExpect(status().isUnauthorized());
+    }
+
+    @Test void employerSearchPrefersWorkingRevisionAndFallsBackOnlyToPublishedRevision() throws Exception {
+        String owner = account(); long company = createdCompany(owner);
+        database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?", company);
+        var content = Map.<String, Object>of("title", "Published title", "description", "Protect the site.",
+                "location", "Hồ Chí Minh", "employmentType", "FULL_TIME", "workArrangement", "ONSITE",
+                "deadline", "2099-12-01T12:00:00+07:00");
+        var draft = create(owner, content);
+        long job = draft.path("id").asLong();
+        long revision = draft.path("workingRevision").path("id").asLong();
+        var pending = mapper.readTree(http.perform(post(JOBS + "/" + job + "/revisions/" + revision + "/submit")
+                .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content(confirmation(draft)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        String moderator = account(); long moderatorId = userId(moderator);
+        database.update("UPDATE users SET role='STAFF' WHERE id=?", moderatorId);
+        var identity = database.queryForMap("SELECT username,email FROM users WHERE id=?", moderatorId);
+        String staff = "Bearer " + context.getBean(com.guardwork.backend.auth.service.JwtService.class)
+                .generateAccessToken(moderatorId, (String) identity.get("username"), (String) identity.get("email"), "STAFF");
+        http.perform(put("/api/staff/job-revisions/" + revision + "/decision").header("Authorization", staff)
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(
+                        "expectedJobVersion", pending.path("version").asLong(),
+                        "expectedRevisionVersion", pending.path("workingRevision").path("version").asLong(),
+                        "outcome", "APPROVED"))))
+                .andExpect(status().isOk());
+        expectSearchCount(owner, "published", 1);
+        var published = mapper.readTree(http.perform(get(JOBS + "/" + job).header("Authorization", owner))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        var working = mapper.readTree(http.perform(post(JOBS + "/" + job + "/draft").header("Authorization", owner)
+                .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(
+                        Map.of("expectedJobVersion", published.path("version").asLong()))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        var empty = mapper.readTree(http.perform(put(JOBS + "/" + job + "/draft").header("Authorization", owner)
+                .contentType(MediaType.APPLICATION_JSON).content(saveBody(working, Map.of())))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        expectSearchCount(owner, "published", 0);
+        var changedContent = new java.util.LinkedHashMap<>(content);
+        changedContent.put("title", "Pending title");
+        var changed = mapper.readTree(http.perform(put(JOBS + "/" + job + "/draft").header("Authorization", owner)
+                .contentType(MediaType.APPLICATION_JSON).content(saveBody(empty, changedContent)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        expectSearchCount(owner, "pending", 1);
+        expectSearchCount(owner, "published", 0);
+        long workingId = changed.path("workingRevision").path("id").asLong();
+        var submitted = mapper.readTree(http.perform(post(JOBS + "/" + job + "/revisions/" + workingId + "/submit")
+                .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content(confirmation(changed)))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+        expectSearchCount(owner, "pending", 1);
+        expectSearchCount(owner, "published", 0);
+        http.perform(post(JOBS + "/" + job + "/revisions/" + workingId + "/withdraw")
+                .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content(confirmation(submitted)))
+                .andExpect(status().isOk());
+        expectSearchCount(owner, "pending", 0);
+        expectSearchCount(owner, "published", 1);
+    }
+
+    void expectSearchCount(String actor, String keyword, int count) throws Exception {
+        http.perform(get(JOBS).header("Authorization", actor).param("keyword", keyword))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(count));
+    }
+
+    String confirmation(JsonNode detail) throws Exception {
+        return mapper.writeValueAsString(Map.of("expectedJobVersion", detail.path("version").asLong(),
+                "expectedRevisionVersion", detail.path("workingRevision").path("version").asLong(), "confirmed", true));
+    }
+
     @Test void recruiterCreationAssignsCurrentPeriodAndConcealsEveryOtherJob() throws Exception {
         String owner = account(), recruiter = account(), stranger = account(), otherOwner = account();
         long company = createdCompany(owner); createdCompany(otherOwner);
@@ -97,8 +228,8 @@ class JobDraftHttpTest {
         }
         http.perform(get("/api/me/notifications").header("Authorization", recruiter))
                 .andExpect(jsonPath("$.data.totalElements").value(1))
-                .andExpect(jsonPath("$.data.content[0].eventType").value("JOB_ASSIGNED"))
-                .andExpect(jsonPath("$.data.content[0].jobId").value(id));
+                .andExpect(jsonPath("$.data.content[0].type").value("JOB_ASSIGNED"))
+                .andExpect(jsonPath("$.data.content[0].references.jobId").value(id));
         http.perform(post("/api/companies/me/membership/leave").header("Authorization", recruiter))
                 .andExpect(status().isOk());
         http.perform(get(JOBS + "/" + id).header("Authorization", recruiter)).andExpect(status().isNotFound());
@@ -178,8 +309,9 @@ class JobDraftHttpTest {
             http.perform(post(JOBS).header("Authorization", recruiter).contentType(MediaType.APPLICATION_JSON).content("{\"content\":{}}"))
                     .andExpect(status().isInternalServerError());
             http.perform(get(JOBS).header("Authorization", owner)).andExpect(jsonPath("$.data.totalElements").value(0));
-            for (String table : new String[] {"job_postings", "job_assignments", "job_audit_events", "notification_outbox"})
+            for (String table : new String[] {"job_postings", "job_assignments", "job_audit_events"})
                 assertThat(database.queryForObject("SELECT count(*) FROM " + table + " WHERE company_id=?", Long.class, company)).isZero();
+            assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'companyId'=?", Long.class, String.valueOf(company))).isZero();
             assertThat(database.queryForObject("SELECT count(*) FROM job_posting_revisions r JOIN job_postings j ON j.id=r.job_id WHERE j.company_id=?", Long.class, company)).isZero();
         } finally {
             database.execute("DROP TRIGGER gw78_fail_intent ON notification_outbox");
@@ -192,14 +324,14 @@ class JobDraftHttpTest {
         String owner = account(), recruiter = account(); long company = createdCompany(owner);
         recruiter(company, recruiter); long recipient = userId(recruiter);
         database.execute("CREATE FUNCTION gw78_fail_inbox() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'controlled failure' USING ERRCODE='23514'; END; $$ LANGUAGE plpgsql");
-        database.execute("CREATE TRIGGER gw78_fail_inbox BEFORE INSERT ON user_notifications FOR EACH ROW WHEN (NEW.recipient_user_id=" + recipient + ") EXECUTE FUNCTION gw78_fail_inbox()");
+        database.execute("CREATE TRIGGER gw78_fail_inbox BEFORE INSERT ON notification_inbox FOR EACH ROW WHEN (NEW.recipient_user_id=" + recipient + ") EXECUTE FUNCTION gw78_fail_inbox()");
         long job;
         try {
             job = create(recruiter, Map.of()).path("id").asLong();
             http.perform(get(JOBS + "/" + job).header("Authorization", recruiter)).andExpect(status().isOk());
             http.perform(get("/api/me/notifications").header("Authorization", recruiter)).andExpect(jsonPath("$.data.totalElements").value(0));
         } finally {
-            database.execute("DROP TRIGGER gw78_fail_inbox ON user_notifications");
+            database.execute("DROP TRIGGER gw78_fail_inbox ON notification_inbox");
             database.execute("DROP FUNCTION gw78_fail_inbox()");
         }
         UUID event = database.queryForObject("SELECT event_id FROM notification_outbox WHERE recipient_user_id=? AND event_type='JOB_ASSIGNED'", UUID.class, recipient);
@@ -207,9 +339,9 @@ class JobDraftHttpTest {
         database.update("INSERT INTO employer_profiles(user_id,applicant,full_name) VALUES (?,true,'Recruiter')", recipient);
         var item = mapper.readTree(http.perform(get("/api/me/notifications").header("Authorization", recruiter))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
-                .andExpect(jsonPath("$.data.content[0].jobId").value(job))
+                .andExpect(jsonPath("$.data.content[0].references.jobId").value(job))
                 .andReturn().getResponse().getContentAsString()).path("data").path("content").get(0);
-        long notification = item.path("id").asLong();
+        long notification = Long.parseLong(item.path("id").asText());
         http.perform(patch("/api/me/notifications/" + notification + "/read").header("Authorization", recruiter))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.readAt").isNotEmpty());
         http.perform(patch("/api/me/notifications/" + notification + "/read").header("Authorization", owner))

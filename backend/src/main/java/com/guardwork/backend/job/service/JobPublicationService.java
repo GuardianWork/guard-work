@@ -6,6 +6,7 @@ import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.job.model.*;
 import com.guardwork.backend.job.repository.*;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
+import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.service.*;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -141,6 +142,7 @@ public class JobPublicationService {
             "40981 JOB_CONTENT_INVALID: " + issues.getFirst().code());
     }
     expiry.reconcile(job);
+    String previousReviewState = revision.getState();
     revision.setState(request.outcome());
     revision.setReviewerUserId(actor);
     revision.setDecidedAt(clock.instant());
@@ -168,8 +170,8 @@ public class JobPublicationService {
         "JOB_REVISION_" + request.outcome(),
         "JOB_REVISION",
         revisionId.toString(),
-        null,
-        "{\"outcome\":\"" + request.outcome() + "\"}",
+        "{\"reviewState\":\"" + previousReviewState + "\"}",
+        "{\"outcome\":\"" + request.outcome() + "\",\"reviewState\":\"" + request.outcome() + "\"}",
         reason,
         ip,
         agent);
@@ -184,6 +186,7 @@ public class JobPublicationService {
           notifications.recordJob(
               recipient,
               "JOB_REVISION_" + request.outcome(),
+              NotificationAudience.RECRUITER,
               company,
               job.getId(),
               revisionId,
@@ -212,7 +215,8 @@ public class JobPublicationService {
   }
 
   public record ApplicationContext(Long jobId, Long companyId, String companyName,
-      Long submittedRevisionId, String title, Instant deadline, boolean available, String reason) {}
+      Long submittedRevisionId, String title, String location, String workMode, Instant deadline,
+      boolean available, String reason) {}
 
   /**
    * Locks Company then job, reconciles expiry and returns the approved content needed by the
@@ -231,10 +235,16 @@ public class JobPublicationService {
     expiry.reconcile(job);
     var decoded=content.decode(revision.getContent());
     String title=decoded.get("title")==null?null:decoded.get("title").toString();
+    String location=decoded.get("location")==null?null:decoded.get("location").toString();
+    // workArrangement (ONSITE/HYBRID/REMOTE) is the published work mode. employmentType
+    // (FULL_TIME/PART_TIME/...) is a different dimension and must not be substituted here.
+    String workArrangement=decoded.get("workArrangement")==null
+            ? null
+            : decoded.get("workArrangement").toString();
     String reason=!"PUBLISHED".equals(job.getStatus())?job.getStatus()
         :company.getVerificationStatus()!=VerificationStatus.VERIFIED?"COMPANY_NOT_VERIFIED":null;
     return new ApplicationContext(id,company.getId(),company.getName(),job.getPublishedRevisionId(),
-        title,job.getApprovedDeadline(),reason==null,reason);
+        title,location,workArrangement,job.getApprovedDeadline(),reason==null,reason);
   }
 
   public PublicDetail publicDetail(Long id) {

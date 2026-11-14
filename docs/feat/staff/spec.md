@@ -5,16 +5,16 @@
 | Specification ID | GW-SR-ADM |
 | Project | GuardWork |
 | File | `docs/feat/staff/spec.md` |
-| Version | 1.6.0 — scoped GW-99 report intake and inspection |
+| Version | 1.7.0 — scoped GW-107 UC-21 backend restoration |
 | Status | Draft |
 | Owner | GuardWork thesis team |
 | Human approver | Not recorded; formal approval remains pending |
-| Last updated | 2026-11-01 |
+| Last updated | 2026-11-03 |
 | Product source | Retained UC-11–21 in [usecase.md](usecase.md), scoped by GW-81 |
 
 ## 1. Purpose and scope
 
-This draft covers account management, Company verification dossier review, receipt and inspection of user reports, and Job Posting moderation. UC-11–20 retain their existing detailed requirements; UC-21 retains its draft use-case description and awaits detailed contract alignment. UC-22 adds a scoped personal activity-history draft with product decisions confirmed on 2026-10-30; its API proposal awaits review. System monitoring, background-task operations, and platform-wide RBAC design are excluded from this Staff documentation set. GW-81 includes the user-approved runtime rename of the Platform role and implemented verification API namespace. Committed migrations remain immutable; other feature behavior is unchanged.
+This draft covers account management, Company verification dossier review, receipt and inspection of user reports, and Job Posting moderation. UC-11–20 retain their existing detailed requirements; UC-21 retains its draft use-case description with a separately approved focused backend contract. UC-22 adds a scoped personal activity-history draft with product decisions confirmed on 2026-10-30; its API proposal awaits review. System monitoring, background-task operations, and platform-wide RBAC design are excluded from this Staff documentation set. GW-81 includes the user-approved runtime rename of the Platform role and implemented verification API namespace. Committed migrations remain immutable; other feature behavior is unchanged.
 
 The actor is Platform Staff with Platform role `STAFF`. Platform authority remains distinct from Company Workspace membership (`OWNER`, `ADMIN`, `RECRUITER`). The user approved runtime adoption of `STAFF` and `/api/staff/**` on 2026-10-24. Section 4.3 records that scoped contract amendment and compatibility impact; it does not approve the remaining Draft capabilities. Login is a prerequisite. Viewing a job is navigation context for hiding, history, and restoration; standalone job viewing and job closure are not separate features here.
 
@@ -30,7 +30,7 @@ The actor is Platform Staff with Platform role `STAFF`. Platform authority remai
 | UC-18 | View account information | ADM-ACC | P0 |
 | UC-19 | Ban account | ADM-BAN | P0 |
 | UC-20 | Unban account | ADM-BAN | P0 |
-| UC-21 | Republish hidden Job Posting | ADM-JOB / use-case draft only | Not assigned |
+| UC-21 | Republish hidden Job Posting | ADM-JOB / GW-SR-ADM-JOB-107 backend contract | Not assigned |
 | UC-22 | View own activity history | ADM-ACT / GW-SR-ADM-03 | Not assigned |
 
 Audit recording remains a prerequisite for state-changing actions. Priorities are retained planning context, not new delivery commitments or implementation claims.
@@ -209,10 +209,11 @@ Enhanced retained-submission decisions create persisted email intents for the su
 
 GW-99 adds User report intake, Staff report-list/detail and private evidence under
 its focused approved contract. GW-92 implements account lookup/ban/unban, and GW-93
-implements job hiding and posting-event history. UC-21 restoration remains a
-use-case draft; publication eligibility, concurrency and visibility recovery need
-a focused approved contract. Browser UI and deployed end-to-end readiness are not
-established by backend implementation alone.
+implements job hiding and posting-event history. UC-21 restoration and the Company
+mutation freeze are governed by the scoped
+[GW-107 contract](../../software-requirements/adm/staff-job-restoration-contract.md).
+Browser UI and deployed end-to-end readiness are not established by backend
+implementation alone.
 
 Older versions of this draft contained proposed report-resolution, account, job, and audit-search endpoints, SQL schemas, Redis keys, Kafka topics, and search integrations. They are not treated as implemented or approved contracts in this revision. No deployed API removal, schema migration, dependency change, or architecture selection is authorized by their removal from the active draft. Concrete contracts for unimplemented capabilities must be proposed and approved separately.
 
@@ -250,7 +251,7 @@ Verification uses the existing isolated PostgreSQL setup: `docker compose -f doc
 | Audit-log search | General/cross-Staff search remains excluded. UC-22 adds only own-history reads/search under the dedicated Draft contract; immutable audit recording remains required. |
 | Platform/Company authority | Approved authentication separates Platform role from Company membership. Staff documentation preserves this boundary and does not define a platform-wide role hierarchy. |
 | Verification reference | `company_verification.md` includes broader registry/domain/forensics checks, authorization-letter rules, badges, and ranking claims. They are not acceptance requirements introduced by this revision; approved onboarding/verification contracts govern implementation. |
-| Job restoration (UC-21) | Retained in the use-case draft only. Reconcile administrative `SUSPENDED` with independent Platform Removal in the Job Publishing Draft, publication eligibility, concurrent decisions, and visibility recovery before implementation. No new API or schema is selected. |
+| Job restoration (UC-21) | GW-107 implements the focused Staff-only `SUSPENDED → PUBLISHED` endpoint under explicit eligibility, version, audit, and independent-suspension safeguards. Frontend delivery and separate Company-ban suspension recovery are outside this scope. |
 | Search/cache removal | Public hiding must hold across relevant read paths. Technology and cross-system failure behavior remain unselected. |
 | Account enforcement | Exact authorization, private-field scope, session invalidation, ban-expiry handling, consistency, and failure recovery require approved implementation contracts. UC-20 does not require automatic republication. |
 | Notification coverage | Enhanced attempts have delivery support; legacy decision notification remains a gap. No new global notification architecture is selected. |
@@ -274,7 +275,8 @@ These boundaries are explicit gaps, not permission to bypass the stated outcomes
 | UC-20 | Active ban and reason are required; applicable access returns, old sessions remain invalid, new sign-in is required; Company verification/roles/posting publication are not automatically changed. |
 | UC-22 | Own actor scope is enforced for rows and counts; only successful in-scope activities appear; safe historical projection, Vietnam-date filters, 20-row paging, and missing-data/empty/error states apply; no mutation/export/target navigation is offered. |
 
-UC-21 verification scenarios remain pending detailed specification alignment; its draft flow does not establish an approved implementation contract.
+UC-21 backend verification follows the focused GW-107 contract; its browser flow
+remains for the separately owned frontend.
 
 GW-81 changes the implemented verification role/routes and their tests. GW-93 adds verification for UC-13/UC-14 under the focused contract. The remaining scenarios guide future implementation verification; tests for unimplemented Staff features are not claimed to pass.
 

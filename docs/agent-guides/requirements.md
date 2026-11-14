@@ -9,7 +9,7 @@ The thesis scope includes:
 - candidate onboarding, profiles, and CVs;
 - job discovery and applications;
 - employer verification and moderated job publishing;
-- application stages through interviews and offers; and
+- application review, externally arranged interview-stage tracking, and Company-confirmed hiring; and
 - notifications, reporting, appeals, consent, retention, and auditing.
 
 Design user-facing behavior for Vietnamese users, including Vietnamese copy, `vi-VN` conventions, Vietnam time zones, and Unicode names and addresses. Keep user-facing text out of backend business logic.
