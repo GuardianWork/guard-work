@@ -10,6 +10,10 @@ Spring Boot 4 REST API for **guard-work**.
 
 ## Getting Started
 
+For the opt-in local AI workflow, see [JD scanning](../docs/backend/jd-scanning.md).
+For real-mode startup and the authenticated Candidate Copilot, see
+[local legal chat](../docs/backend/legal-chat.md).
+
 ```bash
 # 1. copy environment config and adjust values
 cp .env.example .env
