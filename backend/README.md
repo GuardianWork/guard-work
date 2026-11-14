@@ -303,6 +303,11 @@ for its access rules, query parameters, privacy boundary, and response contract.
 ## Database
 
 - Schema managed via Flyway: `src/main/resources/db/migration` (`V{version}__{description}.sql`).
+- GW-119 uses `V2026.11.14.119__local_jd_scans.sql`. Its migration was renumbered
+  before merge to avoid colliding with the existing interview-stage migration
+  (`2026.11.10.103`); the SQL is unchanged. Databases that already applied the old
+  JD-scan version need a reviewed compatibility plan before upgrading. Do not run
+  Flyway repair or reset a database containing retained data to bypass validation.
 - Local Postgres via `docker-compose.yml`, connection settings in `application.properties`.
 - Access-token lifetime is configurable with `GUARDWORK_JWT_ACCESS_EXPIRATION_MS` (milliseconds,
   default `900000`, or 15 minutes). Spring Boot imports an optional `.env` file from the backend

@@ -30,7 +30,7 @@ Python 3.10+ and the project's PostgreSQL 18 development service.
    GUARDWORK_AI_ENABLED=true ./mvnw spring-boot:run
    ```
 
-   Flyway applies `V2026.11.10.103__local_jd_scans.sql`. Wait for the normal local
+   Flyway applies `V2026.11.14.119__local_jd_scans.sql`. Wait for the normal local
    seed service to report completion (`docker compose logs -f seed`). Existing
    data and passwords are preserved. This migration adds three tables and does
    not change existing job/revision data. Do not delete development volumes.
