@@ -74,6 +74,22 @@ class AdapterContractTest(unittest.TestCase):
         self.assertEqual(2, report["findings"][0]["start"])
         self.assertTrue(report["findings"][0]["citations"][0]["quoteGrounded"])
 
+    def test_verifier_can_correct_a_wrong_hint_using_another_candidates_shared_source(self):
+        source = {"node_id": "doc:139264:art:17", "text": "Giữ giấy tờ. Yêu cầu đặt cọc.",
+            "label": "Điều 17", "doc_num": "45/2019/QH14", "eff_status": "",
+            "applicability": "UNVERIFIED"}
+        candidates = [{"span": span, "risk_type": span, "severity_hint": "high",
+                       "possible_articles": [hint]} for span, hint in (
+                           ("Giữ giấy tờ.", "Điều 16"), ("Yêu cầu đặt cọc.", "Điều 17"))]
+        results = [{"index": index, "status": "risk", "entailment": "VIOLATES",
+                    "node_id": source["node_id"], "quote": candidate["span"],
+                    "conflict": "Cần đối chiếu với Điều 17."} for index, candidate in enumerate(candidates)]
+        responses = iter([json.dumps({"risks": candidates}), json.dumps({"results": results})])
+        report = LegalAnalyzer(generate=lambda *_: next(responses),
+            retrieve=lambda candidate: [] if candidate["possible_articles"] == ["Điều 16"] else [source]).analyze(
+                "Giữ giấy tờ. Yêu cầu đặt cọc.", date(2026, 11, 14))
+        self.assertEqual([1, 1], [len(finding["citations"]) for finding in report["findings"]])
+
     def test_http_service_authenticates_and_rejects_mismatched_configuration(self):
         key = "test-key-not-a-secret"
         handler = make_handler(mode="stub", profile="jd-local-v1", snapshot="stub-v1", key=key)

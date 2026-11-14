@@ -4,10 +4,11 @@ from __future__ import annotations
 import argparse
 from datetime import date
 import hmac
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+from threading import BoundedSemaphore
 
 MAX_BODY = 524288
 
@@ -41,6 +42,7 @@ def analyze(request: dict, *, mode: str, profile: str, snapshot: str, backend=No
 
 
 def make_handler(*, mode: str, profile: str, snapshot: str, key: str, backend=None):
+    capacity = BoundedSemaphore(2)
     class Handler(BaseHTTPRequestHandler):
         # Request paths and exception messages are not operational logs.
         def log_message(self, *args):
@@ -57,13 +59,23 @@ def make_handler(*, mode: str, profile: str, snapshot: str, key: str, backend=No
             self.end_headers()
             self.wfile.write(body)
 
+        def do_GET(self):
+            if self.path != "/health":
+                self.send_json(404, {"error": "NOT_FOUND"})
+                return
+            self.send_json(200, {"status": "ready", "mode": mode, "profile": profile,
+                                 "legalSnapshot": snapshot})
+
         def do_POST(self):
-            if self.path != "/analyze":
+            if self.path not in {"/analyze", "/chat"}:
                 self.send_json(404, {"error": "NOT_FOUND"})
                 return
             supplied = self.headers.get("X-GuardWork-AI-Key", "")
             if not hmac.compare_digest(supplied.encode(), key.encode()):
                 self.send_json(401, {"error": "UNAUTHORIZED"})
+                return
+            if not capacity.acquire(blocking=False):
+                self.send_json(429, {"error": "ANALYSIS_BUSY"})
                 return
             try:
                 self.connection.settimeout(15)
@@ -75,12 +87,29 @@ def make_handler(*, mode: str, profile: str, snapshot: str, key: str, backend=No
                 if len(raw) != length:
                     raise InvalidAnalysis("Incomplete body")
                 payload = json.loads(raw)
-                report = analyze(payload, mode=mode, profile=profile, snapshot=snapshot, backend=backend)
+                if self.path == "/chat":
+                    if mode != "crawler" or backend is None:
+                        self.send_json(503, {"error": "REAL_AI_REQUIRED"})
+                        return
+                    if not isinstance(payload, dict) or any(payload.get(field) != value for field, value in (
+                        ("mode", mode), ("profile", profile), ("legalSnapshot", snapshot))):
+                        raise InvalidAnalysis("Configuration mismatch")
+                    question = payload.get("question")
+                    if not isinstance(question, str) or not 1 <= len(question.strip()) <= 2000:
+                        raise InvalidAnalysis("Invalid question")
+                    as_of = date.fromisoformat(payload["asOfDate"])
+                    report = {"schemaVersion": "1", "mode": mode, "profile": profile,
+                        "legalSnapshot": snapshot, "asOfDate": as_of.isoformat(),
+                        **backend.chat(question.strip(), as_of)}
+                else:
+                    report = analyze(payload, mode=mode, profile=profile, snapshot=snapshot, backend=backend)
                 self.send_json(200, report)
             except (InvalidAnalysis, ValueError, TypeError, KeyError):
                 self.send_json(422, {"error": "INVALID_ANALYSIS"})
             except Exception:
                 self.send_json(503, {"error": "ANALYSIS_UNAVAILABLE"})
+            finally:
+                capacity.release()
 
     return Handler
 
@@ -92,6 +121,7 @@ def main():
     parser.add_argument("--profile", default="jd-local-v1")
     parser.add_argument("--snapshot", default="stub-v1")
     parser.add_argument("--crawler", type=Path, default=Path(__file__).resolve().parents[2] / "crawler")
+    parser.add_argument("--check", action="store_true", help="Validate real dependencies without starting HTTP or calling AI")
     args = parser.parse_args()
     key = os.environ.get("GUARDWORK_AI_SHARED_KEY", "local-development-only")
     if len(key) < 16:
@@ -101,8 +131,18 @@ def main():
         if args.snapshot == "stub-v1":
             parser.error("Crawler mode requires an explicit --snapshot identifier")
         from ai.crawler_backend import CrawlerBackend
-        backend = CrawlerBackend(args.crawler)
-    server = HTTPServer(("127.0.0.1", args.port), make_handler(
+        try:
+            backend = CrawlerBackend(args.crawler)
+        except Exception as failure:
+            parser.exit(1, f"Cannot initialize real analysis ({type(failure).__name__}). "
+                        "Check crawler dependencies, provider key, Neo4j connectivity and legal corpus/index.\n")
+    if args.check:
+        print(json.dumps({"status": "ready", "mode": args.mode, "profile": args.profile,
+                          "legalSnapshot": args.snapshot, "model": getattr(backend, "model", None)}))
+        if backend is not None:
+            backend.close()
+        return
+    server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(
         mode=args.mode, profile=args.profile, snapshot=args.snapshot, key=key, backend=backend))
     print(f"JD adapter: http://127.0.0.1:{args.port}; mode={args.mode}; profile={args.profile}", flush=True)
     try:

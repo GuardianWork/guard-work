@@ -1,5 +1,9 @@
 # Local JD scanning (GW-119)
 
+For real-mode startup with shared local settings, preflight checks, and Candidate
+Copilot integration, see [local legal chat](legal-chat.md). Use the smoke command's
+`--require-real` flag when verifying a model call rather than the stub workflow.
+
 This opt-in mini workflow analyzes an exact saved Job Revision. PostgreSQL stores
 the queue, immutable input/report, revision associations and attempt outcomes. The
 local Python adapter supplies the analysis. Job submission and publication continue
@@ -91,8 +95,14 @@ python3 -m ai.smoke --wait-seconds 720
 Replace the example shared key in both processes for shared-machine use. Do not
 publish the adapter port. This local architecture is not a production deployment.
 
-Real analysis uses at most one detection and one verification call per attempt;
-verification is skipped for an empty, valid detection. Repeated requests reuse the
+Real analysis uses at most one detection and one verification call per attempt.
+Article hints are supplemented by BM25 ranking within the imported Labor Code, using
+adjacent Vietnamese syllable pairs. A bounded complete-article snapshot is loaded
+from Neo4j at adapter startup; restart after corpus changes. The verifier may use
+any source in the shared retrieved evidence;
+every emitted quotation must still match that source exactly. This avoids losing
+correct citations when a detector suggests the wrong existing article.
+Verification is skipped for an empty, valid detection. Repeated requests reuse the
 same scan within a Company for identical complete content/profile/corpus/mode and
 Vietnam date. There is no semantic-similarity cache. Provider retries can cost more.
 The existing provider wrapper does not expose token accounting, so `usage.available`
