@@ -3,12 +3,15 @@ package com.guardwork.backend.legalchat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.guardwork.backend.job.service.JdScanSettings;
+import com.guardwork.backend.common.utils.AiServiceEndpoint;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.*;
 import java.time.*;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -19,17 +22,19 @@ public class LegalChatService {
   private final JdScanSettings settings;
   private final ObjectMapper mapper;
   private final Clock clock;
-  private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+  private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
+      .followRedirects(HttpClient.Redirect.NEVER).build();
   private final URI endpoint;
 
   public LegalChatService(JdScanSettings settings, ObjectMapper mapper, Clock clock) {
+    this(settings, mapper, clock, false);
+  }
+
+  @Autowired
+  public LegalChatService(JdScanSettings settings, ObjectMapper mapper, Clock clock,
+      @Value("${jobs.ai.allow-insecure-http:false}") boolean allowInsecureHttp) {
     this.settings = settings; this.mapper = mapper; this.clock = clock;
-    URI origin = URI.create(settings.adapterUrl());
-    if (!"http".equals(origin.getScheme()) || !Set.of("127.0.0.1", "localhost", "[::1]").contains(origin.getHost())
-        || origin.getUserInfo() != null || origin.getQuery() != null || origin.getFragment() != null
-        || !(origin.getPath().isEmpty() || origin.getPath().equals("/")))
-      throw new IllegalArgumentException("Legal chat adapter must use a loopback HTTP origin");
-    endpoint = URI.create(settings.adapterUrl().replaceAll("/$", "") + "/chat");
+    endpoint = new AiServiceEndpoint(settings.adapterUrl(), allowInsecureHttp).resolve("chat");
   }
 
   public Map<String, Object> chat(Map<String, Object> request) {

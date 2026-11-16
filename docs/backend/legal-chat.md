@@ -32,6 +32,9 @@ marketplace operations do not depend on chat availability.
 
 ## Start and verify
 
+For a separately hosted adapter, use the environment setup below instead of
+starting a second local adapter. Local startup remains supported.
+
 1. Start the existing development PostgreSQL and Neo4j services. On this machine,
    Neo4j uses `sudo systemctl start neo4j`. Preserve existing data.
 2. Verify working provider credentials/model in the crawler environment, imported
@@ -63,6 +66,61 @@ marketplace operations do not depend on chat availability.
 
 Credentials, local settings and screenshots remain untracked. No dependency or
 database migration is required.
+
+## Configure a local or hosted AI service
+
+The backend reads the service connection from `backend/.env` when started from
+`backend/`. That file overrides the optional shared `ai/.env.local` defaults.
+Process environment variables, including Render's Environment settings, override
+both files. Restart/redeploy the backend after changing connection settings.
+
+```dotenv
+GUARDWORK_AI_ENABLED=true
+GUARDWORK_AI_MODE=crawler
+GUARDWORK_AI_ADAPTER_URL=https://ai.example.com
+GUARDWORK_AI_SHARED_KEY=<same-strong-secret-as-the-ai-service>
+GUARDWORK_AI_PROFILE=<matching-analysis-profile>
+GUARDWORK_AI_LEGAL_SNAPSHOT=<matching-imported-corpus-id>
+```
+
+`GUARDWORK_AI_ADAPTER_URL` is a base URL. Examples include
+`http://127.0.0.1:8011`, `http://ai-service:8011` on a trusted private network,
+`https://ai.example.com` and `https://ai.example.com/guardwork` behind a path-based
+gateway. Use HTTPS for public services, including ngrok. The backend validates
+normal TLS certificates and never follows redirects. Embedded URL credentials,
+query strings, fragments, invalid ports and non-HTTP(S) URLs are rejected.
+Only operator configuration selects the destination; browser/model arguments cannot.
+
+HTTP outside literal loopback is rejected by default. To use a trusted private
+HTTP service such as `http://ai-service:8011`, explicitly set
+`GUARDWORK_AI_ALLOW_INSECURE_HTTP=true`. This opt-in applies to both AI clients
+and must remain false for public services. It does not disable HTTPS certificate
+verification. No DNS/public-network classification is inferred from a hostname.
+
+The backend calls the following routes and receives their HTTP responses directly:
+
+| Operation | Route appended to the base URL | Authentication |
+|---|---|---|
+| Readiness | `GET /health` | No shared key sent |
+| Legal chat | `POST /chat` | `X-GuardWork-AI-Key` |
+| JD analysis | `POST /analyze` | `X-GuardWork-AI-Key` |
+
+The AI service must implement GuardWork's existing request/response schemas,
+including matching profile, mode and corpus identity. An arbitrary Gemini/OpenAI
+provider URL or a service returning a different JSON shape cannot replace this
+adapter directly. Provider selection stays behind the adapter. No callback,
+webhook, new database table or browser access to the AI service is required.
+
+For Render, import the same settings into the backend service's Environment page;
+an ignored local `.env` file is not deployed by Git. Store the shared secret there,
+and keep provider and Neo4j credentials on the AI service. The backend caller needs
+only its adapter URL/key and matching analysis identity. A changed ngrok hostname
+requires updating the URL and redeploying. The local AI process and tunnel must
+remain running while Render calls them.
+
+After startup, check `GET /api/ai/health` through backend Swagger. READY verifies
+reachability and identity, not a model call or provider availability. Application
+authorization and response validation remain unchanged.
 
 ## Check AI readiness through backend Swagger
 

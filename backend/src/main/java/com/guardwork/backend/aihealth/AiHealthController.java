@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@Tag(name = "AI service", description = "Public readiness check for the local AI adapter")
+@Tag(name = "AI service", description = "Public readiness check for the configured AI service")
 public class AiHealthController {
   private final AiHealthService service;
 

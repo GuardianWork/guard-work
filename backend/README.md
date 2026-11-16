@@ -13,6 +13,8 @@ Spring Boot 4 REST API for **guard-work**.
 For the opt-in local AI workflow, see [JD scanning](../docs/backend/jd-scanning.md).
 For real-mode startup and the authenticated Candidate Copilot, see
 [local legal chat](../docs/backend/legal-chat.md).
+For local, Docker/private-network or hosted AI service configuration in `backend/.env`,
+see [configure an AI service](../docs/backend/legal-chat.md#configure-a-local-or-hosted-ai-service).
 Check adapter readiness publicly in Swagger using `GET /api/ai/health`; no token is required.
 It checks connectivity and matching AI configuration without calling a model;
 see the [readiness response contract](../docs/backend/legal-chat.md#check-ai-readiness-through-backend-swagger).
@@ -314,7 +316,8 @@ for its access rules, query parameters, privacy boundary, and response contract.
 - Local Postgres via `docker-compose.yml`, connection settings in `application.properties`.
 - Access-token lifetime is configurable with `GUARDWORK_JWT_ACCESS_EXPIRATION_MS` (milliseconds,
   default `900000`, or 15 minutes). Spring Boot imports an optional `.env` file from the backend
-  working directory; an exported environment variable takes precedence over the file.
+  working directory. Its values override the optional `../ai/.env.local` fallback;
+  exported environment variables (including Render settings) override both files.
 
 ## Tooling
 

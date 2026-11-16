@@ -12,6 +12,11 @@ to use normal human moderation regardless of scan availability.
 Scope: [GW-SR-JD-SCAN-LOCAL](../software-requirements/rec/jd-scan-local-spec.md).
 Decision: [ADR 0012](../architecture/decisions/0012-local-jd-scanning.md).
 
+The backend also supports operator-configured local, private-network and hosted
+HTTP(S) adapters. Set the URL and matching caller key in `backend/.env`; see
+[AI service configuration](legal-chat.md#configure-a-local-or-hosted-ai-service).
+The adapter API and result validation remain the same across deployment locations.
+
 ## Run locally without provider costs
 
 No new dependencies are required. Use Java 25, the existing backend dependencies,

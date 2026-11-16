@@ -5,7 +5,7 @@
 | Specification ID | GW-SR-JD-SCAN-LOCAL |
 | Status | Draft; focused implementation scope authorized by the requesting user in this session |
 | Owner / human approver | vy (requesting user; branch, schema, service contract and test seams approved in session) |
-| Last updated | 2026-11-15 |
+| Last updated | 2026-11-16 |
 
 This records the local workflow explicitly approved in conversation. Formal lifecycle
 approval remains a human action; the agent does not promote this document to Approved.
@@ -72,6 +72,32 @@ public without a Staff role. Formal document lifecycle approval remains a human 
   changes. This probes adapter readiness and configuration, not provider access,
   model availability, corpus freshness or answer quality. Credentials, adapter
   URLs, raw upstream responses and exception messages are never returned.
+
+## Configurable service deployment — authorized 2026-11-16
+
+Vy explicitly requested configuring the backend AI service URL and credentials in
+`backend/.env`, supporting both local and separately hosted AI services. This
+extends the earlier loopback-only client restriction; the default remains local.
+The Python adapter may remain bound to loopback behind an authenticated HTTPS
+tunnel or gateway.
+
+- The operator-controlled base URL accepts HTTP or HTTPS, an optional port and
+  optional path prefix, including localhost, Docker/private service DNS and hosted
+  services. Public deployments must use HTTPS; HTTP is for trusted local/private
+  networks. Non-loopback HTTP is rejected unless the operator explicitly sets
+  `GUARDWORK_AI_ALLOW_INSECURE_HTTP=true` for a trusted private network. Request
+  bodies cannot choose or replace this URL.
+- Reject non-HTTP(S), relative or malformed URLs, embedded credentials, query
+  strings, fragments and invalid ports. Never follow upstream redirects.
+- `backend/.env` overrides the optional shared `ai/.env.local` fallback; exported
+  process/Render environment variables still take precedence. Configure
+  `GUARDWORK_AI_ADAPTER_URL` and `GUARDWORK_AI_SHARED_KEY` for health, JD analysis
+  and legal chat.
+- The remote service must implement the existing GuardWork adapter request and
+  response contracts. Changing location does not accept arbitrary model output,
+  disable identity/result validation or create a callback/webhook contract.
+- Verify configured client boundaries with synthetic HTTP(S) services and retain
+  current authentication, malformed-output, timeout and local workflow regressions.
 
 ## Privacy and limits
 

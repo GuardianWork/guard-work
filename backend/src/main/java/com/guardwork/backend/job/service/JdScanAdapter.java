@@ -1,28 +1,34 @@
 package com.guardwork.backend.job.service;
 
 import com.fasterxml.jackson.databind.*;
+import com.guardwork.backend.common.utils.AiServiceEndpoint;
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/** The local Python HTTP service is the external boundary, never a browser-facing API. */
+/** The configured AI service is the external boundary, never a browser-facing API. */
 @Component
 public class JdScanAdapter {
   private final JdScanSettings settings;
   private final ObjectMapper mapper;
-  private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+  private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5))
+      .followRedirects(HttpClient.Redirect.NEVER).build();
+  private final AiServiceEndpoint endpoint;
 
   public JdScanAdapter(JdScanSettings settings, ObjectMapper mapper) {
+    this(settings, mapper, false);
+  }
+
+  @Autowired
+  public JdScanAdapter(JdScanSettings settings, ObjectMapper mapper,
+      @Value("${jobs.ai.allow-insecure-http:false}") boolean allowInsecureHttp) {
     this.settings = settings; this.mapper = mapper;
-    URI url = URI.create(settings.adapterUrl());
-    if (!"http".equals(url.getScheme()) || !Set.of("127.0.0.1", "localhost", "[::1]").contains(url.getHost())
-        || url.getUserInfo() != null || url.getQuery() != null || url.getFragment() != null
-        || !(url.getPath().isEmpty() || url.getPath().equals("/")))
-      throw new IllegalArgumentException("JD adapter must use a loopback HTTP origin");
+    endpoint = new AiServiceEndpoint(settings.adapterUrl(), allowInsecureHttp);
   }
 
   public static class Failure extends RuntimeException {
@@ -35,7 +41,7 @@ public class JdScanAdapter {
   public JsonNode health() {
     CompletableFuture<HttpResponse<byte[]>> pending = null;
     try {
-      var request = HttpRequest.newBuilder(URI.create(settings.adapterUrl().replaceAll("/$", "") + "/health"))
+      var request = HttpRequest.newBuilder(endpoint.resolve("health"))
           .timeout(Duration.ofSeconds(2)).GET().build();
       // Bound the complete probe, including an adapter that sends headers then stalls.
       pending = client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
@@ -56,7 +62,7 @@ public class JdScanAdapter {
       String body = mapper.writeValueAsString(Map.of("analysisText", claim.analysisText(),
           "mode", claim.mode(), "profile", claim.profile(), "legalSnapshot", claim.legalSnapshot(),
           "asOfDate", claim.asOfDate().toString()));
-      var request = HttpRequest.newBuilder(URI.create(settings.adapterUrl().replaceAll("/$", "") + "/analyze"))
+      var request = HttpRequest.newBuilder(endpoint.resolve("analyze"))
           .timeout(Duration.ofSeconds(660)).header("Content-Type", "application/json")
           .header("X-GuardWork-AI-Key", settings.sharedKey()).POST(HttpRequest.BodyPublishers.ofString(body)).build();
       var response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());

@@ -5,7 +5,7 @@
 | Specification ID | GW-SR-LEGAL-CHAT-LOCAL |
 | Status | Draft; implementation scope authorized by requesting user in conversation |
 | Owner / human approver | vy (requesting user) |
-| Last updated | 2026-11-14 |
+| Last updated | 2026-11-16 |
 
 The user authorized connecting the existing Candidate Copilot to real analysis and
 continuing on the current branch while preserving existing work. Formal approval
@@ -46,3 +46,17 @@ Verification covers authentication, input validation, mode/config mismatches,
 provider/malformed-output failures, exact quote grounding, frontend async states,
 and real browser requests/results. No source or model citation certifies current
 legal applicability or replaces human legal review.
+
+## Service deployment amendment — authorized 2026-11-16
+
+Vy explicitly requested configuring the AI endpoint in `backend/.env` for local
+and separately hosted services. The loopback-only restriction above is extended
+to operator-configured HTTP(S) base URLs, including private DNS and optional path
+prefixes. Public traffic uses HTTPS; HTTP is for trusted local/private networks.
+Non-loopback HTTP requires `GUARDWORK_AI_ALLOW_INSECURE_HTTP=true`; the default is
+false and keeps public HTTP endpoints rejected without an explicit operator opt-in.
+Backend env values override the optional shared local fallback; process/Render
+environment values override both. Redirects and URL-embedded credentials are
+rejected. Authentication headers, request/response schema, corpus/profile identity,
+privacy and validation remain unchanged. This does not accept arbitrary direct
+provider APIs. See [ADR 0015](../../architecture/decisions/0015-configurable-ai-service-endpoints.md).
