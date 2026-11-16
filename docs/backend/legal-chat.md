@@ -64,6 +64,39 @@ marketplace operations do not depend on chat availability.
 Credentials, local settings and screenshots remain untracked. No dependency or
 database migration is required.
 
+## Check AI readiness through backend Swagger
+
+In `/swagger-ui/index.html`, expand **AI service → GET /api/ai/health** and use
+**Try it out**. This GET endpoint is public; no login, role or access token is
+required. Other Staff and Candidate endpoints retain their existing access rules.
+
+The endpoint sends only a GET to the adapter's `/health`, with a two-second HTTP
+timeout, and returns the existing envelope with `Cache-Control: no-store`:
+
+```json
+{
+  "status": 200,
+  "message": "Success",
+  "data": {
+    "status": "READY",
+    "mode": "crawler",
+    "profile": "jd-local-v1",
+    "legalSnapshot": "your-imported-corpus-id"
+  }
+}
+```
+
+The identity fields reflect configured backend values. HTTP 503 retains this data
+shape and uses message `50322 AI_SERVICE_NOT_READY`. `data.status` explains the
+failure: `DISABLED` (backend scanning disabled; no probe), `UNAVAILABLE` (connection,
+timeout, non-200 or invalid response), or `CONFIGURATION_MISMATCH` (adapter mode,
+profile or corpus differs). Start the adapter with `bash ai/run-local.sh adapter`
+and ensure both processes load matching settings before retrying.
+
+A matching stub is `READY` with `mode=stub`. Readiness does not make a paid model
+call or verify current provider availability, corpus freshness or legal accuracy.
+Use the real smoke workflow above for model verification.
+
 ## Local verification — 2026-11-14
 
 Real Playwright MCP checks passed through the public frontend proxy with Gemini,

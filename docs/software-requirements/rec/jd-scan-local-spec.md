@@ -5,7 +5,7 @@
 | Specification ID | GW-SR-JD-SCAN-LOCAL |
 | Status | Draft; focused implementation scope authorized by the requesting user in this session |
 | Owner / human approver | vy (requesting user; branch, schema, service contract and test seams approved in session) |
-| Last updated | 2026-11-10 |
+| Last updated | 2026-11-15 |
 
 This records the local workflow explicitly approved in conversation. Formal lifecycle
 approval remains a human action; the agent does not promote this document to Approved.
@@ -45,6 +45,33 @@ approval remains a human action; the agent does not promote this document to App
   legal compliance. Provider outages do not block ordinary job operations.
 - No new application dependencies, broker, public Python endpoint, notifications,
   automatic publishing/rejection or edits to `../crawler` are selected.
+
+## AI adapter health — session-authorized extension, 2026-11-15
+
+The requesting user (vy) authorized the following additive endpoint and implementation
+on the current branch in conversation, explicitly directing that the health check be
+public without a Staff role. Formal document lifecycle approval remains a human action.
+
+- GET `/api/ai/health` appears in backend Swagger without a security requirement.
+  This exact GET route is public without a login, token or role. Other methods and
+  protected endpoints retain existing security rules; no public Staff-route alias exists.
+- If scanning is disabled, return 503 with `data.status=DISABLED` without contacting
+  the adapter. Otherwise GET the configured loopback adapter's `/health` with a
+  two-second HTTP timeout and no retries or redirects.
+- Return 200 with `data.status=READY` only when the adapter responds with JSON
+  `status=ready` and its mode, profile and legal corpus snapshot match backend
+  settings. A matching stub is explicitly reported as `mode=stub`.
+- Valid readiness with differing analysis identity returns 503 with
+  `data.status=CONFIGURATION_MISMATCH`. Transport errors, timeouts, non-200,
+  malformed/incomplete JSON and responses exceeding 4096 bytes return 503 with
+  `data.status=UNAVAILABLE`.
+- Use the existing `{status,message,data}` envelope and `Cache-Control: no-store`.
+  Data allowlists `status`, configured `mode`, `profile`, and `legalSnapshot`.
+  Non-ready responses use message `50322 AI_SERVICE_NOT_READY`.
+- No model/retrieval calls, analysis jobs, database writes, dependency or schema
+  changes. This probes adapter readiness and configuration, not provider access,
+  model availability, corpus freshness or answer quality. Credentials, adapter
+  URLs, raw upstream responses and exception messages are never returned.
 
 ## Privacy and limits
 

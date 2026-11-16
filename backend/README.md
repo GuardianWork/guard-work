@@ -13,6 +13,9 @@ Spring Boot 4 REST API for **guard-work**.
 For the opt-in local AI workflow, see [JD scanning](../docs/backend/jd-scanning.md).
 For real-mode startup and the authenticated Candidate Copilot, see
 [local legal chat](../docs/backend/legal-chat.md).
+Check adapter readiness publicly in Swagger using `GET /api/ai/health`; no token is required.
+It checks connectivity and matching AI configuration without calling a model;
+see the [readiness response contract](../docs/backend/legal-chat.md#check-ai-readiness-through-backend-swagger).
 
 ```bash
 # 1. copy environment config and adjust values

@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.http.*;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.*;
 import org.springframework.stereotype.Component;
 
 /** The local Python HTTP service is the external boundary, never a browser-facing API. */
@@ -28,6 +29,26 @@ public class JdScanAdapter {
     private final boolean retryable;
     public Failure(boolean retryable) { super("JD adapter operation failed"); this.retryable = retryable; }
     public boolean retryable() { return retryable; }
+  }
+
+  /** Readiness only: never invokes analysis, retrieval or a model provider. */
+  public JsonNode health() {
+    CompletableFuture<HttpResponse<byte[]>> pending = null;
+    try {
+      var request = HttpRequest.newBuilder(URI.create(settings.adapterUrl().replaceAll("/$", "") + "/health"))
+          .timeout(Duration.ofSeconds(2)).GET().build();
+      // Bound the complete probe, including an adapter that sends headers then stalls.
+      pending = client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+      var response = pending.get(2, TimeUnit.SECONDS);
+      if (response.statusCode() != 200 || response.body().length > 4096) throw new Failure(false);
+      return mapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(response.body());
+    } catch (InterruptedException failure) {
+      Thread.currentThread().interrupt(); throw new Failure(true);
+    } catch (IOException | ExecutionException | TimeoutException failure) {
+      throw new Failure(true);
+    } finally {
+      if (pending != null && !pending.isDone()) pending.cancel(true);
+    }
   }
 
   public String analyze(JdScanQueue.Claim claim) {
