@@ -6,11 +6,11 @@
 | **Project** | GuardWork |
 | **Module** | Candidate Company Review and Discovery |
 | **File** | `company-review-api-spec.md` |
-| **Version** | 1.1.0 |
+| **Version** | 1.2.0 |
 | **Date** | 2026-11-15 |
 | **Last Updated** | 2026-11-16 |
 | **Owner** | Backend — Candidate Company Review |
-| **Approver** | Miku (task-session approval, 2026-11-15; 1.1.0 amendment approved in task session, 2026-11-16) |
+| **Approver** | Miku (task-session approval, 2026-11-15; 1.1.0 amendment approved in task session, 2026-11-16; 1.2.0 amendment approved in task session, 2026-11-16) |
 | **Status** | Approved |
 
 ---
@@ -74,6 +74,7 @@ creating a second authorization or visibility implementation.
 | BR-04 | Search summaries use all visible postings for a matched company, not only the matching posting. |
 | BR-05 | Dossier summaries use all visible postings for the company; paginated role content uses canonical page and size. |
 | BR-06 | Company profile mock or illustrative values remain client-side and never enter public API responses. |
+| BR-07 | Each role in the public roles response carries `applicationCount`: the exact total of submitted applications for that posting, computed at read time from persisted applications. Postings without applicants report `0`, never a fabricated or partial value; no schema migration is required. |
 
 ## 5. Error Catalogue
 
@@ -119,8 +120,10 @@ Path variable: positive company id.
 Query parameters: canonical pagination `page` and `size`, same bounds as search.
 
 Response: `PageResponse<CompanyRole>`: visible roles for the company, ordered by application
-deadline (absent deadlines last), then by role id. Unknown companies and companies with no
-publicly visible posting return `40400 COMPANY_NOT_FOUND`.
+deadline (absent deadlines last), then by role id. Each role object carries
+`applicationCount` (non-negative integer): the exact total of submitted applications for the
+posting, `0` when nobody applied yet. Unknown companies and companies with no publicly visible
+posting return `40400 COMPANY_NOT_FOUND`.
 
 ## 7. Infrastructure Architecture
 
@@ -135,6 +138,15 @@ Backend checks were run against PostgreSQL-compatible test infrastructure and th
 existing job-search regression suite.
 
 ## 9. Amendment History
+
+### 1.2.0 — 2026-11-16
+
+- §6.3 roles response now carries `applicationCount` per role: the exact total of submitted
+  applications for the posting (`0` when none), computed at read time without a schema migration.
+  Backs the GW-123 candidate-facing featured-posting cascade tier ("most applicants").
+- New business rule BR-07 records the exact-count contract and its source of truth.
+- No authorization, pagination, visibility or error-catalogue changes. Backward-compatible
+  addition of an optional response field. Task-session approval by Miku, 2026-11-16.
 
 ### 1.1.0 — 2026-11-16
 
