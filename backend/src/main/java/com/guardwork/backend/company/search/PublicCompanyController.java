@@ -44,7 +44,7 @@ public class PublicCompanyController {
   }
 
   @GetMapping("/{companyId}/roles")
-  public ApiResponse<PageResponse<CompanyRole>> roles(
+  public ApiResponse<PageResponse<CompanyRole>> openingJobs(
       @PathVariable Long companyId,
       @PageableDefault(size = PaginationUtils.MAX_PAGE_SIZE) Pageable pageable,
       HttpServletResponse response) {
