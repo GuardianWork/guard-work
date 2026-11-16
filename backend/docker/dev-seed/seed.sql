@@ -489,6 +489,280 @@ BEGIN
 END;
 $$;
 
+-- Bulk verified companies with opening published jobs for company directory depth.
+-- One industry per company (derived from its name theme) and at most two locations
+-- (the home city, plus one secondary city for every fourth company). Role, salary band,
+-- employment-type and work-arrangement pools all follow that industry.
+-- Reruns top up only missing postings (per-fixture markers) while existing
+-- Company/owner/membership state is preserved; collisions fail like the demo accounts.
+DO $$
+DECLARE
+    staff_id_value BIGINT;
+    company_index INTEGER;
+    company_name_value TEXT;
+    company_tax_code_value TEXT;
+    owner_username_value TEXT;
+    owner_email_value TEXT;
+    owner_id_value BIGINT;
+    company_id_value BIGINT;
+    company_names TEXT[] := ARRAY[
+        'Công ty TNHH Thinh Phat Digital', 'Công ty TNHH Saigon Horizon Technologies',
+        'Công ty TNHH Viet Data Systems', 'Công ty TNHH Nam Duong Technologies',
+        'Công ty TNHH Han River Software', 'Công ty TNHH Mekong Tech Solutions',
+        'Công ty TNHH Pine Software', 'Công ty TNHH Delta Solutions',
+        'Công ty TNHH Sunrise Technologies', 'Công ty TNHH Pioneer Digital',
+        'Công ty TNHH Skyline Software', 'Công ty TNHH Harmony Technologies',
+        'Công ty TNHH Lotus Systems', 'Công ty TNHH Bamboo Software',
+        'Công ty TNHH Crystal Technologies', 'Công ty TNHH Emerald Data',
+        'Công ty TNHH Ruby Software', 'Công ty TNHH Sapphire Technologies',
+        'Công ty TNHH Topaz Systems', 'Công ty TNHH Amber Technologies',
+        'Công ty TNHH Fox Software', 'Công ty TNHH Falcon Technologies',
+        'Công ty TNHH Hawk Software', 'Công ty TNHH Eagle Systems',
+        'Công ty TNHH River Software', 'Công ty TNHH Mountain Tech',
+        'Công ty TNHH Island Systems', 'Công ty TNHH Desert Data',
+        'Công ty TNHH Ocean Software', 'Công ty TNHH City Technologies',
+        'Công ty TNHH Urban Systems', 'Công ty TNHH Rural Software',
+        'Công ty TNHH Global Data', 'Công ty TNHH International Software',
+        'Công ty TNHH National Technologies', 'Công ty TNHH Local Systems',
+        'Công ty TNHH Metro Software', 'Công ty TNHH Green Technologies',
+        'Công ty TNHH Saigon Commerce', 'Công ty TNHH Viet Commerce',
+        'Công ty TNHH Viet Media', 'Công ty TNHH Viet Education',
+        'Công ty TNHH Viet Healthcare', 'Công ty TNHH Viet Finance',
+        'Công ty TNHH Viet Logistics', 'Công ty TNHH Viet Manufacturing',
+        'Công ty TNHH Viet Retail', 'Công ty TNHH Viet Food',
+        'Công ty TNHH Viet Culture', 'Công ty TNHH Viet Sport',
+        'Công ty TNHH Ho Chi Minh Media', 'Công ty TNHH Hanoi Digital',
+        'Công ty TNHH Da Nang Tech', 'Công ty TNHH Hai Phong Software',
+        'Công ty TNHH Can Tho Systems', 'Công ty TNHH Hue Technologies',
+        'Công ty TNHH Nha Trang Data', 'Công ty TNHH Bien Hoa Software',
+        'Công ty TNHH Binh Duong Digital', 'Công ty TNHH Vung Tau Systems',
+        'Công ty TNHH Thinh Phat Energy', 'Công ty TNHH Thinh Phat Foods',
+        'Công ty TNHH Thinh Phat Education', 'Công ty TNHH Thinh Phat Healthcare',
+        'Công ty TNHH Thinh Phat Finance', 'Công ty TNHH Thinh Phat Logistics',
+        'Công ty TNHH Thinh Phat Manufacturing', 'Công ty TNHH Thinh Phat Retail',
+        'Công ty TNHH Thinh Phat Media', 'Công ty TNHH Thinh Phat Culture',
+        'Công ty TNHH Thinh Phat Sport', 'Công ty TNHH Saigon Energy',
+        'Công ty TNHH Saigon Foods', 'Công ty TNHH Saigon Education',
+        'Công ty TNHH Saigon Healthcare', 'Công ty TNHH Saigon Finance',
+        'Công ty TNHH Saigon Logistics', 'Công ty TNHH Saigon Manufacturing',
+        'Công ty TNHH Saigon Retail', 'Công ty TNHH Saigon Media',
+        'Công ty TNHH Saigon Culture', 'Công ty TNHH Saigon Sport',
+        'Công ty TNHH Hanoi Energy', 'Công ty TNHH Hanoi Foods',
+        'Công ty TNHH Hanoi Education', 'Công ty TNHH Hanoi Healthcare',
+        'Công ty TNHH Hanoi Finance', 'Công ty TNHH Hanoi Logistics',
+        'Công ty TNHH Hanoi Manufacturing', 'Công ty TNHH Hanoi Retail',
+        'Công ty TNHH Hanoi Media', 'Công ty TNHH Hanoi Culture',
+        'Công ty TNHH Hanoi Sport', 'Công ty TNHH Da Nang Energy',
+        'Công ty TNHH Da Nang Foods', 'Công ty TNHH Da Nang Education',
+        'Công ty TNHH Da Nang Healthcare', 'Công ty TNHH Da Nang Finance',
+        'Công ty TNHH Da Nang Logistics', 'Công ty TNHH Da Nang Manufacturing'
+    ];
+    job_index INTEGER;
+    job_offset INTEGER;
+    fixture_key TEXT;
+    job_id_value BIGINT;
+    revision_id_value BIGINT;
+    deadline_value TIMESTAMPTZ;
+    content_value JSONB;
+    theme_value TEXT;
+    assigned_industry TEXT;
+    home_location TEXT;
+    second_location TEXT;
+    location_value TEXT;
+    employment_type TEXT;
+    employment_types TEXT[];
+    work_arrangement TEXT;
+    work_arrangements TEXT[];
+    level TEXT;
+    levels TEXT[] := ARRAY['Junior', 'Middle', 'Senior', 'Lead'];
+    role_pool TEXT[];
+    role_value TEXT;
+    salary_band INTEGER[];
+    min_salary BIGINT;
+    max_salary BIGINT;
+    headcount INTEGER;
+    job_total INTEGER := 6;
+BEGIN
+    SELECT id INTO STRICT staff_id_value FROM users WHERE username = 'demo_staff';
+    IF NOT EXISTS (SELECT 1 FROM users u WHERE u.id = staff_id_value AND u.status = 'ACTIVE' AND u.role = 'STAFF') THEN
+        RAISE EXCEPTION 'Demo staff is not eligible for seeding bulk company jobs.';
+    END IF;
+
+    FOR company_index IN 1..100 LOOP
+        company_name_value := company_names[company_index];
+        company_tax_code_value := 'GW-DEMO-BULK-' || lpad(company_index::text, 3, '0');
+        owner_username_value := 'demo_bulk_owner_' || lpad(company_index::text, 3, '0');
+        owner_email_value := 'bulk-owner-' || lpad(company_index::text, 3, '0') || '@demo.guardwork.test';
+
+        -- Resolve the owner with the same curated collision policy as the demo accounts.
+        SELECT id INTO owner_id_value FROM users WHERE username = owner_username_value;
+        IF FOUND THEN
+            IF EXISTS (SELECT 1 FROM users u WHERE u.id = owner_id_value
+                    AND (lower(btrim(u.email)) <> owner_email_value OR u.role <> 'USER'
+                         OR NOT u.email_verified OR u.status <> 'ACTIVE')) THEN
+                RAISE EXCEPTION 'Mock bulk owner identifier collision for %; no data was seeded.', owner_username_value;
+            END IF;
+        ELSE
+            IF EXISTS (SELECT 1 FROM users u WHERE lower(btrim(u.email)) = owner_email_value) THEN
+                RAISE EXCEPTION 'Mock bulk owner identifier collision for %; no data was seeded.', owner_email_value;
+            END IF;
+            INSERT INTO users (username, email, first_name, last_name, password, role, status, email_verified, phone_number)
+            VALUES (owner_username_value, owner_email_value, 'Lan', 'Phạm', '$2a$10$.Sw9NzCJH98UmXsd3ep4punGVyL7FwuBWXWykQDXbDi7wTSj3SK/S', 'USER', 'ACTIVE', true, NULL)
+            RETURNING id INTO owner_id_value;
+        END IF;
+
+        -- Resolve or create the verified company. An existing company must belong to the
+        -- resolved owner and stay verified and unbanned; its state is never reset.
+        SELECT id INTO company_id_value FROM companies WHERE tax_code = company_tax_code_value;
+        IF FOUND THEN
+            IF NOT EXISTS (SELECT 1 FROM companies c WHERE c.id = company_id_value AND c.owner_user_id = owner_id_value) THEN
+                RAISE EXCEPTION 'Mock bulk company identifier collision for %; no data was seeded.', company_tax_code_value;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM companies c WHERE c.id = company_id_value
+                    AND c.verification_status = 'VERIFIED' AND NOT c.is_banned) THEN
+                RAISE EXCEPTION 'Existing bulk company % is not eligible for seeding; existing state was preserved.', company_tax_code_value;
+            END IF;
+        ELSE
+            INSERT INTO companies (name, tax_code, registration_certificate_url, email, verification_status, verified_by, verified_at, owner_user_id)
+            VALUES (company_name_value, company_tax_code_value,
+                'https://example.invalid/guardwork-bulk-company-' || lpad(company_index::text, 3, '0') || '.pdf',
+                owner_email_value, 'VERIFIED', staff_id_value, now(), owner_id_value)
+            RETURNING id INTO company_id_value;
+        END IF;
+
+        INSERT INTO company_memberships (company_id, user_id, role, status, joined_at)
+        SELECT company_id_value, owner_id_value, 'OWNER', 'ACTIVE', now()
+        WHERE NOT EXISTS (SELECT 1 FROM company_memberships m
+            WHERE m.company_id = company_id_value AND m.user_id = owner_id_value AND m.status = 'ACTIVE');
+
+        -- Anchor one industry to the company from its name theme.
+        theme_value := regexp_replace(company_name_value, '^.* ', '');
+        assigned_industry := CASE theme_value
+            WHEN 'Digital' THEN 'Công nghệ thông tin' WHEN 'Technologies' THEN 'Công nghệ thông tin'
+            WHEN 'Software' THEN 'Công nghệ thông tin' WHEN 'Systems' THEN 'Công nghệ thông tin'
+            WHEN 'Solutions' THEN 'Công nghệ thông tin' WHEN 'Tech' THEN 'Công nghệ thông tin'
+            WHEN 'Data' THEN 'Dữ liệu và phân tích'
+            WHEN 'Commerce' THEN 'Bán lẻ' WHEN 'Retail' THEN 'Bán lẻ'
+            WHEN 'Media' THEN 'Truyền thông' WHEN 'Culture' THEN 'Truyền thông'
+            WHEN 'Education' THEN 'Giáo dục'
+            WHEN 'Finance' THEN 'Tài chính - Kế toán'
+            WHEN 'Food' THEN 'Dịch vụ ăn uống' WHEN 'Foods' THEN 'Dịch vụ ăn uống'
+            WHEN 'Healthcare' THEN 'Y tế'
+            WHEN 'Logistics' THEN 'Logistics'
+            WHEN 'Manufacturing' THEN 'Sản xuất'
+            WHEN 'Sport' THEN 'Thể thao'
+            WHEN 'Energy' THEN 'Năng lượng'
+            ELSE NULL END;
+        IF assigned_industry IS NULL THEN
+            RAISE EXCEPTION 'No industry mapping for bulk company theme %; no data was seeded.', theme_value;
+        END IF;
+
+        -- Home city from the name; every fourth company also hires in a second city.
+        home_location := CASE
+            WHEN company_name_value ILIKE '%Saigon%' OR company_name_value ILIKE '%Ho Chi Minh%'
+                THEN 'Thành phố Hồ Chí Minh, Việt Nam'
+            WHEN company_name_value ILIKE '%Hanoi%' THEN 'Hà Nội, Việt Nam'
+            WHEN company_name_value ILIKE '%Da Nang%' OR company_name_value ILIKE '%Han River%' THEN 'Đà Nẵng, Việt Nam'
+            WHEN company_name_value ILIKE '%Mekong%' OR company_name_value ILIKE '%Can Tho%' THEN 'Cần Thơ, Việt Nam'
+            WHEN company_name_value ILIKE '%Hai Phong%' THEN 'Hải Phòng, Việt Nam'
+            WHEN company_name_value ILIKE '%Hue%' THEN 'Huế, Việt Nam'
+            WHEN company_name_value ILIKE '%Nha Trang%' THEN 'Nha Trang, Việt Nam'
+            WHEN company_name_value ILIKE '%Bien Hoa%' THEN 'Biên Hòa, Việt Nam'
+            WHEN company_name_value ILIKE '%Binh Duong%' THEN 'Bình Dương, Việt Nam'
+            WHEN company_name_value ILIKE '%Vung Tau%' THEN 'Vũng Tàu, Việt Nam'
+            ELSE CASE WHEN company_index % 2 = 0 THEN 'Thành phố Hồ Chí Minh, Việt Nam' ELSE 'Hà Nội, Việt Nam' END
+        END;
+        second_location := NULL;
+        IF company_index % 4 = 0 THEN
+            second_location := CASE WHEN home_location LIKE 'Hà Nội%'
+                THEN 'Thành phố Hồ Chí Minh, Việt Nam' ELSE 'Hà Nội, Việt Nam' END;
+        END IF;
+
+        -- Role, salary band, employment-type and arrangement pools follow the industry.
+        role_pool := CASE assigned_industry
+            WHEN 'Công nghệ thông tin' THEN ARRAY['Kỹ sư phần mềm Backend', 'Lập trình viên Frontend React', 'Kỹ sư DevOps', 'Chuyên viên kiểm thử phần mềm QA', 'Thiết kế UI/UX', 'Kỹ sư dữ liệu']
+            WHEN 'Dữ liệu và phân tích' THEN ARRAY['Kỹ sư dữ liệu', 'Chuyên viên phân tích dữ liệu', 'Kỹ sư phần mềm Backend']
+            WHEN 'Bán lẻ' THEN ARRAY['Nhân viên bán hàng', 'Chuyên viên mua hàng', 'Nhân viên hành chính văn phòng']
+            WHEN 'Truyền thông' THEN ARRAY['Chuyên viên nội dung', 'Chuyên viên marketing số', 'Thiết kế UI/UX']
+            WHEN 'Giáo dục' THEN ARRAY['Giáo viên tiểu học', 'Giáo viên tiếng Anh']
+            WHEN 'Tài chính - Kế toán' THEN ARRAY['Chuyên viên kế toán tổng hợp', 'Chuyên viên tài chính doanh nghiệp']
+            WHEN 'Dịch vụ ăn uống' THEN ARRAY['Đầu bếp', 'Nhân viên phục vụ nhà hàng']
+            WHEN 'Y tế' THEN ARRAY['Nhân viên y tá', 'Bác sĩ đa khoa', 'Dược sĩ']
+            WHEN 'Logistics' THEN ARRAY['Nhân viên kho vận', 'Điều phối logistics', 'Chuyên viên mua hàng']
+            WHEN 'Sản xuất' THEN ARRAY['Nhân viên sản xuất', 'Giám sát sản xuất', 'Kỹ sư điện công nghiệp']
+            WHEN 'Thể thao' THEN ARRAY['Huấn luyện viên thể thao', 'Nhân viên vận hành trung tâm thể thao']
+            WHEN 'Năng lượng' THEN ARRAY['Kỹ sư điện công nghiệp', 'Kỹ sư cơ điện', 'Giám sát sản xuất']
+        END;
+        salary_band := CASE assigned_industry
+            WHEN 'Công nghệ thông tin' THEN ARRAY[15000000, 40000000]
+            WHEN 'Dữ liệu và phân tích' THEN ARRAY[18000000, 45000000]
+            WHEN 'Bán lẻ' THEN ARRAY[6000000, 12000000]
+            WHEN 'Truyền thông' THEN ARRAY[9000000, 18000000]
+            WHEN 'Giáo dục' THEN ARRAY[8000000, 16000000]
+            WHEN 'Tài chính - Kế toán' THEN ARRAY[10000000, 25000000]
+            WHEN 'Dịch vụ ăn uống' THEN ARRAY[6000000, 13000000]
+            WHEN 'Y tế' THEN ARRAY[12000000, 35000000]
+            WHEN 'Logistics' THEN ARRAY[8000000, 17000000]
+            WHEN 'Sản xuất' THEN ARRAY[7000000, 15000000]
+            WHEN 'Thể thao' THEN ARRAY[7000000, 14000000]
+            WHEN 'Năng lượng' THEN ARRAY[11000000, 26000000]
+        END;
+        employment_types := CASE assigned_industry
+            WHEN 'Bán lẻ' THEN ARRAY['FULL_TIME', 'PART_TIME', 'PART_TIME', 'TEMPORARY', 'CONTRACT']
+            WHEN 'Dịch vụ ăn uống' THEN ARRAY['PART_TIME', 'FULL_TIME', 'TEMPORARY', 'PART_TIME', 'CONTRACT']
+            WHEN 'Thể thao' THEN ARRAY['PART_TIME', 'FULL_TIME', 'CONTRACT', 'PART_TIME', 'TEMPORARY']
+            WHEN 'Giáo dục' THEN ARRAY['FULL_TIME', 'PART_TIME', 'CONTRACT', 'FULL_TIME', 'FULL_TIME']
+            ELSE ARRAY['FULL_TIME', 'FULL_TIME', 'FULL_TIME', 'PART_TIME', 'CONTRACT']
+        END;
+        work_arrangements := CASE assigned_industry
+            WHEN 'Công nghệ thông tin' THEN ARRAY['REMOTE', 'HYBRID', 'ONSITE', 'HYBRID', 'REMOTE']
+            WHEN 'Dữ liệu và phân tích' THEN ARRAY['REMOTE', 'HYBRID', 'ONSITE', 'REMOTE', 'HYBRID']
+            ELSE ARRAY['ONSITE', 'ONSITE', 'ONSITE', 'HYBRID', 'ONSITE']
+        END;
+
+        -- Top up missing postings per fixture marker; existing jobs are preserved.
+        FOR job_index IN 1..job_total LOOP
+            job_offset := (company_index - 1) * job_total + job_index;
+            fixture_key := 'BULK-COMPANY-' || lpad(company_index::text, 3, '0') || '-JOB-' || lpad(job_index::text, 3, '0');
+            IF EXISTS (SELECT 1 FROM job_audit_events e WHERE e.facts ->> 'developmentFixture' = fixture_key) THEN
+                CONTINUE;
+            END IF;
+
+            location_value := CASE WHEN second_location IS NOT NULL AND job_index % 2 = 0 THEN second_location ELSE home_location END;
+            level := levels[((job_offset - 1) / 30) % 4 + 1];
+            role_value := role_pool[((company_index + job_index - 2) % array_length(role_pool, 1)) + 1];
+            employment_type := employment_types[((job_offset - 1) % array_length(employment_types, 1)) + 1];
+            work_arrangement := work_arrangements[((job_offset - 1) % array_length(work_arrangements, 1)) + 1];
+            headcount := 1 + ((job_offset - 1) % 6);
+            min_salary := salary_band[1]::BIGINT + ((job_offset - 1) % 4) * ((salary_band[2]::BIGINT - salary_band[1]::BIGINT) / 8);
+            max_salary := min_salary + (salary_band[2]::BIGINT - salary_band[1]::BIGINT) / 2;
+            deadline_value := now() + ((15 + ((job_offset - 1) % 75))::text || ' days')::interval;
+
+            content_value := jsonb_build_object(
+                'title', level || ' ' || role_value,
+                'description', 'Mô tả công việc cho vị trí ' || level || ' ' || role_value || E'.\n\nTrách nhiệm chính:\n- Thực hiện nhiệm vụ chuyên môn theo phân công.\n- Phối hợp với các phòng ban liên quan.\n- Theo dõi KPI và báo cáo tiến độ.\n\nYêu cầu:\n- Có kiến thức và kỹ năng phù hợp với vị trí.\n- Giao tiếp tốt, chịu được áp lực công việc.\n\nQuyền lợi:\n- Lương cạnh tranh, thưởng theo hiệu suất.\n- Môi trường làm việc chuyên nghiệp.\n\nDữ liệu minh họa GuardWork, không phải tin tuyển dụng thực tế.',
+                'industry', assigned_industry,
+                'employmentType', employment_type,
+                'workArrangement', work_arrangement,
+                'location', location_value,
+                'deadline', to_char(deadline_value AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+                'headcount', headcount,
+                'compensation', jsonb_build_object('disclosed', true, 'minimum', min_salary, 'maximum', max_salary, 'currency', 'VND', 'payPeriod', 'MONTH')
+            );
+
+            INSERT INTO job_postings(company_id, creator_user_id, status, owner_responsible, created_at, updated_at)
+            VALUES (company_id_value, owner_id_value, 'DRAFT', true, now(), now()) RETURNING id INTO job_id_value;
+            INSERT INTO job_posting_revisions(job_id, revision_number, content, state, creator_user_id, submitter_user_id, submitted_at, reviewer_user_id, decided_at, version, created_at)
+            VALUES (job_id_value, 1, content_value, 'APPROVED', owner_id_value, owner_id_value, now() - interval '1 hour', staff_id_value, now(), 2, now())
+            RETURNING id INTO revision_id_value;
+            UPDATE job_postings SET status = 'PUBLISHED', published_revision_id = revision_id_value, approved_deadline = deadline_value, version = 2, updated_at = now() WHERE id = job_id_value;
+            INSERT INTO job_audit_events(company_id, job_id, revision_id, actor_user_id, event_type, created_at, facts)
+            VALUES (company_id_value, job_id_value, revision_id_value, owner_id_value, 'JOB_CREATED', now(), jsonb_build_object('ownerResponsible', true, 'developmentFixture', fixture_key));
+        END LOOP;
+    END LOOP;
+END;
+$$;
+
 -- Seeded notification inbox fixtures (synthetic histories, not evidence of real delivery).
 -- Each fixture uses a fixed event_id so reruns preserve manual reads and never duplicate delivery.
 DO $$

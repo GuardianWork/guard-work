@@ -25,19 +25,32 @@ class DevelopmentJobSeedTest {
   @Test void createsUsableJobsAndRerunsPreserveManualChangesAndRevokedAssignments() throws Exception {
     inSeedSchema((connection, database) -> {
       seed(connection);
-      assertThat(database.queryForObject("SELECT count(*) FROM job_postings", Long.class)).isEqualTo(112);
-      assertThat(database.queryForObject("SELECT count(*) FROM job_posting_revisions", Long.class)).isEqualTo(114);
+      assertThat(database.queryForObject("SELECT count(*) FROM job_postings", Long.class)).isEqualTo(712);
+      assertThat(database.queryForObject("SELECT count(*) FROM job_posting_revisions", Long.class)).isEqualTo(714);
       assertThat(database.queryForList("SELECT status FROM job_postings", String.class))
           .contains("PUBLISHED", "SUSPENDED", "PAUSED", "CLOSED", "EXPIRED", "DRAFT");
       assertThat(database.queryForObject("SELECT count(*) FROM job_posting_revisions WHERE state='PENDING_REVIEW'", Long.class)).isEqualTo(3);
       assertThat(database.queryForObject("SELECT count(*) FROM job_postings j JOIN job_posting_revisions r ON r.id=j.published_revision_id "
-          + "WHERE r.state='APPROVED' AND (r.content->>'deadline')::timestamptz=j.approved_deadline", Long.class)).isEqualTo(110);
+          + "WHERE r.state='APPROVED' AND (r.content->>'deadline')::timestamptz=j.approved_deadline", Long.class)).isEqualTo(710);
       assertThat(database.queryForObject("SELECT count(*) FROM job_assignments WHERE ended_at IS NULL", Long.class)).isEqualTo(9);
       assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE action='JOB_SUSPENDED'", Long.class)).isEqualTo(2);
       assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE event_type='JOB_EXPIRED' AND actor_user_id IS NULL", Long.class)).isEqualTo(1);
       assertThat(database.queryForObject("SELECT bool_and(approved_deadline>now()) FROM job_postings WHERE status='PUBLISHED'", Boolean.class)).isTrue();
       // Dev-seed fixtures own ten outbox intents (delivered inline); inbox copy mirrors them.
       assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox", Long.class)).isEqualTo(10);
+      // Bulk company fixtures: 100 verified companies with six visible postings each,
+      // one industry per company and at most two locations.
+      assertThat(database.queryForObject("SELECT count(*) FROM companies WHERE tax_code LIKE 'GW-DEMO-BULK-%'", Long.class)).isEqualTo(100);
+      assertThat(database.queryForObject(
+          "SELECT count(*) FROM job_audit_events WHERE facts ->> 'developmentFixture' LIKE 'BULK-COMPANY-%'", Long.class)).isEqualTo(600);
+      assertThat(database.queryForObject(
+          "SELECT count(*) FROM (SELECT j.company_id FROM job_postings j "
+          + "JOIN job_posting_revisions r ON r.id = j.published_revision_id "
+          + "JOIN job_audit_events e ON e.job_id = j.id "
+          + "WHERE e.facts ->> 'developmentFixture' LIKE 'BULK-COMPANY-%' "
+          + "GROUP BY j.company_id "
+          + "HAVING count(DISTINCT r.content ->> 'industry') <> 1 OR count(DISTINCT r.content ->> 'location') > 2) bad",
+          Long.class)).isZero();
 
       long ready = database.queryForObject("SELECT job_id FROM job_audit_events WHERE facts->>'developmentFixture'='GW93-HIDE-READY'", Long.class);
       database.update("UPDATE job_postings SET status='PAUSED',version=version+1 WHERE id=?", ready);
@@ -48,8 +61,8 @@ class DevelopmentJobSeedTest {
       long eventCount = database.queryForObject("SELECT count(*) FROM job_audit_events", Long.class);
       long version = database.queryForObject("SELECT version FROM job_postings WHERE id=?", Long.class, ready);
       seed(connection);
-      assertThat(database.queryForObject("SELECT count(*) FROM job_postings", Long.class)).isEqualTo(112);
-      assertThat(database.queryForObject("SELECT count(*) FROM job_posting_revisions", Long.class)).isEqualTo(114);
+      assertThat(database.queryForObject("SELECT count(*) FROM job_postings", Long.class)).isEqualTo(712);
+      assertThat(database.queryForObject("SELECT count(*) FROM job_posting_revisions", Long.class)).isEqualTo(714);
       assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events", Long.class)).isEqualTo(eventCount);
       assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE action='JOB_SUSPENDED'", Long.class)).isEqualTo(2);
       assertThat(database.queryForObject("SELECT status FROM job_postings WHERE id=?", String.class, ready)).isEqualTo("PAUSED");
@@ -71,7 +84,7 @@ class DevelopmentJobSeedTest {
       assertThatThrownBy(() -> seed(connection)).isInstanceOf(java.sql.SQLException.class)
           .hasMessageContaining("Mock job identifier collision");
       try (var statement = connection.createStatement()) { statement.execute("ROLLBACK"); }
-      assertThat(database.queryForObject("SELECT count(*) FROM job_postings", Long.class)).isEqualTo(112);
+      assertThat(database.queryForObject("SELECT count(*) FROM job_postings", Long.class)).isEqualTo(712);
       assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events", Long.class)).isEqualTo(count);
     });
   }
