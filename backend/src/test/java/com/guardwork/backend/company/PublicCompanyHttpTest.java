@@ -10,6 +10,7 @@ import com.guardwork.backend.auth.service.JwtService;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -293,6 +294,72 @@ class PublicCompanyHttpTest {
     http.perform(get("/api/companies/public/{id}/roles", 999_999_999L))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.message").value("40400 COMPANY_NOT_FOUND: Company not found"));
+  }
+
+  @Test
+  void rolesExposeApplicationCounts() throws Exception {
+    String token = "COMPANYAPPS" + System.nanoTime();
+    long owner = uniqueUser("company-apps", true);
+    long company = company(owner, "Apps Employer " + token, true, false);
+    Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+    long busyRole =
+        insertPosting(
+            company,
+            owner,
+            "Busy Role " + token,
+            "Software",
+            "Ha Noi",
+            15_000_000,
+            25_000_000,
+            now.plus(30, ChronoUnit.DAYS));
+    long quietRole =
+        insertPosting(
+            company,
+            owner,
+            "Quiet Role " + token,
+            "Software",
+            "Ha Noi",
+            15_000_000,
+            25_000_000,
+            now.plus(20, ChronoUnit.DAYS));
+    applyFor(company, busyRole);
+    applyFor(company, busyRole);
+    applyFor(company, quietRole);
+
+    // Roles are ordered by deadline ascending, then by role id.
+    http.perform(get("/api/companies/public/{id}/roles", company))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content.length()").value(2))
+        .andExpect(jsonPath("$.data.content[0].id").value(quietRole))
+        .andExpect(jsonPath("$.data.content[0].applicationCount").value(1))
+        .andExpect(jsonPath("$.data.content[1].id").value(busyRole))
+        .andExpect(jsonPath("$.data.content[1].applicationCount").value(2));
+  }
+
+  private void applyFor(long companyId, long jobId) {
+    long candidateUser = uniqueUser("applicant", true);
+    tx.execute(
+        status -> {
+          UUID candidateId =
+              jdbc.queryForObject(
+                  "INSERT INTO candidate_profiles(user_id,phone_number) VALUES (?,'0901234567') RETURNING id",
+                  UUID.class,
+                  candidateUser);
+          Long revisionId =
+              jdbc.queryForObject(
+                  "SELECT published_revision_id FROM job_postings WHERE id = ?",
+                  Long.class,
+                  jobId);
+          jdbc.update(
+              "INSERT INTO applications(id,candidate_id,job_id,company_id,submitted_revision_id,status,applied_at,updated_at) "
+                  + "VALUES (?,?,?,?,?, 'SUBMITTED', now(), now())",
+              UUID.randomUUID(),
+              candidateId,
+              jobId,
+              companyId,
+              revisionId);
+          return null;
+        });
   }
 
   @Test

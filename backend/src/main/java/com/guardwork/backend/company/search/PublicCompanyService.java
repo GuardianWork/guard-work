@@ -84,7 +84,10 @@ public class PublicCompanyService {
 
   public PageResponse<CompanyRole> roles(Long companyId, Pageable pageable) {
     List<JobPublicationService.PublicDetail> postings = visiblePostings(companyId);
-    List<CompanyRole> roles = roles(postings);
+    Map<Long, Long> counts =
+        search.publicApplicationCounts(
+            postings.stream().map(JobPublicationService.PublicDetail::id).toList());
+    List<CompanyRole> roles = roles(postings, counts);
     Pageable bounded = PaginationUtils.validateAndBound(pageable);
     int offset = Math.toIntExact(bounded.getOffset());
     int size = Math.toIntExact(bounded.getPageSize());
@@ -110,6 +113,11 @@ public class PublicCompanyService {
   }
 
   private List<CompanyRole> roles(List<JobPublicationService.PublicDetail> postings) {
+    return roles(postings, null);
+  }
+
+  private List<CompanyRole> roles(
+      List<JobPublicationService.PublicDetail> postings, Map<Long, Long> applicationCounts) {
     List<CompanyRole> roles = new ArrayList<>(postings.size());
     for (JobPublicationService.PublicDetail posting : postings) {
       Map<String, Object> content = posting.content();
@@ -125,7 +133,10 @@ public class PublicCompanyService {
               headcount(content.get("headcount")),
               deadline(posting),
               text(content, "description"),
-              posting.applicationsAvailable()));
+              posting.applicationsAvailable(),
+              applicationCounts == null
+                  ? null
+                  : applicationCounts.getOrDefault(posting.id(), 0L)));
     }
     roles.sort(
         Comparator.comparing(

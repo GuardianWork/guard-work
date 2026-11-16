@@ -5,6 +5,10 @@ package com.guardwork.backend.company.search.dto;
  *
  * <p>Enum values and user-facing copy remain unlocalized here; the candidate client owns Vietnamese
  * labels and formatting.
+ *
+ * @param applicationCount total applications received by this posting, or {@code null} when the
+ *     projection does not disclose it (currently the public roles endpoint always sends it,
+ *     including {@code 0} for postings without applicants)
  */
 public record CompanyRole(
     Long id,
@@ -17,4 +21,5 @@ public record CompanyRole(
     Integer headcount,
     String deadline,
     String description,
-    boolean applicationsAvailable) {}
+    boolean applicationsAvailable,
+    Long applicationCount) {}

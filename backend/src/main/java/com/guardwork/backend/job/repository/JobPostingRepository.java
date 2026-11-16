@@ -54,6 +54,15 @@ public interface JobPostingRepository
           + "unaccent(LOWER(COALESCE(r.content ->> 'location', ''))) LIKE unaccent(LOWER(CONCAT('%', :keyword, '%'))) ESCAPE '\\' OR "
           + "unaccent(LOWER(COALESCE(r.content ->> 'industry', ''))) LIKE unaccent(LOWER(CONCAT('%', :keyword, '%'))) ESCAPE '\\') ";
 
+  /**
+   * Application totals for the given postings, keyed by job id. Callers must scope the input ids to
+   * the projection they are authorized to expose (the public company roles endpoint passes only
+   * publicly visible ids). Postings with no applications are absent from the result.
+   */
+  @Query(value = "SELECT job_id AS jobId, count(*) AS total FROM applications "
+      + "WHERE job_id IN (:jobIds) GROUP BY job_id", nativeQuery = true)
+  List<ApplicationCount> countApplicationsForJobs(@Param("jobIds") List<Long> jobIds);
+
   @Query(value = "SELECT job_id AS jobId, count(*) AS total FROM applications "
       + "WHERE company_id = :companyId AND job_id IN (:jobIds) GROUP BY job_id", nativeQuery = true)
   List<ApplicationCount> countApplications(@Param("companyId") Long companyId,

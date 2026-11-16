@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -124,6 +125,19 @@ public class JobSearchService {
     List<Long> jobIds =
         jobs.searchPublicJobIdsForCompanies(List.copyOf(companyIds), clock.instant());
     return loadDetails(jobIds);
+  }
+
+  /**
+   * Application totals for the given public postings, keyed by job id. Callers pass only ids from a
+   * public projection, so applicants' counts never widen beyond what those postings expose. Postings
+   * with no applications are absent from the result.
+   */
+  public Map<Long, Long> publicApplicationCounts(Collection<Long> jobIds) {
+    if (jobIds == null || jobIds.isEmpty()) return Map.of();
+    Map<Long, Long> counts = new HashMap<>();
+    jobs.countApplicationsForJobs(List.copyOf(jobIds))
+        .forEach(count -> counts.put(count.getJobId(), count.getTotal()));
+    return counts;
   }
 
   private List<JobPublicationService.PublicDetail> loadDetails(List<Long> jobIds) {
