@@ -22,6 +22,12 @@ public class OnboardingAccessPolicy {
     public void requireAccess(Long actor, String path, String method) {
         if ("GET".equals(method) && path.matches("/api/jobs/[1-9][0-9]*")) return;
         if ("GET".equals(method) && "/api/jobs/search".equals(path)) return;
+        if ("GET".equals(method) && "/api/companies/public".equals(path)) return;
+        if ("GET".equals(method) && path.matches("/api/companies/public/*")) return;
+        // if ("GET".equals(method) && path.matches("/api/companies/public/[1-9][0-9]*")) return;
+        // if ("GET".equals(method) && path.matches("/api/companies/public/[1-9][0-9]/roles*")) return;
+
+
         if ("POST".equals(method) && Set.of("/api/auth/register", "/api/auth/login", "/api/auth/refresh",
                 "/api/auth/logout", "/api/auth/forgot-password", "/api/auth/reset-password").contains(path)) return;
         var user = currentActiveUser(actor);
