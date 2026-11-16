@@ -2,6 +2,9 @@ package com.guardwork.backend.company.search;
 
 import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.common.utils.PaginationUtils;
+import com.guardwork.backend.company.model.Company;
+import com.guardwork.backend.company.model.VerificationStatus;
+import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.company.search.dto.CompanyCount;
 import com.guardwork.backend.company.search.dto.CompanyDirectoryEntry;
 import com.guardwork.backend.company.search.dto.CompanyDossierResponse;
@@ -36,18 +39,21 @@ import java.util.function.Function;
 /**
  * Candidate-facing company discovery.
  *
- * <p>Company search deliberately delegates visibility, filtering and posting projection to the job
- * search module. This service only groups those public postings and derives screen-ready summaries;
- * it must not add company facts that the company has not published.
+ * <p>Posting visibility, filtering and projection stay in the job search module; this service adds
+ * company identity and screen-ready summaries. Verified, non-banned companies are discoverable
+ * without a published posting, but their summaries and roles only ever reflect visible postings, so
+ * no company fact is exposed beyond the public name.
  */
 @Service
 @Transactional(readOnly = true)
 public class PublicCompanyService {
 
   private final JobSearchService search;
+  private final CompanyRepository companies;
 
-  public PublicCompanyService(JobSearchService search) {
+  public PublicCompanyService(JobSearchService search, CompanyRepository companies) {
     this.search = search;
+    this.companies = companies;
   }
 
   public PageResponse<CompanyDirectoryEntry> search(String keyword, Pageable pageable) {
@@ -79,10 +85,13 @@ public class PublicCompanyService {
   }
 
   public CompanyDossierResponse dossier(Long companyId) {
-    return info(visiblePostings(companyId));
+    Company company = publiclyListableCompany(companyId);
+    return new CompanyDossierResponse(
+        company.getId(), company.getName(), summarize(roles(visiblePostings(companyId))));
   }
 
   public PageResponse<CompanyRole> roles(Long companyId, Pageable pageable) {
+    publiclyListableCompany(companyId);
     List<JobPublicationService.PublicDetail> postings = visiblePostings(companyId);
     Map<Long, Long> counts =
         search.publicApplicationCounts(
@@ -91,25 +100,25 @@ public class PublicCompanyService {
     Pageable bounded = PaginationUtils.validateAndBound(pageable);
     int offset = Math.toIntExact(bounded.getOffset());
     int size = Math.toIntExact(bounded.getPageSize());
-    List<CompanyRole> paged = roles.subList(offset, Math.min(roles.size(), offset + size));
+    List<CompanyRole> paged =
+        offset >= roles.size()
+            ? List.of()
+            : roles.subList(offset, Math.min(roles.size(), offset + size));
     Page<CompanyRole> page = new PageImpl<>(paged, bounded, roles.size());
     return PaginationUtils.toPageResponse(page, Function.identity());
   }
 
-  private CompanyDossierResponse info(List<JobPublicationService.PublicDetail> postings) {
-    List<CompanyRole> roles = roles(postings);
-    return new CompanyDossierResponse(
-        postings.getFirst().company().id(),
-        postings.getFirst().company().name(),
-        summarize(roles));
+  private Company publiclyListableCompany(Long companyId) {
+    if (companyId == null || companyId <= 0) throw notFound();
+    return companies
+        .findById(companyId)
+        .filter(company -> company.getVerificationStatus() == VerificationStatus.VERIFIED)
+        .filter(company -> !company.isBanned())
+        .orElseThrow(PublicCompanyService::notFound);
   }
 
   private List<JobPublicationService.PublicDetail> visiblePostings(Long companyId) {
-    if (companyId == null || companyId <= 0) throw notFound();
-    List<JobPublicationService.PublicDetail> postings =
-        search.publicDetailsForCompanies(List.of(companyId));
-    if (postings.isEmpty()) throw notFound();
-    return postings;
+    return search.publicDetailsForCompanies(List.of(companyId));
   }
 
   private List<CompanyRole> roles(List<JobPublicationService.PublicDetail> postings) {

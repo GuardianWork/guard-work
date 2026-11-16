@@ -226,6 +226,89 @@ class PublicCompanyHttpTest {
   }
 
   @Test
+  void verifiedCompaniesWithoutVisiblePostingsRemainDiscoverable() throws Exception {
+    String token = "IDLECOMPANY" + System.nanoTime();
+    Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+
+    long idleOwner = uniqueUser("idle-company", true);
+    long idle = company(idleOwner, "Zeta Idle Employer " + token, true, false);
+    insertPosting(
+        idle,
+        idleOwner,
+        "Expired Role " + token,
+        "Software",
+        "Ha Noi",
+        10_000_000,
+        12_000_000,
+        now.minus(1, ChronoUnit.DAYS));
+
+    long activeOwner = uniqueUser("active-company", true);
+    long active = company(activeOwner, "Alpha Active Employer " + token, true, false);
+    insertPosting(
+        active,
+        activeOwner,
+        "Live Role " + token,
+        "Software",
+        "Ha Noi",
+        10_000_000,
+        12_000_000,
+        now.plus(30, ChronoUnit.DAYS));
+
+    long pending = company(uniqueUser("idle-pending", true), "Pending Idle Employer " + token, false, false);
+    long banned = company(uniqueUser("idle-banned", true), "Banned Idle Employer " + token, true, true);
+
+    // Idle verified companies are listed with a zero role count and sort after companies with roles,
+    // even when their name sorts first. Pending and banned companies stay hidden.
+    http.perform(get("/api/companies/public").param("keyword", token))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalElements").value(2))
+        .andExpect(jsonPath("$.data.content[0].id").value(active))
+        .andExpect(jsonPath("$.data.content[0].summary.roleCount").value(1))
+        .andExpect(jsonPath("$.data.content[1].id").value(idle))
+        .andExpect(jsonPath("$.data.content[1].name").value("Zeta Idle Employer " + token))
+        .andExpect(jsonPath("$.data.content[1].summary.roleCount").value(0))
+        .andExpect(jsonPath("$.data.content[1].summary.locations.length()").value(0))
+        .andExpect(jsonPath("$.data.content[1].summary.industries.length()").value(0))
+        .andExpect(jsonPath("$.data.content[1].summary.salaryBands.length()").value(0))
+        .andExpect(jsonPath("$.data.content[1].summary.disclosedSalaryCount").value(0))
+        .andExpect(jsonPath("$.data.content[1].summary.headcountTotal").value(0))
+        .andExpect(jsonPath("$.data.content[1].summary.deadlines.length()").value(0));
+
+    http.perform(get("/api/companies/public/{id}", idle))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Cache-Control", "no-store"))
+        .andExpect(jsonPath("$.data.id").value(idle))
+        .andExpect(jsonPath("$.data.name").value("Zeta Idle Employer " + token))
+        .andExpect(jsonPath("$.data.summary.roleCount").value(0))
+        .andExpect(jsonPath("$.data.summary.industries.length()").value(0));
+
+    http.perform(get("/api/companies/public/{id}/roles", idle))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content.length()").value(0))
+        .andExpect(jsonPath("$.data.pageNumber").value(0))
+        .andExpect(jsonPath("$.data.pageSize").value(20))
+        .andExpect(jsonPath("$.data.totalElements").value(0))
+        .andExpect(jsonPath("$.data.totalPages").value(0))
+        .andExpect(jsonPath("$.data.first").value(true))
+        .andExpect(jsonPath("$.data.last").value(true));
+
+    // Pages beyond the last role must return an empty page, not fail.
+    http.perform(get("/api/companies/public/{id}/roles", idle).param("page", "1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content.length()").value(0));
+    http.perform(
+            get("/api/companies/public/{id}/roles", active).param("page", "5").param("size", "1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.content.length()").value(0));
+
+    http.perform(get("/api/companies/public/{id}", pending))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.message").value("40400 COMPANY_NOT_FOUND: Company not found"));
+    http.perform(get("/api/companies/public/{id}", banned)).andExpect(status().isNotFound());
+    http.perform(get("/api/companies/public/{id}/roles", pending)).andExpect(status().isNotFound());
+  }
+
+  @Test
   void dossierReturnsOnlyVisibleRolesAndUnknownCompaniesAreNotFound() throws Exception {
     String token = "COMPANYDOSSIER" + System.nanoTime();
     long owner = uniqueUser("company-dossier", true);

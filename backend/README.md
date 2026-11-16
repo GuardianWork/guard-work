@@ -298,19 +298,22 @@ for its access rules, query parameters, privacy boundary, and response contract.
 
 ### Candidate Public Company Discovery and Dossier (GW-123)
 
-`GET /api/companies/public` returns a paginated directory of companies that have at least
-one publicly visible job posting. The approved scope for this API change is keyword-only
-search; `page` and `size` follow the project pagination bounds (default `20`, maximum `20`).
+`GET /api/companies/public` returns a paginated directory of publicly listable companies
+(`VERIFIED` and not banned), including companies with no publicly visible job posting. Entries
+are ordered by visible role count (descending), then company name, then id, so idle companies
+sort last. The approved scope for this API change is keyword-only search; `page` and `size` follow
+the project pagination bounds (default `20`, maximum `20`).
 
 `GET /api/companies/public/{companyId}` returns the company dossier for the general/info
-tab (id, name, and summary derived from all visible postings). `GET /api/companies/public/{companyId}/roles`
-returns the opening roles tab as a paginated `PageResponse` (`page`/`size`, default `20`,
-maximum `20`) of visible roles.
+tab (id, name, and summary derived from all visible postings; an empty summary when the company
+has none). `GET /api/companies/public/{companyId}/roles` returns the opening roles tab as a
+paginated `PageResponse` (`page`/`size`, default `20`, maximum `20`) of visible roles, or an empty
+page when there are none.
 
 All three endpoints reuse the job-search module for public visibility, keyword escaping,
 diacritic-insensitive matching and posting projection. They send
-`Cache-Control: no-store`. Unknown companies and companies without visible postings return
-`40400 COMPANY_NOT_FOUND`.
+`Cache-Control: no-store`. Unknown companies and companies that are not publicly listable
+(unverified, rejected or banned) return `40400 COMPANY_NOT_FOUND`.
 
 Public reads are anonymous and permitted before the protected Company management routes and
 before the email-proof gate for authenticated users.
