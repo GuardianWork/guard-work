@@ -6,11 +6,11 @@
 | **Project** | GuardWork |
 | **Module** | Candidate Company Review and Discovery |
 | **File** | `company-review-api-spec.md` |
-| **Version** | 1.0.0 |
+| **Version** | 1.1.0 |
 | **Date** | 2026-11-15 |
-| **Last Updated** | 2026-11-15 |
+| **Last Updated** | 2026-11-16 |
 | **Owner** | Backend — Candidate Company Review |
-| **Approver** | Miku (task-session approval, 2026-11-15) |
+| **Approver** | Miku (task-session approval, 2026-11-15; 1.1.0 amendment approved in task session, 2026-11-16) |
 | **Status** | Approved |
 
 ---
@@ -25,6 +25,7 @@
 6. [API Specification](#6-api-specification)
 7. [Infrastructure Architecture](#7-infrastructure-architecture)
 8. [Validation](#8-validation)
+9. [Amendment History](#9-amendment-history)
 
 ---
 
@@ -40,7 +41,8 @@ discovery and company dossier screens introduced by GW-123.
 | Sub-feature | Responsibility |
 |---|---|
 | **Public company search** | Anonymous keyword search over companies with visible public postings, with a page of screen-ready company summaries. |
-| **Public company dossier** | Read one company and its visible open roles with screen-ready summaries and paginated roles. |
+| **Public company dossier** | Read one public company with a screen-ready summary derived from its visible postings. |
+| **Public company roles** | Paginated visible roles for one public company, using canonical page and size bounds. |
 | **Shared visibility** | Reuse the public job-search visibility boundary for draft, suspended, expired, unverified and banned postings. |
 
 ## 2. Overall Description
@@ -56,8 +58,8 @@ creating a second authorization or visibility implementation.
 | GW-CAN-COMPANY-01 | The system shall allow anonymous and authenticated users to search public companies by keyword. |
 | GW-CAN-COMPANY-02 | The search shall return companies with at least one publicly visible posting. |
 | GW-CAN-COMPANY-03 | Search results shall include per-company summary facts derived from visible postings. |
-| GW-CAN-COMPANY-04 | The dossier shall return one public company and its visible roles. |
-| GW-CAN-COMPANY-05 | The dossier shall paginate visible roles using canonical page and size bounds. |
+| GW-CAN-COMPANY-04 | The dossier shall return one public company with a summary derived from its visible postings. |
+| GW-CAN-COMPANY-05 | The roles endpoint shall paginate visible roles using canonical page and size bounds. |
 | GW-CAN-COMPANY-06 | A company with no publicly visible posting shall return a company-not-found response. |
 | GW-CAN-COMPANY-07 | Public reads shall send `Cache-Control: no-store`. |
 | GW-CAN-COMPANY-08 | Company facts not published through visible postings, such as headquarters, working hours or expertise, shall not be invented by the backend. |
@@ -78,7 +80,7 @@ creating a second authorization or visibility implementation.
 | Error Code | HTTP | Constant | Trigger |
 |---|---:|---|---|
 | `40400` | `404` | `COMPANY_NOT_FOUND` | Unknown company or no visible public posting. |
-| `40000` | `400` | `BAD_REQUEST` | Invalid pagination bounds. |
+| `40000` | `400` | `BAD_REQUEST` | Reserved. Pagination bounds are normalized rather than rejected (page below 0 is clamped to 0; size above 20 is clamped to 20); currently not emitted. |
 
 ## 6. API Specification
 
@@ -98,7 +100,7 @@ Response: `PageResponse<CompanyDirectoryEntry>`.
 
 Path variable: positive company id.
 
-Query parameters: canonical pagination `page` and `size`, same bounds as search.
+Query parameters: none.
 
 Response: `CompanyDossierResponse`:
 
@@ -106,17 +108,42 @@ Response: `CompanyDossierResponse`:
 |---|---|---|
 | `id` | number | Public company id. |
 | `name` | string | Company name from visible postings. |
-| `summary` | object | Company-level summary. |
-| `roles` | object | `PageResponse<CompanyRole>` for visible roles. |
+| `summary` | object | Company-level summary, derived from all visible postings. |
+
+Unknown companies and companies with no publicly visible posting return `40400 COMPANY_NOT_FOUND`.
+
+### 6.3 `GET /api/companies/public/{companyId}/roles`
+
+Path variable: positive company id.
+
+Query parameters: canonical pagination `page` and `size`, same bounds as search.
+
+Response: `PageResponse<CompanyRole>`: visible roles for the company, ordered by application
+deadline (absent deadlines last), then by role id. Unknown companies and companies with no
+publicly visible posting return `40400 COMPANY_NOT_FOUND`.
 
 ## 7. Infrastructure Architecture
 
 - No schema migration, dependency or notification integration is added.
-- Public endpoints are permitted for anonymous callers and for authenticated users
-  whose account is eligible before the protected company management routes.
+- Public endpoints are permitted for anonymous and authenticated callers, before the
+  protected company management routes and before the recruiting-email gate.
 - Public company reads share the job-search module rather than duplicating visibility SQL.
 
 ## 8. Validation
 
 Backend checks were run against PostgreSQL-compatible test infrastructure and the
 existing job-search regression suite.
+
+## 9. Amendment History
+
+### 1.1.0 — 2026-11-16
+
+- Aligned §6 with the implemented public read surface: the dossier (`6.2`) returns
+  id, name and the company-level summary only; visible roles moved to a new
+  paginated endpoint (`6.3`), matching GW-CAN-COMPANY-05.
+- Public company reads are permitted for anonymous and authenticated callers,
+  before the recruiting-email gate (§7), per task-session approval (Miku, 2026-11-16).
+- Annotated the `40000 BAD_REQUEST` catalogue entry as reserved: pagination bounds
+  are normalized, not rejected (§5).
+- Requirements GW-CAN-COMPANY-04 and GW-CAN-COMPANY-05 reworded accordingly; no
+  other requirements changed.
