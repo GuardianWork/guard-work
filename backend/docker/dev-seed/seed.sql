@@ -62,6 +62,19 @@ BEGIN
 END;
 $$;
 
+-- Recruiter-authored public profile (GW-123): fill only when unset so manual edits survive reruns.
+UPDATE companies
+SET content = jsonb_build_object(
+    'schemaVersion', 1,
+    'industry', 'Công nghệ thông tin',
+    'introduction', E'Công ty TNHH GuardWork Demo xây dựng nền tảng kết nối người lao động và doanh nghiệp, với các tin tuyển dụng được kiểm duyệt và hồ sơ phản hồi minh bạch.\n\nChúng tôi ưu tiên môi trường làm việc tôn trọng pháp luật lao động Việt Nam và quyền riêng tư của ứng viên.\n\nĐây là dữ liệu minh họa cho môi trường phát triển, không phải hồ sơ doanh nghiệp thực tế.',
+    'workAddress', 'Tòa nhà GuardWork, tầng 9, Quận 3, Thành phố Hồ Chí Minh, Việt Nam',
+    'workingHours', 'Thứ 2 - Thứ 6, 08:30 - 17:30',
+    'companyScale', jsonb_build_object('employeeRange', '51-200'),
+    'expertise', jsonb_build_array('Nền tảng tuyển dụng', 'Pháp luật lao động', 'Xác minh doanh nghiệp')
+)
+WHERE tax_code = 'GW-DEMO-LOCAL-001' AND content = '{}'::jsonb;
+
 -- Owner and membership are inserted in one transaction for deferred consistency checks.
 INSERT INTO company_memberships (company_id, user_id, role, status, joined_at)
 SELECT c.id, u.id, d.company_role, 'ACTIVE', now()
@@ -490,6 +503,9 @@ END;
 $$;
 
 -- Bulk verified companies with opening published jobs for company directory depth.
+-- Each company also publishes a recruiter-authored public profile (companies.content, GW-123,
+-- schemaVersion 1) with industry/introduction/workAddress/workingHours/companyScale/expertise,
+-- filled only when unset so manual edits survive reruns.
 -- One industry per company (derived from its name theme) and at most two locations
 -- (the home city, plus one secondary city for every fourth company). Role, salary band,
 -- employment-type and work-arrangement pools all follow that industry.
@@ -575,6 +591,7 @@ DECLARE
     work_arrangements TEXT[];
     level TEXT;
     levels TEXT[] := ARRAY['Junior', 'Middle', 'Senior', 'Lead'];
+    profile_value JSONB;
     role_pool TEXT[];
     role_value TEXT;
     salary_band INTEGER[];
@@ -719,6 +736,47 @@ BEGIN
             WHEN 'Dữ liệu và phân tích' THEN ARRAY['REMOTE', 'HYBRID', 'ONSITE', 'REMOTE', 'HYBRID']
             ELSE ARRAY['ONSITE', 'ONSITE', 'ONSITE', 'HYBRID', 'ONSITE']
         END;
+
+        -- Recruiter-authored public profile (GW-123, schemaVersion 1): fill only when unset,
+        -- so one-time manual edits survive reruns. Industry and location anchors reuse the
+        -- same values that drive the postings, so hero meta and dossier stay consistent.
+        profile_value := jsonb_build_object(
+            'schemaVersion', 1,
+            'industry', assigned_industry,
+            'introduction',
+                company_name_value || E' hoạt động trong lĩnh vực ' || assigned_industry
+                || E'. Chúng tôi tập trung vào chất lượng sản phẩm, đội ngũ chuyên nghiệp và môi trường làm việc minh bạch.\n\n'
+                || E'Tuyển dụng tại ' || home_location
+                || E'. Đây là dữ liệu minh họa cho môi trường phát triển, không phải hồ sơ doanh nghiệp thực tế.',
+            'workAddress',
+                'Tầng ' || (3 + (company_index % 18))::text || ', Tòa nhà '
+                || (ARRAY['An Phát', 'Vạn Xuân', 'Mekong', 'Bình Minh', 'Đại Phát', 'Hòa Bình'])[(company_index - 1) % 6 + 1]
+                || ', ' || home_location,
+            'workingHours', CASE assigned_industry
+                WHEN 'Bán lẻ' THEN 'Thứ 2 - Chủ nhật, 08:00 - 17:00'
+                WHEN 'Dịch vụ ăn uống' THEN 'Thứ 2 - Chủ nhật, 08:00 - 17:00'
+                WHEN 'Thể thao' THEN 'Thứ 2 - Chủ nhật, 08:00 - 17:00'
+                ELSE 'Thứ 2 - Thứ 6, 08:30 - 17:30' END,
+            'companyScale', jsonb_build_object('employeeRange',
+                (ARRAY['1-10', '11-50', '51-200', '201-500', '501-1000', '1000+'])[(company_index - 1) % 6 + 1]),
+            'expertise', CASE assigned_industry
+                WHEN 'Công nghệ thông tin' THEN jsonb_build_array('Phát triển phần mềm', 'Điện toán đám mây', 'DevOps', 'Kiểm thử phần mềm')
+                WHEN 'Dữ liệu và phân tích' THEN jsonb_build_array('Phân tích dữ liệu', 'Kỹ thuật dữ liệu', 'Business intelligence')
+                WHEN 'Bán lẻ' THEN jsonb_build_array('Vận hành bán lẻ', 'Mua hàng', 'Chăm sóc khách hàng')
+                WHEN 'Truyền thông' THEN jsonb_build_array('Sản xuất nội dung', 'Tiếp thị số', 'Truyền thông thương hiệu')
+                WHEN 'Giáo dục' THEN jsonb_build_array('Giảng dạy', 'Phát triển chương trình', 'Đào tạo ngoại ngữ')
+                WHEN 'Tài chính - Kế toán' THEN jsonb_build_array('Kế toán tổng hợp', 'Tài chính doanh nghiệp', 'Kiểm toán')
+                WHEN 'Dịch vụ ăn uống' THEN jsonb_build_array('Vận hành nhà hàng', 'Chế biến món ăn', 'Phục vụ khách hàng')
+                WHEN 'Y tế' THEN jsonb_build_array('Khám chữa bệnh đa khoa', 'Điều dưỡng', 'Dược lâm sàng')
+                WHEN 'Logistics' THEN jsonb_build_array('Vận hành kho vận', 'Điều phối vận tải', 'Quản lý chuỗi cung ứng')
+                WHEN 'Sản xuất' THEN jsonb_build_array('Sản xuất công nghiệp', 'Quản lý chất lượng', 'Vận hành máy móc')
+                WHEN 'Thể thao' THEN jsonb_build_array('Đào tạo thể thao', 'Vận hành trung tâm', 'Tổ chức giải đấu')
+                WHEN 'Năng lượng' THEN jsonb_build_array('Kỹ thuật điện', 'Dự án năng lượng', 'Vận hành nhà máy')
+            END
+        );
+        UPDATE companies
+        SET content = profile_value
+        WHERE id = company_id_value AND content = '{}'::jsonb;
 
         -- Top up missing postings per fixture marker; existing jobs are preserved.
         FOR job_index IN 1..job_total LOOP
