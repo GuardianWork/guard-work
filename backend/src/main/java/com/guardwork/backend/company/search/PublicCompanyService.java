@@ -86,8 +86,9 @@ public class PublicCompanyService {
 
   public CompanyDossierResponse dossier(Long companyId) {
     Company company = publiclyListableCompany(companyId);
-    return new CompanyDossierResponse(
-        company.getId(), company.getName(), summarize(roles(visiblePostings(companyId))));
+    return CompanyDossierResponse.of(
+        company.getId(), company.getName(), summarize(roles(visiblePostings(companyId))),
+        company.getContent());
   }
 
   public PageResponse<CompanyRole> roles(Long companyId, Pageable pageable) {

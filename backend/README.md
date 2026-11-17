@@ -142,7 +142,7 @@ do not fabricate phone proof.
 These are direct local fixtures, so no OTP or email delivery is needed. They preserve
 the platform/Company role separation in GW-SR-AUTH-01 and GW-SR-REC-02; available
 operations still depend on implemented APIs. The certificate URL is a placeholder;
-no legal dossier, real document, CV file, or verification delivery is created. Synthetic Job Postings and their histories are included for GW-93 testing. A bulk fixture set adds 100 verified companies (`GW-DEMO-BULK-001`…`GW-DEMO-BULK-100`, owned by `demo_bulk_owner_001`…`demo_bulk_owner_100`, all using `GuardWork123!`) with six published postings each for the GW-123 public company directory; each company anchors one industry (derived from its name theme, with matching roles, salary band, employment types and work arrangements) and at most two locations (its home city, plus a secondary city for every fourth company), which keeps the directory and per-company role pagination demo data realistic and deterministic.
+no legal dossier, real document, CV file, or verification delivery is created. Synthetic Job Postings and their histories are included for GW-93 testing. A bulk fixture set adds 100 verified companies (`GW-DEMO-BULK-001`…`GW-DEMO-BULK-100`, owned by `demo_bulk_owner_001`…`demo_bulk_owner_100`, all using `GuardWork123!`) with six published postings each for the GW-123 public company directory; each company anchors one industry (derived from its name theme, with matching roles, salary band, employment types and work arrangements) and at most two locations (its home city, plus a secondary city for every fourth company), which keeps the directory and per-company role pagination demo data realistic and deterministic. Every seeded company also publishes a recruiter-authored public profile in `companies.content` (GW-123, schemaVersion 1: industry, introduction, work address, working hours, company scale and expertise), filled only while unset so manual edits made through `PUT /api/companies/me/profile` survive reruns.
 
 Each `docker compose up -d` reruns an exited seed service and inserts missing fixtures.
 It preserves existing passwords, statuses, Company state, profiles, and membership history;
@@ -305,10 +305,18 @@ sort last. The approved scope for this API change is keyword-only search; `page`
 the project pagination bounds (default `20`, maximum `20`).
 
 `GET /api/companies/public/{companyId}` returns the company dossier for the general/info
-tab (id, name, and summary derived from all visible postings; an empty summary when the company
-has none). `GET /api/companies/public/{companyId}/roles` returns the opening roles tab as a
+tab (id, name, summary derived from all visible postings — an empty summary when the company
+has none — and `profile`, the recruiter-authored public payload, omitted when the company has not
+published one). `GET /api/companies/public/{companyId}/roles` returns the opening roles tab as a
 paginated `PageResponse` (`page`/`size`, default `20`, maximum `20`) of visible roles, or an empty
 page when there are none.
+
+Recruiters publish or clear their company's public profile with `PUT /api/companies/me/profile`
+(OWNER/ADMIN memberships with a recruiting-eligible account only; `40303 INSUFFICIENT_COMPANY_ROLE`
+otherwise). The body is the payload from the `profile` object (no `schemaVersion` — the server
+stamps it); omitted fields are cleared and `{}` clears the profile. The payload is stored in
+`companies.content` (JSONB, schemaVersion 1) and is self-declared by the company — it is not
+GuardianWork-verified. See the spec for field limits and the `workingHours` format.
 
 All three endpoints reuse the job-search module for public visibility, keyword escaping,
 diacritic-insensitive matching and posting projection. They send

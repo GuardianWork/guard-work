@@ -1,5 +1,6 @@
 package com.guardwork.backend.company.service;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import jakarta.validation.Validator;
@@ -14,7 +15,9 @@ import org.springframework.web.server.ResponseStatusException;
 import com.guardwork.backend.company.dto.CompanyRegistrationRequest;
 import com.guardwork.backend.company.dto.CompanyResubmissionRequest;
 import com.guardwork.backend.company.dto.CurrentCompanyResponse;
+import com.guardwork.backend.company.dto.UpdateCompanyProfileRequest;
 import com.guardwork.backend.company.model.Company;
+import com.guardwork.backend.company.model.CompanyContent;
 import com.guardwork.backend.company.model.VerificationStatus;
 import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.membership.model.CompanyMembership;
@@ -28,6 +31,9 @@ import com.guardwork.backend.membership.service.MembershipAuditService;
 public class CompanyService {
 
     private static final Logger log = LoggerFactory.getLogger(CompanyService.class);
+
+    private static final java.util.regex.Pattern WORKING_HOURS_REGEX =
+            java.util.regex.Pattern.compile(CompanyContent.WORKING_HOURS_PATTERN);
 
     private final CompanyRepository companyRepository;
 
@@ -175,6 +181,111 @@ public class CompanyService {
         Company saved = companyRepository.saveAndFlush(company);
         log.debug("event=company_resubmission outcome=saved_pending_verification");
         return saved;
+    }
+
+    /**
+     * Replace the company's public profile payload (schemaVersion 1). Only OWNER and ADMIN
+     * memberships may write it; RECRUITER is read-only for company-level content. Omitted
+     * fields are cleared; an empty request clears the profile. The payload is self-declared
+     * by the company and deliberately distinct from GuardianWork-verified facts and from the
+     * posting-derived summary. See docs/software-requirements/can/company-review-api-spec.md.
+     */
+    @Transactional
+    public CompanyContent updateProfile(Long actorId, UpdateCompanyProfileRequest request) {
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "40000 BAD_REQUEST: Request body is required");
+        }
+        var scope = access.findCurrentCompanyAccess(actorId);
+        if (scope == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40302 NOT_COMPANY_MEMBER: Active Company membership required");
+        }
+        if (scope.membership().getRole() != CompanyRole.OWNER
+                && scope.membership().getRole() != CompanyRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "40303 INSUFFICIENT_COMPANY_ROLE: Owner or Admin required");
+        }
+
+        CompanyContent normalized = normalizeProfile(request);
+        var violations = validator.validate(normalized);
+        if (!violations.isEmpty()) {
+            var violation = violations.iterator().next();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "40001 INVALID_INPUT: " + violation.getPropertyPath() + " " + violation.getMessage());
+        }
+
+        Company company = scope.company();
+        company.setContent(normalized.payloadEmpty() ? CompanyContent.empty() : normalized.stamped());
+        companyRepository.saveAndFlush(company);
+        audit.record(actorId, actorId, company.getId(), "COMPANY_PROFILE_UPDATED",
+                scope.membership().getId(), null, null, null);
+        log.debug("event=company_profile_updated outcome=saved");
+        return company.getContent();
+    }
+
+    private CompanyContent normalizeProfile(UpdateCompanyProfileRequest request) {
+        String workingHours = blankToNull(request.workingHours());
+        // Day-order is only checked on values that already satisfy the pattern; Bean Validation
+        // reports the format violation otherwise, so this stays a plain index-safe check.
+        if (workingHours != null && WORKING_HOURS_REGEX.matcher(workingHours).matches()) {
+            validateWorkingHoursDayOrder(workingHours);
+        }
+        return new CompanyContent(
+                CompanyContent.SCHEMA_VERSION,
+                blankToNull(request.industry()),
+                blankToNull(request.introduction()),
+                blankToNull(request.workAddress()),
+                workingHours,
+                request.companyScale(),
+                normalizeExpertise(request.expertise()));
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
+     * Day tokens are Vietnamese weekday labels ("Thứ 2" .. "Thứ 7", "Chủ nhật"); the pattern was
+     * already enforced on input, so this only checks that the range starts on or before its end.
+     */
+    private void validateWorkingHoursDayOrder(String workingHours) {
+        String range = workingHours.split(",", 2)[0];
+        String[] tokens = range.split(" - ");
+        int start = weekdayOrder(tokens[0]);
+        int end = weekdayOrder(tokens[1]);
+        if (start > end) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "40001 INVALID_INPUT: workingHours start day must not be after end day");
+        }
+    }
+
+    private static int weekdayOrder(String token) {
+        token = token.trim();
+        if ("Chủ nhật".equals(token)) {
+            return 8;
+        }
+        return Integer.parseInt(token.substring("Thứ ".length()));
+    }
+
+    private static List<String> normalizeExpertise(List<String> expertise) {
+        if (expertise == null) {
+            return null;
+        }
+        var seen = new java.util.LinkedHashSet<String>();
+        var normalized = new java.util.ArrayList<String>(expertise.size());
+        for (String item : expertise) {
+            String trimmed = item == null ? "" : item.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            String key = trimmed.toLowerCase(Locale.ROOT);
+            if (seen.add(key)) {
+                normalized.add(trimmed);
+            }
+        }
+        return normalized.isEmpty() ? null : List.copyOf(normalized);
     }
 
     @Transactional
