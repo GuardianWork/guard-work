@@ -304,6 +304,9 @@ content bounds, eligibility, single migration, and notification compatibility.
 
 See [Recruiter Application listing](../docs/backend/recruiter-application-listing.md)
 for its access rules, query parameters, privacy boundary, and response contract.
+Submitted-CV access and retention are documented in
+[ADR 0012](../docs/architecture/decisions/0012-cv-access-grants-and-retention.md) and
+[GW-SR-CV-02](../docs/software-requirements/can/candidate-cv-access-retention-spec.md).
 
 ### Candidate Public Company Discovery and Dossier (GW-123)
 
@@ -351,6 +354,31 @@ for the approved contract, response shapes and error catalogue.
   default `900000`, or 15 minutes). Spring Boot imports an optional `.env` file from the backend
   working directory. Its values override the optional `../ai/.env.local` fallback;
   exported environment variables (including Render settings) override both files.
+
+### Candidate CV access grants
+
+A CV shared with a submitted application is authorized by a `candidate_cv_access_grants` row for
+the receiving Company, never by the snapshot storage key. The grant is open-ended while the
+Candidate keeps the library CV, bounds itself to `deleted_at + CANDIDATE_CV_ACCESS_GRANT_TTL`
+(default `30d`) once the Candidate removes it from the library **while the Application is in an
+active review stage**, and is revoked immediately on `REJECTED`, `WITHDRAWN`, `INACTIVE`, or when
+the Candidate deletes the CV for a `HIRED` Application. An Application with no status change for
+`APPLICATION_REVIEW_INACTIVITY_TTL` (default `30d`) becomes reversible `INACTIVE`; reactivation goes
+through `UNDER_REVIEW` and starts a new grant epoch only while the library CV exists.
+`CANDIDATE_CV_RETENTION_POLL_MS` (default `60000`) controls the library purge worker's batch delay
+and `CANDIDATE_CV_RETENTION_WORKER_ENABLED` disables it; purge is append-only and idempotent, and
+access is denied at read time regardless of worker timing. Inactivity uses
+`APPLICATION_REVIEW_INACTIVITY_POLL_MS`, `APPLICATION_REVIEW_INACTIVITY_WORKER_ENABLED`, and
+`APPLICATION_REVIEW_INACTIVITY_BATCH_SIZE` (default `100`). Rejection deletes only the
+application-specific legacy copy through `APPLICATION_CV_PURGE_POLL_MS`/`_WORKER_ENABLED`/`_BATCH_SIZE`
+and records `application_snapshots.cv_purged_at`; snapshot metadata is retained and shared library
+objects are never deleted by that path. Tests disable the workers and call
+`CandidateCvRetentionService.purgeDue`, `ApplicationInactivityService.expireDue`, and
+`ApplicationCvPurgeService.purgeDue` directly.
+`BACKEND_TEST_DATABASE_URL` points the integration suite at an isolated test database, which is
+required when a shared test database has already applied migrations from another branch. The
+[access-control matrix](../docs/backend/candidate-cv-access-control-matrix.md) (Vietnamese) lists
+every principal, resource state, and endpoint outcome.
 
 ## Tooling
 

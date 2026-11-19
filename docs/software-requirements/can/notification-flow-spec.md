@@ -32,7 +32,7 @@ Supported backend event types are:
 - `RECRUITER_ACCEPTED`, `MEMBERSHIP_REMOVED`;
 - `JOB_ASSIGNED`, `JOB_UNASSIGNED`, `JOB_NEEDS_REASSIGNMENT`, `JOB_REVISION_APPROVED`, `JOB_REVISION_REJECTED`;
 - `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`, `APPLICATION_WITHDRAWN`,
-  `APPLICATION_INTERVIEWING`, `APPLICATION_HIRED`.
+  `APPLICATION_INTERVIEWING`, `APPLICATION_HIRED`, `APPLICATION_INACTIVE`.
 
 The implementation intentionally does not add push channels, email delivery, WebSockets, read
 bundling, or per-recipient audience expansion beyond the recipients explicitly named by business
@@ -185,9 +185,9 @@ fallback copy when null.
   payload field requires no migration; the dispatcher maps payload keys to the inbox context
   columns and renders copy from the payload, never from a live business join.
 - **FR-NOTIF-04b:** The caller supplies the `audience` (`CANDIDATE` or `RECRUITER`) the
-  recipient is notified as. Membership/job events and `APPLICATION_WITHDRAWN` use
-  `RECRUITER`; `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`,
-  `APPLICATION_INTERVIEWING`, and `APPLICATION_HIRED` use `CANDIDATE`.
+  recipient is notified as. Membership/job events, `APPLICATION_WITHDRAWN`, and
+  `APPLICATION_INACTIVE` use `RECRUITER`; `APPLICATION_STATUS_CHANGED`,
+  `APPLICATION_REJECTED`, `APPLICATION_INTERVIEWING`, and `APPLICATION_HIRED` use `CANDIDATE`.
   A null audience throws `IllegalArgumentException`. The dispatcher copies it to the inbox.
 
 ### 4.2 Delivery
@@ -266,9 +266,9 @@ fallback copy when null.
 - **BR-NOTIF-09:** A rollback of the business transaction also rolls back the notification intent.
 - **BR-NOTIF-10:** Failure to render or write does not roll back a committed business transaction.
 - **BR-NOTIF-11:** `audience` is set by the intent caller at record time and never changes;
-  it is not derived from the event type at read time (`APPLICATION_WITHDRAWN` is
-  recruiter-facing while the other `APPLICATION_*` events are candidate-facing, including
-  `APPLICATION_INTERVIEWING` and `APPLICATION_HIRED`). Backfilled
+  it is not derived from the event type at read time (`APPLICATION_WITHDRAWN` and
+  `APPLICATION_INACTIVE` are recruiter-facing while the other `APPLICATION_*` events are
+  candidate-facing, including `APPLICATION_INTERVIEWING` and `APPLICATION_HIRED`). Backfilled
   V105 rows use the same rule. `CONTEXT` triggers freeze `audience` and the outbox `payload`
   like the rest of the context columns.
 

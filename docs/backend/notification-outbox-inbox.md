@@ -213,7 +213,8 @@ No schema migration accompanies these read endpoints.
 `audience` itself is added by `V2026.11.10.107__notification_audience.sql` (frozen intent
 context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`,
 `APPLICATION_INTERVIEWING`, and `APPLICATION_HIRED` → `CANDIDATE`, everything else including
-`APPLICATION_WITHDRAWN` → `RECRUITER`). Only withdrawal is recruiter-facing.
+`APPLICATION_WITHDRAWN` and `APPLICATION_INACTIVE` → `RECRUITER`). Withdrawal and inactivity are
+recruiter-facing.
 
 ### Polling the inbox
 
