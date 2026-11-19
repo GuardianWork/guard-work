@@ -17,6 +17,8 @@ import com.guardwork.backend.application.repository.ApplicationSnapshotRepositor
 import com.guardwork.backend.application.repository.ApplicationStatusHistoryRepository;
 import com.guardwork.backend.application.repository.JobApplicationRepository;
 import com.guardwork.backend.candidate.CandidateProfile;
+import com.guardwork.backend.candidate.cvs.CandidateCvAccessGrant;
+import com.guardwork.backend.candidate.cvs.CandidateCvAccessGrantRepository;
 import com.guardwork.backend.candidate.cvs.CandidateCvStorage;
 import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.candidate.CandidateProfileService;
@@ -62,8 +64,11 @@ public class JobApplicationService {
 
     private static final String STATUS_SUBMITTED = "SUBMITTED";
     private static final String STORAGE_PROVIDER = "CLOUDINARY";
+    private static final String STORAGE_MODE_SHARED = "SHARED";
+    private static final String STORAGE_MODE_LEGACY_COPY = "LEGACY_COPY";
     private static final String DUPLICATE_CONSTRAINT = "uk_applications_candidate_job";
     private static final java.time.Duration DOWNLOAD_URL_TTL = java.time.Duration.ofMinutes(15);
+    private static final java.time.Duration COMPANY_CV_URL_TTL = java.time.Duration.ofMinutes(5);
 
     private static final java.util.Map<String, String> CONTENT_TYPE_TO_FORMAT = java.util.Map.of(
             "application/pdf", "pdf",
@@ -86,6 +91,7 @@ public class JobApplicationService {
     JobApplicationRepository applications;
     ApplicationSnapshotRepository snapshots;
     ApplicationStatusHistoryRepository statusHistory;
+    CandidateCvAccessGrantRepository cvGrants;
     CandidateCvStorage cvStorage;
     AuditService audit;
     Clock clock;
@@ -108,8 +114,8 @@ public class JobApplicationService {
         }
 
         UUID applicationId = UUID.randomUUID();
-        CandidateCvService.CandidateCvSnapshot cvSnapshot = cvService.copyForApplication(
-                candidateId, request.cvId(), applicationId);
+        CandidateCvService.ApplicationCvReference cv =
+                cvService.lockForApplication(candidateId, request.cvId());
 
         String fullName = request.fullName().strip();
         String email = request.email().strip();
@@ -124,6 +130,7 @@ public class JobApplicationService {
         application.setCompanyId(job.companyId());
         application.setSubmittedRevisionId(job.submittedRevisionId());
         application.setStatus(STATUS_SUBMITTED);
+        application.setStatusChangedAt(appliedAt);
         application.setAppliedAt(appliedAt);
         application.setUpdatedAt(appliedAt);
 
@@ -138,17 +145,34 @@ public class JobApplicationService {
         snapshot.setJobLocation(job.location());
         snapshot.setWorkMode(job.workMode());
         snapshot.setJobDeadline(job.deadline());
-        snapshot.setSourceCvId(cvSnapshot.sourceCvId());
-        snapshot.setCvStorageKey(cvSnapshot.storageKey());
+        snapshot.setSourceCvId(cv.cvId());
+        snapshot.setCvStorageKey(cv.storageKey());
         snapshot.setCvStorageProvider(STORAGE_PROVIDER);
-        snapshot.setCvFileName(cvSnapshot.fileName());
-        snapshot.setCvContentType(cvSnapshot.contentType());
-        snapshot.setCvFileSize(cvSnapshot.fileSize());
+        snapshot.setCvStorageMode(STORAGE_MODE_SHARED);
+        snapshot.setCvFileName(cv.fileName());
+        snapshot.setCvContentType(cv.contentType());
+        snapshot.setCvFileSize(cv.fileSize());
         snapshot.setCapturedAt(appliedAt);
+
+        CandidateCvAccessGrant grant = new CandidateCvAccessGrant();
+        grant.setApplicationId(applicationId);
+        grant.setCvId(cv.cvId());
+        grant.setCandidateId(candidateId);
+        grant.setCompanyId(job.companyId());
+        grant.setScope(CandidateCvAccessGrant.SCOPE_APPLICATION_REVIEW);
+        grant.setStorageProvider(STORAGE_PROVIDER);
+        grant.setStorageKey(cv.storageKey());
+        grant.setResourceType(cv.resourceType());
+        grant.setFileName(cv.fileName());
+        grant.setContentType(cv.contentType());
+        grant.setFileSize(cv.fileSize());
+        grant.setGrantedAt(appliedAt);
+        // Open-ended while the Candidate keeps the CV; deletion starts the bounded review window.
 
         try {
             applications.saveAndFlush(application);
             snapshots.saveAndFlush(snapshot);
+            cvGrants.saveAndFlush(grant);
             ApplicationStatusHistory submitted = new ApplicationStatusHistory();
             submitted.setApplicationId(applicationId);
             submitted.setToStatus(STATUS_SUBMITTED);
@@ -156,13 +180,9 @@ public class JobApplicationService {
             submitted.setOccurredAt(appliedAt);
             statusHistory.saveAndFlush(submitted);
         } catch (DataIntegrityViolationException failure) {
-            cvService.discardSnapshot(cvSnapshot);
             if (isDuplicateApplication(failure)) {
                 throw new AppException(ErrorCode.APPLICATION_ALREADY_SUBMITTED);
             }
-            throw failure;
-        } catch (RuntimeException failure) {
-            cvService.discardSnapshot(cvSnapshot);
             throw failure;
         }
 
@@ -180,7 +200,7 @@ public class JobApplicationService {
                 job.deadline(),
                 STATUS_SUBMITTED,
                 appliedAt,
-                cvSnapshot.fileName()
+                cv.fileName()
         );
     }
 
@@ -194,7 +214,7 @@ public class JobApplicationService {
             throw invalid("pagination");
         }
         if (status != null && !java.util.List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING",
-                "HIRED", "REJECTED", "WITHDRAWN").contains(status)) {
+                "HIRED", "REJECTED", "WITHDRAWN", "INACTIVE").contains(status)) {
             throw invalid("status");
         }
         String normalizedSearch = normalizeCandidateSearch(search);
@@ -241,6 +261,19 @@ public class JobApplicationService {
                 .orElseThrow(() -> new AppException(ErrorCode.JOB_NOT_FOUND));
         ApplicationSnapshot snapshot = snapshots.findById(application.getId()).orElseThrow(
                 () -> new IllegalStateException("Missing application snapshot"));
+
+        if (STORAGE_MODE_SHARED.equals(snapshot.getCvStorageMode())) {
+            // Deleting the library CV ends the Candidate's own access immediately; only the
+            // receiving Company keeps the bounded review window.
+            UUID sourceCvId = snapshot.getSourceCvId();
+            CandidateCv source = sourceCvId == null ? null : cvs.findById(sourceCvId).orElse(null);
+            if (source == null || source.isDeleted()) {
+                throw new AppException(ErrorCode.CV_NOT_FOUND);
+            }
+        } else if (snapshot.getCvPurgedAt() != null) {
+            // A rejected legacy copy was deleted under the approved retention rule.
+            throw new AppException(ErrorCode.CV_NOT_FOUND);
+        }
 
         String format = CONTENT_TYPE_TO_FORMAT.get(snapshot.getCvContentType());
         if (format == null) {
@@ -319,7 +352,7 @@ public class JobApplicationService {
         if (page < 0 || size < 1 || size > 100 || (long) page * size > Integer.MAX_VALUE) {
             throw invalidRequest("pagination");
         }
-        if (status != null && !List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING", "HIRED", "REJECTED", "WITHDRAWN")
+        if (status != null && !List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING", "HIRED", "REJECTED", "WITHDRAWN", "INACTIVE")
                 .contains(status)) {
             throw invalidRequest("status");
         }
@@ -424,24 +457,79 @@ public class JobApplicationService {
 
     @Transactional
     public ApplicationCvDownload companyCv(Long userId, Long jobId, UUID applicationId) {
+        CvLocation cv = resolveCompanyCv(userId, jobId, applicationId);
+        MediaType contentType = MediaType.parseMediaType(cv.contentType());
+        if (!MediaType.APPLICATION_PDF.equals(contentType)) {
+            throw new AppException(ErrorCode.CV_PREVIEW_UNSUPPORTED);
+        }
+        byte[] content = cvStorage.read(cv.storageKey(), cv.resourceType(), "pdf");
+        audit.recordLog(userId, "APPLICATION_CV_VIEWED", "APPLICATION", applicationId.toString(),
+                null, null, null, null, null);
+        return new ApplicationCvDownload(content, contentType, cv.fileName());
+    }
+
+    /** Issues a short-lived signed URL for one already-authorized application CV. */
+    @Transactional
+    public ApplicationCvDownloadResponse companyCvDownloadUrl(Long userId, Long jobId, UUID applicationId) {
+        CvLocation cv = resolveCompanyCv(userId, jobId, applicationId);
+        var expiresAt = clock.instant().plus(COMPANY_CV_URL_TTL);
+        String url = cvStorage.createDownloadUrl(
+                cv.storageKey(), cv.resourceType(), cv.format(), COMPANY_CV_URL_TTL);
+        return new ApplicationCvDownloadResponse(url, expiresAt, cv.fileName());
+    }
+
+    /**
+     * Resolves the exact storage object a Company may read.
+     *
+     * <p>Shared library CVs require a live {@code candidate_cv_access_grants} row. Legacy
+     * applications keep reading their historical copied object. Expiry or revocation is
+     * concealed as not found so a Company cannot enumerate access state.</p>
+     */
+    private CvLocation resolveCompanyCv(Long userId, Long jobId, UUID applicationId) {
         CompanyApplicationAccess access = requireCompanyApplicationAccess(userId, jobId, applicationId);
         if ("REJECTED".equals(access.application().getStatus())
-                || "WITHDRAWN".equals(access.application().getStatus())) {
+                || "WITHDRAWN".equals(access.application().getStatus())
+                || "INACTIVE".equals(access.application().getStatus())) {
             throw listingNotFound();
         }
         ApplicationSnapshot snapshot = snapshots.findById(applicationId).orElseThrow(
                 JobApplicationService::listingNotFound);
-        if (!STORAGE_PROVIDER.equals(snapshot.getCvStorageProvider())) {
+
+        if (STORAGE_MODE_SHARED.equals(snapshot.getCvStorageMode())) {
+            CandidateCvAccessGrant grant = cvGrants.findLive(
+                            applicationId, access.application().getCompanyId(), clock.instant())
+                    .orElseThrow(JobApplicationService::listingNotFound);
+            if (!STORAGE_PROVIDER.equals(grant.getStorageProvider())) {
+                throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
+            }
+            String format = CONTENT_TYPE_TO_FORMAT.get(grant.getContentType());
+            if (format == null) {
+                throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
+            }
+            return new CvLocation(
+                    grant.getStorageKey(), grant.getResourceType(), grant.getContentType(),
+                    grant.getFileName(), format);
+        }
+
+        // Historical applications still own an application-specific copy.
+        if (!STORAGE_MODE_LEGACY_COPY.equals(snapshot.getCvStorageMode())
+                || !STORAGE_PROVIDER.equals(snapshot.getCvStorageProvider())) {
             throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
         }
-        MediaType contentType = MediaType.parseMediaType(snapshot.getCvContentType());
-        if (!MediaType.APPLICATION_PDF.equals(contentType)) {
-            throw new AppException(ErrorCode.CV_PREVIEW_UNSUPPORTED);
+        if (snapshot.getCvPurgedAt() != null) {
+            // The rejected legacy copy was deleted; conceal it like any other inaccessible CV.
+            throw listingNotFound();
         }
-        byte[] content = cvStorage.read(snapshot.getCvStorageKey(), "image", "pdf");
-        audit.recordLog(userId, "APPLICATION_CV_VIEWED", "APPLICATION", applicationId.toString(),
-                null, null, null, null, null);
-        return new ApplicationCvDownload(content, contentType, snapshot.getCvFileName());
+        String format = CONTENT_TYPE_TO_FORMAT.get(snapshot.getCvContentType());
+        if (format == null) {
+            throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
+        }
+        String resourceType = FORMAT_TO_RESOURCE_TYPE.get(format);
+        if (resourceType == null) {
+            throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
+        }
+        return new CvLocation(snapshot.getCvStorageKey(), resourceType,
+                snapshot.getCvContentType(), snapshot.getCvFileName(), format);
     }
 
     private CompanyApplicationAccess requireCompanyApplicationAccess(Long userId, Long jobId, UUID applicationId) {
@@ -484,6 +572,14 @@ public class JobApplicationService {
     private record CompanyApplicationAccess(JobApplication application) {}
 
     public record ApplicationCvDownload(byte[] content, MediaType contentType, String fileName) {}
+
+    private record CvLocation(
+            String storageKey,
+            String resourceType,
+            String contentType,
+            String fileName,
+            String format
+    ) {}
 
     private static ResponseStatusException invalidRequest(String field) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, "40001 INVALID_INPUT: Invalid " + field);

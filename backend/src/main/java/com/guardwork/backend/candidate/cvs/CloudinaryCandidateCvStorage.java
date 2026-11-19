@@ -45,11 +45,13 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
 
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("public_id", publicId);
+        params.put("access_mode", AUTHENTICATED_ACCESS_MODE);
         params.put("timestamp", timestamp);
 
         String signature = cloudinary.apiSignRequest(params, cloudinary.config.apiSecret);
         String uploadUrl = cloudinary.cloudinaryApiUrl("upload", Map.of("resource_type", "auto"));
-        return new UploadSignature(uploadUrl, cloudinary.config.apiKey, timestamp, signature, publicId);
+        return new UploadSignature(uploadUrl, cloudinary.config.apiKey, timestamp, signature,
+                publicId, AUTHENTICATED_ACCESS_MODE);
     }
 
     @Override
@@ -79,37 +81,18 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
     public void delete(String publicId, String resourceType) {
         Cloudinary cloudinary = requireCloudinary();
         try {
-            cloudinary.uploader().destroy(publicId, Map.of(
+            Map<?, ?> response = cloudinary.uploader().destroy(publicId, Map.of(
                     "resource_type", resourceType,
                     "type", "upload",
                     "invalidate", true
             ));
+            // destroy() reports an absent object instead of throwing; deferred purges rely on this.
+            if ("not found".equals(String.valueOf(response.get("result")))) {
+                return;
+            }
         } catch (Exception storageFailure) {
             log.warn("event=cv_asset_cleanup outcome=failed resource_type={}", resourceType);
             throw new AppException(ErrorCode.CV_STORAGE_UNAVAILABLE);
-        }
-    }
-
-    @Override
-    public StoredCvAsset copy(String sourcePublicId, String targetPublicId, String resourceType, String format) {
-        Cloudinary cloudinary = requireCloudinary();
-        try {
-            String sourceUrl = cloudinary.privateDownload(sourcePublicId, format, Map.of(
-                    "resource_type", resourceType,
-                    "type", "upload",
-                    "expires_at", Instant.now().plus(Duration.ofMinutes(5)).getEpochSecond()
-            ));
-            Map<String, Object> options = new LinkedHashMap<>();
-            options.put("public_id", targetPublicId);
-            options.put("resource_type", resourceType);
-            options.put("type", "upload");
-            options.put("overwrite", false);
-            options.put("invalidate", true);
-            Map<?, ?> response = cloudinary.uploader().upload(sourceUrl, options);
-            return toStoredAsset(response, resourceType);
-        } catch (Exception storageFailure) {
-            log.warn("event=cv_snapshot_copy outcome=failed resource_type={}", resourceType);
-            throw new AppException(ErrorCode.APPLICATION_CV_COPY_FAILED);
         }
     }
 
@@ -203,7 +186,8 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
                 contentTypeFor(format),
                 bytes,
                 resourceType,
-                originalFileName
+                originalFileName,
+                stringValue(response.get("access_mode"))
         );
     }
 

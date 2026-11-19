@@ -72,4 +72,13 @@ public class RecruiterApplicationController {
                 .header("X-Content-Type-Options", "nosniff")
                 .body(cv.content());
     }
+
+    @GetMapping("/jobs/{jobId}/applications/{applicationId}/cv/download-url")
+    public ResponseEntity<ApiResponse<com.guardwork.backend.application.dto.ApplicationCvDownloadResponse>>
+            cvDownloadUrl(@PathVariable Long jobId, @PathVariable UUID applicationId) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(
+                ApiResponse.ok("Success",
+                        applications.companyCvDownloadUrl(
+                                SecurityUtils.getCurrentUserId(), jobId, applicationId)));
+    }
 }

@@ -150,7 +150,8 @@ public class NotificationIntentService {
             NotificationEventType.APPLICATION_REJECTED,
             NotificationEventType.APPLICATION_WITHDRAWN,
             NotificationEventType.APPLICATION_INTERVIEWING,
-            NotificationEventType.APPLICATION_HIRED)
+            NotificationEventType.APPLICATION_HIRED,
+            NotificationEventType.APPLICATION_INACTIVE)
         .contains(eventType))
       throw new IllegalArgumentException("Unsupported application notification");
     return persist(

@@ -43,7 +43,7 @@ class CandidateCvControllerTest {
     @Test
     void uploadUrlUsesAuthenticatedCandidate() throws Exception {
         when(cvService.generateUploadUrl(eq(USER_ID), any()))
-                .thenReturn(new UploadUrlResponse("https://upload", "key", "123", "signature", "candidates/x/cvs/y"));
+                .thenReturn(new UploadUrlResponse("https://upload", "key", "123", "signature", "candidates/x/cvs/y", "authenticated"));
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);
@@ -111,7 +111,7 @@ class CandidateCvControllerTest {
     void downloadUsesAuthenticatedUser() throws Exception {
         UUID cvId = UUID.randomUUID();
         when(cvService.generateDownloadUrl(USER_ID, cvId))
-                .thenReturn(new UploadUrlResponse("https://download", null, null, null, "public"));
+                .thenReturn(new UploadUrlResponse("https://download", null, null, null, "public", null));
 
         try (MockedStatic<SecurityUtils> security = mockStatic(SecurityUtils.class)) {
             security.when(SecurityUtils::getCurrentUserId).thenReturn(USER_ID);

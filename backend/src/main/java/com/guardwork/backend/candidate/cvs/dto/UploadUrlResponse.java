@@ -5,5 +5,6 @@ public record UploadUrlResponse(
         String apiKey,
         String timestamp,
         String signature,
-        String publicId
+        String publicId,
+        String accessMode
 ) {}
