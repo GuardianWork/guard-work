@@ -6,13 +6,13 @@
 | **Project** | GuardWork |
 | **Module** | Notifications |
 | **File** | `notification-flow-spec.md` |
-| **Version** | 1.1.0 |
+| **Version** | 1.2.0 |
 | **Date** | 2026-11-09 |
-| **Last Updated** | 2026-11-11 |
+| **Last Updated** | 2026-11-20 |
 | **Owner** | GuardWork thesis team |
 | **Named human approver** | chiko |
-| **Status** | Draft — ADR 0012 two-table contract approved 2026-11-09; FR-NOTIF-25 (polling round) drafted 2026-11-11 |
-| **Related architecture** | `docs/architecture/decisions/0012-notification-outbox-inbox-contract.md` |
+| **Status** | Draft. The GW-128 scope in section 11 was confirmed on 2026-11-20. |
+| **Related architecture** | [Notification Outbox and Inbox](../../backend/notification-outbox-inbox.md) |
 
 ---
 
@@ -30,9 +30,11 @@ recipient's read-side inbox:
 Supported backend event types are:
 
 - `RECRUITER_ACCEPTED`, `MEMBERSHIP_REMOVED`;
-- `JOB_ASSIGNED`, `JOB_UNASSIGNED`, `JOB_NEEDS_REASSIGNMENT`, `JOB_REVISION_APPROVED`, `JOB_REVISION_REJECTED`;
-- `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`, `APPLICATION_WITHDRAWN`,
-  `APPLICATION_INTERVIEWING`, `APPLICATION_HIRED`, `APPLICATION_INACTIVE`.
+- `COMPANY_VERIFICATION_APPROVED`, `COMPANY_VERIFICATION_REJECTED`;
+- `JOB_ASSIGNED`, `JOB_UNASSIGNED`, `JOB_NEEDS_REASSIGNMENT`, `JOB_REVISION_APPROVED`,
+  `JOB_REVISION_REJECTED`, `JOB_SUSPENDED`, `JOB_RESTORED`;
+- `APPLICATION_SUBMITTED`, `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`,
+  `APPLICATION_WITHDRAWN`, `APPLICATION_INTERVIEWING`, `APPLICATION_HIRED`, `APPLICATION_INACTIVE`.
 
 The implementation intentionally does not add push channels, email delivery, WebSockets, read
 bundling, or per-recipient audience expansion beyond the recipients explicitly named by business
@@ -174,9 +176,10 @@ fallback copy when null.
 
 ### 4.1 Recording intent
 - **FR-NOTIF-01:** A notification is recorded only inside an active business transaction.
-- **FR-NOTIF-02:** Only the event keys supported by the intent method may be recorded:
-  `record()` accepts the two membership events, `recordJob()` accepts the five job events, and
-  `recordApplication()` accepts the five application events.
+- **FR-NOTIF-02:** Only the event keys supported by the intent method may be recorded.
+  `record()` accepts membership events. `recordCompanyVerification()` records a terminal Company
+  verification decision. `recordJob()` and `recordApplication()` accept the job and application
+  events listed in section 1, respectively.
 - **FR-NOTIF-03:** Recording returns a durable `event_id` for later dispatch.
 - **FR-NOTIF-04:** Missing base context (recipient, Company) is rejected at write time by the
   outbox's required columns, payload shape checks, and the payload validation trigger. Unsupported
@@ -185,9 +188,10 @@ fallback copy when null.
   payload field requires no migration; the dispatcher maps payload keys to the inbox context
   columns and renders copy from the payload, never from a live business join.
 - **FR-NOTIF-04b:** The caller supplies the `audience` (`CANDIDATE` or `RECRUITER`) the
-  recipient is notified as. Membership/job events, `APPLICATION_WITHDRAWN`, and
-  `APPLICATION_INACTIVE` use `RECRUITER`; `APPLICATION_STATUS_CHANGED`,
-  `APPLICATION_REJECTED`, `APPLICATION_INTERVIEWING`, and `APPLICATION_HIRED` use `CANDIDATE`.
+  recipient is notified as. Company verification, membership, job events, `APPLICATION_SUBMITTED`,
+  `APPLICATION_WITHDRAWN`, and `APPLICATION_INACTIVE` use `RECRUITER`.
+  `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`, `APPLICATION_INTERVIEWING`, and
+  `APPLICATION_HIRED` use `CANDIDATE`.
   A null audience throws `IllegalArgumentException`. The dispatcher copies it to the inbox.
 
 ### 4.2 Delivery
@@ -266,9 +270,9 @@ fallback copy when null.
 - **BR-NOTIF-09:** A rollback of the business transaction also rolls back the notification intent.
 - **BR-NOTIF-10:** Failure to render or write does not roll back a committed business transaction.
 - **BR-NOTIF-11:** `audience` is set by the intent caller at record time and never changes;
-  it is not derived from the event type at read time (`APPLICATION_WITHDRAWN` and
-  `APPLICATION_INACTIVE` are recruiter-facing while the other `APPLICATION_*` events are
-  candidate-facing, including `APPLICATION_INTERVIEWING` and `APPLICATION_HIRED`). Backfilled
+  it is not derived from the event type at read time. `APPLICATION_SUBMITTED`,
+  `APPLICATION_WITHDRAWN`, and `APPLICATION_INACTIVE` are recruiter-facing. Application
+  status decisions are candidate-facing. Backfilled
   V105 rows use the same rule. `CONTEXT` triggers freeze `audience` and the outbox `payload`
   like the rest of the context columns.
 
@@ -445,4 +449,36 @@ Example item:
 
 1. Actor snapshot fields are frozen at the DB boundary but are not yet populated by intent callers.
 2. Status-only changes to Application statuses can dispatch after commit, but actor attribution is pending.
-3. No external channels (email/push) are implemented.
+3. The inbox dispatcher delivers in-app. Existing Company verification email uses a separate workflow.
+
+## 11. GW-128 Inbox Coverage
+
+The requesting human confirmed this section's behavior and additive Flyway scope on 2026-11-20.
+The broader notification flow specification retains its draft status.
+
+| Requirement | Committed action and event | Recipients |
+|---|---|---|
+| GW128-01 | Candidate submits an Application. `APPLICATION_SUBMITTED`. | Every active Recruiter assigned through their current active Company Membership. When there are none, notify the current Company Owner only if Owner Responsibility is enabled. With no responsible person, create no notification and retain the existing submission rules. |
+| GW128-02 | Platform Staff approve or reject Company verification. `COMPANY_VERIFICATION_APPROVED` or `COMPANY_VERIFICATION_REJECTED`. | Current Company Owner. An unowned legacy Company has no inbox recipient. Retained dossiers continue to use the existing decision email workflow. |
+| GW128-03 | Platform Staff hide or restore a Job Posting. `JOB_SUSPENDED` or `JOB_RESTORED`. | Current Company Owner and active Recruiters assigned through their current active Company Membership. Candidates with existing Applications receive no notice from these actions. |
+
+All five event types use the `RECRUITER` audience. Platform Staff continue to receive incoming
+work through the review queues. Application withdrawal keeps its existing recipient rule.
+Evaluate recipients in the business transaction, deduplicate by User, and record one intent per
+recipient. Failed or stale mutations and duplicate submissions create no intent. Inbox delivery
+follows the existing post-commit retry and deduplication rules.
+
+Use Vietnamese copy and existing notification categories. The new application item links to
+the Company Application view and contains job and application references. Company verification
+items link to the Owner's verification status view. Job suspension and restoration items link to
+the Company job view. Each linked resource rechecks live authorization. Keep Candidate names,
+contact details, CV data, cover letters, verification feedback and Staff moderation reasons out
+of the new inbox items and their outbox payloads.
+
+`V2026.11.20.128__extend_notification_coverage.sql` extends both event-type checks. Apply it
+before starting writers that produce the new events. Existing rows and response envelopes are
+preserved. Clients that enumerate event types need to recognize the five new values.
+
+Verify recipient selection, deduplication, post-commit delivery, rejection of stale actions,
+private-content exclusion, and retention of Company verification decision email intents using
+the PostgreSQL HTTP test suite.
