@@ -11,8 +11,8 @@
 | **UC-CAN-11** Điền thông tin ứng tuyển | Ứng tuyển | Cao | Đã bao gồm tự động điền từ hồ sơ cá nhân và chọn / đính kèm hồ sơ xin việc |
 | **UC-CAN-13** Xem danh sách tin tuyển dụng đã ứng tuyển | Ứng tuyển | Cao | Có lọc theo trạng thái và tìm theo tên công việc / công ty |
 | **UC-CAN-14** Nhận thông báo về trạng thái ứng tuyển | Ứng tuyển | Cao | |
-| **UC-CAN-08** Tìm kiếm thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc Ứng viên. Use case mới, thay cho "Lọc kết quả tìm kiếm" (đã gộp vào UC-CAN-07) |
-| **UC-CAN-10** Xem chi tiết thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc Ứng viên |
+| **UC-CAN-08** Tìm kiếm thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc người dùng đã đăng nhập. Use case mới, thay cho "Lọc kết quả tìm kiếm" (đã gộp vào UC-CAN-07). Phạm vi đã phê duyệt: tìm bằng một từ khóa trên tên công ty/tiêu đề tin/địa điểm/lĩnh vực; không có bộ lọc riêng lĩnh vực, quy mô hay địa điểm và không trả logo |
+| **UC-CAN-10** Xem chi tiết thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc người dùng đã đăng nhập. Phạm vi đã phê duyệt: chỉ thông tin công khai suy ra từ tin đang hoạt động và danh sách tin đang mở; chưa có logo, quy mô, địa chỉ, website, mô tả doanh nghiệp hay đánh giá |
 | **UC-CAN-15** Lưu lại tin tuyển dụng | Ứng tuyển | Trung bình | Tách từ "Lưu / Bỏ lưu công việc" |
 | **UC-CAN-19** Bỏ lưu tin tuyển dụng | Ứng tuyển | Trung bình | Tách từ "Lưu / Bỏ lưu công việc" |
 | **UC-CAN-24** Rút hồ sơ ứng tuyển | Ứng tuyển | Trung bình | Ứng viên rút đơn đang còn hiệu lực; trạng thái kết thúc không thể hoàn tác |
@@ -38,6 +38,7 @@
 - Thêm mới **UC-CAN-24** "Rút hồ sơ ứng tuyển" cho luồng ứng viên rút đơn đang còn hiệu lực (Đã nộp / Đang xem xét / Được chọn sơ bộ), kèm thông báo cho chủ công ty và nhà tuyển dụng được phân công; trạng thái kết thúc không thể hoàn tác.
 - Bổ sung các edge case EC-CAN-APP-06 đến EC-CAN-APP-11 cho luồng rút hồ sơ.
 - Cập nhật UC-CAN-01: email chỉ đọc từ tài khoản (không cập nhật qua hồ sơ); họ tên được phép có khoảng trắng; số điện thoại lưu dạng +84 và hiển thị dạng 0xxxxxxxxx; bổ sung ảnh đại diện và trạng thái công khai vào phạm vi cập nhật; ngày kết thúc/mô tả của kinh nghiệm và học vấn là tùy chọn.
+- Cập nhật UC-CAN-08 và UC-CAN-10 theo hợp đồng công khai đã phê duyệt của GW-123: tìm kiếm công ty bằng một từ khóa trên tên công ty/tiêu đề tin/địa điểm/lĩnh vực; danh sách trả tên công ty và tóm tắt suy ra từ tin công khai (không có logo hay bộ lọc riêng); trang chi tiết trả thông tin công ty và danh sách tin đang mở có phân trang, không có logo/quy mô/địa chỉ/website/mô tả/đánh giá; công ty không còn tin công khai được xem là không khả dụng. Bổ sung EC-CAN-COMPANY-01 và 02.
 
 ---
 ## Tìm kiếm tin tuyển dụng
@@ -73,37 +74,36 @@
 
 ## Tìm kiếm thông tin công ty tuyển dụng
 
-- **Tác nhân:** Khách hoặc ứng viên
-- **Mô tả:** Cho phép tác nhân tìm kiếm các công ty tuyển dụng trên hệ thống theo tên, ngành nghề hoạt động hoặc địa điểm.
+- **Tác nhân:** Khách hoặc người dùng đã đăng nhập
+- **Mô tả:** Cho phép tác nhân tìm kiếm các công ty tuyển dụng đang có tin tuyển dụng công khai theo từ khóa (không phân biệt chữ hoa/thường và dấu với tên công ty, tiêu đề tin tuyển dụng, địa điểm và lĩnh vực của tin tuyển dụng)
 - **Pre-condition:** Tác nhân truy cập vào trang Danh sách công ty trên hệ thống.
-- **Post-condition:** Hệ thống hiển thị danh sách các công ty phù hợp với từ khóa hoặc điều kiện lọc.
+- **Post-condition:** Hệ thống hiển thị danh sách công ty phù hợp với từ khóa, được phân trang.
 - **Luồng sự kiện:**
   - **Luồng chính:**
-    1. Tác nhân nhập tên công ty vào ô tìm kiếm và/hoặc chọn các bộ lọc (lĩnh vực hoạt động, quy mô, địa điểm).
+    1. Tác nhân nhập từ khóa vào ô tìm kiếm (có thể là tên công ty, ngành nghề hoặc địa điểm).
     2. Tác nhân nhấn nút "Tìm kiếm".
-    3. Hệ thống kiểm tra điều kiện tìm kiếm và truy vấn danh sách doanh nghiệp từ cơ sở dữ liệu.
-    4. Hệ thống hiển thị danh sách các công ty đáp ứng điều kiện, bao gồm: Logo, Tên công ty, Lĩnh vực, Địa điểm và số lượng tin tuyển dụng đang mở.
+    3. Hệ thống xác định phạm vi truy vấn: tin tuyển dụng đang ở trạng thái công bố, không bị nhân viên nền tảng tạm dừng, còn hạn nộp hoặc không đặt hạn, thuộc công ty đã xác thực và không bị khóa.
+    4. Hệ thống truy vấn các công ty có ít nhất một tin tuyển dụng công khai thỏa từ khóa, sắp xếp theo số tin tuyển dụng giảm dần.
+    5. Hệ thống hiển thị danh sách công ty, mỗi mục gồm: tên gọi, phần giới thiệu, các vị trí công việc đang mở và phần đánh giá công ty
   - **Luồng thay thế:**
-    - *3a.* Không có công ty nào khớp với điều kiện tìm kiếm. Hệ thống hiển thị thông báo "Không tìm thấy công ty phù hợp" và gợi ý thử lại với từ khóa khác.
-
+    - *4a.* Không có công ty nào khớp với từ khóa. Hệ thống trả về danh sách rỗng; giao diện hiển thị thông báo "Không tìm thấy công ty phù hợp" và gợi ý thử lại với từ khóa khác.
+    - *4b.* Trang yêu cầu vượt quá số trang hiện có. Hệ thống trả về trang rỗng hợp lệ thay vì báo lỗi.
 ## Xem chi tiết thông tin công ty tuyển dụng
 
-- **Tác nhân:** Khách hoặc ứng viên
-- **Mô tả:** Cho phép tác nhân xem trang thông tin chi tiết của doanh nghiệp bao gồm giới thiệu, quy mô, địa điểm, văn hóa doanh nghiệp, các tin tuyển dụng đang mở và đánh giá từ cộng đồng.
+- **Tác nhân:** Khách hoặc người dùng đã đăng nhập
+- **Mô tả:** Cho phép tác nhân xem thông tin công khai của một doanh nghiệp tuyển dụng: tên công ty, tóm tắt nhu cầu tuyển dụng và danh sách các tin tuyển dụng đang mở.
 - **Pre-condition:** Tác nhân chọn một công ty từ danh sách tìm kiếm hoặc nhấp vào tên công ty từ bài đăng tuyển dụng.
-- **Post-condition:** Màn hình chi tiết thông tin công ty được hiển thị đầy đủ.
+- **Post-condition:** Thông tin công ty và danh sách tin tuyển dụng đang mở được hiển thị.
 - **Luồng sự kiện:**
   - **Luồng chính:**
-    1. Tác nhân nhấn vào tên hoặc logo của công ty muốn xem.
-    2. Hệ thống kiểm tra sự tồn tại của hồ sơ doanh nghiệp.
-    3. Hệ thống truy xuất dữ liệu và hiển thị đầy đủ trang cá nhân của công ty, bao gồm:
-      - Thông tin chung: Tên, Logo, Ảnh bìa, Lĩnh vực, Quy mô, Địa chỉ, Website.
-      - Mô tả chi tiết giới thiệu doanh nghiệp và môi trường làm việc.
-      - Danh sách các tin tuyển dụng đang hoạt động của công ty.
-      - Danh sách bài nhận xét/đánh giá từ người dùng.
+    1. Tác nhân nhấn vào tên công ty muốn xem.
+    2. Hệ thống kiểm tra công ty tồn tại với điều kiện công ty đã xác thực và không bị khóa.
+    3. Hệ thống truy xuất thông tin công khai của công ty, gồm: mã công ty, tên công ty và tóm tắt suy ra từ toàn bộ tin tuyển dụng công khai.
+    4. Hệ thống truy xuất danh sách tin tuyển dụng đang mở của công ty, sắp xếp theo hạn nộp tăng dần. Mỗi tin gồm: tiêu đề, địa điểm, lĩnh vực, hình thức làm việc, cách thức làm việc, lương nếu công bố, số lượng tuyển, hạn nộp, mô tả và số lượng ứng tuyển.
+    5. Hệ thống hiển thị thông tin công ty và danh sách tin tuyển dụng đang mở trên trang chi tiết.
   - **Luồng thay thế:**
-    - *2a.* Thông tin công ty không tồn tại hoặc đã bị khóa. Hệ thống hiển thị thông báo "Thông tin công ty hiện không khả dụng".
-
+    - *2a.* Công ty không tồn tại, đã bị khóa. Hệ thống hiển thị thông báo "Thông tin công ty hiện không khả dụng".
+    - *4a.* Trang tin tuyển dụng yêu cầu vượt quá số trang hiện có. Hệ thống trả về trang rỗng hợp lệ.
 ## Cập nhật hồ sơ cá nhân
 
 - **Tác nhân:** Ứng viên
@@ -441,6 +441,8 @@
 | **EC-CAN-JOB-02** | **Ký tự đặc biệt & SQL/RSQL Injection** | Tác nhân nhập các chuỗi ký tự tấn công (như `' OR '1'='1`, `<script>`) vào ô tìm kiếm từ khóa.<br>$\rightarrow$ **Xử lý:** Hệ thống kiểm tra tính hợp lệ của tiêu chí tìm kiếm (bước 3), sanitize toàn bộ input, sử dụng Prepared Statements / Parameterized Queries khi truy vấn cơ sở dữ liệu và escape các ký tự đặc biệt. |
 | **EC-CAN-JOB-03** | **Phân trang với offset quá lớn** | Client truyền tham số phân trang bất thường như `page=999999`.<br>$\rightarrow$ **Xử lý:** Hệ thống chuẩn hóa phân trang theo triển khai hiện tại: `page < 0` trở về `0`; `size` mặc định `5`, tối đa `20` (giá trị `<= 0` trở thành `5`, lớn hơn `20` trở thành `20`); `page * size` được bảo vệ khỏi tràn số nguyên. Nếu vượt quá số trang hiện có, trả về trang rỗng hợp lệ thay vì lỗi. |
 | **EC-CAN-JOB-04** | **Bộ lọc giá trị vô lý** | Ứng viên chọn mức lương tối thiểu cao hơn mức lương tối đa (`salary_min = 5000` > `salary_max = 2000`).<br>$\rightarrow$ **Xử lý:** Frontend tự động điều chỉnh khoảng slider hợp lệ; backend tự chuẩn hóaswap 2 giá trị hoặc phản hồi lỗi `400 Invalid Filter Criteria`. |
+| **EC-CAN-COMPANY-01** | **Công ty mất toàn bộ tin công khai khi đang xem** | Công ty xuất hiện trong danh sách nhưng toàn bộ tin bị tạm dừng, hết hạn hoặc ẩn trước khi tác nhân mở trang chi tiết.<br>$\rightarrow$ **Xử lý:** Hệ thống trả `40400 COMPANY_NOT_FOUND`, không tiết lộ dữ liệu còn lại; giao diện hiển thị "Thông tin công ty hiện không khả dụng" (luồng thay thế 2a của UC-CAN-10). |
+| **EC-CAN-COMPANY-02** | **Từ khóa chứa ký tự đại diện hoặc chuỗi tấn công** | Tác nhân nhập `%`, `_`, `' OR '1'='1` hoặc `<script>` vào ô tìm kiếm công ty.<br>$\rightarrow$ **Xử lý:** Hệ thống cắt khoảng trắng, escape `%` và `_`, dùng truy vấn tham số hóa (không nối chuỗi SQL) và đối chiếu từ khóa theo nghĩa thông thường; ký tự đặc biệt không làm mở rộng phạm vi công khai (bước 3 của UC-CAN-08). |
 
 ---
 

@@ -7,22 +7,25 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import org.springframework.http.MediaType;
 import org.springframework.web.server.ResponseStatusException;
 import com.guardwork.backend.company.dto.CompanyDossierRequest;
 import com.guardwork.backend.company.dto.CompanyDossierCorrectionRequest;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
-import org.springframework.web.bind.annotation.RestController;
 
 import com.guardwork.backend.staff.dto.CompanyVerificationResponse;
 import com.guardwork.backend.common.ApiResponse;
 import com.guardwork.backend.company.dto.CurrentCompanyResponse;
 import com.guardwork.backend.company.dto.OwnerVerificationResponse;
+import com.guardwork.backend.company.dto.UpdateCompanyProfileRequest;
 import com.guardwork.backend.company.model.Company;
+import com.guardwork.backend.company.model.CompanyContent;
 import com.guardwork.backend.company.service.CompanyService;
 import com.guardwork.backend.onboarding.service.LegalDossierService;
 
@@ -76,6 +79,14 @@ public class CompanyController {
     @GetMapping("/me")
     public ApiResponse<CurrentCompanyResponse> getCurrentCompany(@AuthenticationPrincipal UserPrincipal principal) {
         return ApiResponse.ok("Current Company retrieved successfully", companyService.getCurrentCompany(principal.getId()));
+    }
+
+    @PutMapping(value = "/me/profile", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ApiResponse<CompanyContent> updateCurrentCompanyProfile(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody UpdateCompanyProfileRequest request) {
+        return ApiResponse.ok("Company profile updated successfully",
+                companyService.updateProfile(principal.getId(), request));
     }
 
     @GetMapping("/me/verification")

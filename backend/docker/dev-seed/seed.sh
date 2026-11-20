@@ -32,3 +32,6 @@ psql -X -P pager=off -c "SELECT e.facts->>'developmentFixture' AS fixture, j.id 
 
 echo 'Seeded notification inbox (fixed event_ids; manual reads and rows are preserved on reruns):'
 psql -X -P pager=off -c "SELECT u.username AS recipient, n.event_type, n.category, n.read_at IS NOT NULL AS is_read, n.job_id, n.application_id, left(n.title, 60) AS title FROM notification_inbox n JOIN users u ON u.id = n.recipient_user_id WHERE n.source_event_id >= 'a04b0000-0000-4000-8000-000000000101'::uuid AND n.source_event_id <= 'a0540000-0000-4000-8000-000000001001'::uuid ORDER BY u.username, n.created_at"
+
+echo 'Recruiter-authored public company profiles (companies.content, GW-123):'
+psql -X -P pager=off -c "SELECT count(*) AS companies, count(*) FILTER (WHERE content <> '{}'::jsonb) AS with_public_profile FROM companies"

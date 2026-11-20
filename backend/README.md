@@ -80,7 +80,7 @@ terminal and run Docker log/status commands in another.
 | --- | --- |
 | [`docker-compose.yml`](docker-compose.yml) | Starts PostgreSQL and the local `seed` service; supplies database credentials and read-only mounts. |
 | [`docker/dev-seed/seed.sh`](docker/dev-seed/seed.sh) | Checks the enable flag, waits for Flyway migrations, runs the SQL, and prints the account table after successful seeding. |
-| [`docker/dev-seed/seed.sql`](docker/dev-seed/seed.sql) | Inserts demo accounts, Candidate/employer profiles, a Company, memberships and GW-93 job scenarios in one transaction. |
+| [`docker/dev-seed/seed.sql`](docker/dev-seed/seed.sql) | Inserts demo accounts, Candidate/employer profiles, a demo Company with memberships, GW-93 moderation scenarios, 3 search-filter postings, 100 example published postings, 100 verified bulk companies (6 visible postings each; one industry and at most two locations per company), demo CV rows and notification inbox fixtures in one transaction. |
 | [`.env.example`](.env.example) | Documents local database settings and `GUARDWORK_DEV_SEED_ENABLED`. |
 
 Edit `seed.sql` to change fixture definitions; existing rows are preserved on reruns,
@@ -151,7 +151,7 @@ do not fabricate phone proof.
 These are direct local fixtures, so no OTP or email delivery is needed. They preserve
 the platform/Company role separation in GW-SR-AUTH-01 and GW-SR-REC-02; available
 operations still depend on implemented APIs. The certificate URL is a placeholder;
-no legal dossier, real document, CV file, or verification delivery is created. Synthetic Job Postings and their histories are included for GW-93 testing.
+no legal dossier, real document, CV file, or verification delivery is created. Synthetic Job Postings and their histories are included for GW-93 testing. A bulk fixture set adds 100 verified companies (`GW-DEMO-BULK-001`…`GW-DEMO-BULK-100`, owned by `demo_bulk_owner_001`…`demo_bulk_owner_100`, all using `GuardWork123!`) with six published postings each for the GW-123 public company directory; each company anchors one industry (derived from its name theme, with matching roles, salary band, employment types and work arrangements) and at most two locations (its home city, plus a secondary city for every fourth company), which keeps the directory and per-company role pagination demo data realistic and deterministic. Every seeded company also publishes a recruiter-authored public profile in `companies.content` (GW-123, schemaVersion 1: industry, introduction, work address, working hours, company scale and expertise), filled only while unset so manual edits made through `PUT /api/companies/me/profile` survive reruns.
 
 Each `docker compose up -d` reruns an exited seed service and inserts missing fixtures.
 It preserves existing passwords, statuses, Company state, profiles, and membership history;
@@ -304,6 +304,39 @@ content bounds, eligibility, single migration, and notification compatibility.
 
 See [Recruiter Application listing](../docs/backend/recruiter-application-listing.md)
 for its access rules, query parameters, privacy boundary, and response contract.
+
+### Candidate Public Company Discovery and Dossier (GW-123)
+
+`GET /api/companies/public` returns a paginated directory of publicly listable companies
+(`VERIFIED` and not banned), including companies with no publicly visible job posting. Entries
+are ordered by visible role count (descending), then company name, then id, so idle companies
+sort last. The approved scope for this API change is keyword-only search; `page` and `size` follow
+the project pagination bounds (default `20`, maximum `20`).
+
+`GET /api/companies/public/{companyId}` returns the company dossier for the general/info
+tab (id, name, summary derived from all visible postings — an empty summary when the company
+has none — and `profile`, the recruiter-authored public payload, omitted when the company has not
+published one). `GET /api/companies/public/{companyId}/roles` returns the opening roles tab as a
+paginated `PageResponse` (`page`/`size`, default `20`, maximum `20`) of visible roles, or an empty
+page when there are none.
+
+Recruiters publish or clear their company's public profile with `PUT /api/companies/me/profile`
+(OWNER/ADMIN memberships with a recruiting-eligible account only; `40303 INSUFFICIENT_COMPANY_ROLE`
+otherwise). The body is the payload from the `profile` object (no `schemaVersion` — the server
+stamps it); omitted fields are cleared and `{}` clears the profile. The payload is stored in
+`companies.content` (JSONB, schemaVersion 1) and is self-declared by the company — it is not
+GuardianWork-verified. See the spec for field limits and the `workingHours` format.
+
+All three endpoints reuse the job-search module for public visibility, keyword escaping,
+diacritic-insensitive matching and posting projection. They send
+`Cache-Control: no-store`. Unknown companies and companies that are not publicly listable
+(unverified, rejected or banned) return `40400 COMPANY_NOT_FOUND`.
+
+Public reads are anonymous and permitted before the protected Company management routes and
+before the email-proof gate for authenticated users.
+
+See [Candidate Company Review API](../docs/software-requirements/can/company-review-api-spec.md)
+for the approved contract, response shapes and error catalogue.
 
 ## Database
 
