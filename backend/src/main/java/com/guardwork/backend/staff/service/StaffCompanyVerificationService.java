@@ -20,6 +20,9 @@ import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.model.VerificationStatus;
 import com.guardwork.backend.company.repository.CompanyRepository;
+import com.guardwork.backend.notification.service.NotificationDispatcher;
+import com.guardwork.backend.notification.service.NotificationIntentService;
+import com.guardwork.backend.onboarding.service.LegalDossierService;
 
 @Service
 public class StaffCompanyVerificationService {
@@ -28,21 +31,19 @@ public class StaffCompanyVerificationService {
     private final CompanyRepository companyRepository;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
-    private final com.guardwork.backend.onboarding.service.LegalDossierService dossiers;
+    private final LegalDossierService dossiers;
+    private final NotificationIntentService notifications;
+    private final NotificationDispatcher dispatcher;
 
     public StaffCompanyVerificationService(CompanyRepository companyRepository,
-                                           AuditService auditService,
-                                           ObjectMapper objectMapper) {
-        this(companyRepository, auditService, objectMapper, null);
-    }
-
-    @org.springframework.beans.factory.annotation.Autowired
-    public StaffCompanyVerificationService(CompanyRepository companyRepository, AuditService auditService,
-            ObjectMapper objectMapper, com.guardwork.backend.onboarding.service.LegalDossierService dossiers) {
+            AuditService auditService, ObjectMapper objectMapper, LegalDossierService dossiers,
+            NotificationIntentService notifications, NotificationDispatcher dispatcher) {
         this.companyRepository = companyRepository;
         this.auditService = auditService;
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
         this.dossiers = dossiers;
+        this.notifications = notifications;
+        this.dispatcher = dispatcher;
     }
 
     public PageResponse<CompanyVerificationResponse> getVerificationQueue(String statusFilter, int page, int size) {
@@ -177,7 +178,7 @@ public class StaffCompanyVerificationService {
         }
 
         Company updatedCompany = companyRepository.findById(companyId).orElseThrow();
-        if (dossiers != null) dossiers.reviewed(updatedCompany, staffId);
+        dossiers.reviewed(updatedCompany, staffId);
         String newPayload = serializeToJson(CompanyVerificationResponse.from(updatedCompany));
 
         // BR-REC-06: Immutable Audit Trail
@@ -193,6 +194,10 @@ public class StaffCompanyVerificationService {
                 ipAddress,
                 userAgent
         );
+        // Retained legacy Companies may have no assigned Owner.
+        if (updatedCompany.getOwnerUserId() != null) {
+            dispatcher.dispatchAfterCommit(notifications.recordCompanyVerification(updatedCompany, now));
+        }
 
         // This records progress inside the transaction, not a commit guarantee.
         log.debug("event=company_verification outcome=decision_and_audit_written");

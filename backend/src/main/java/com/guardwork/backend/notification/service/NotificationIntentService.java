@@ -47,7 +47,22 @@ public class NotificationIntentService {
         recipient,
         eventType,
         audience,
-        NotificationPayload.membership(company.getId(), company.getName()),
+        NotificationPayload.company(company.getId(), company.getName()),
+        eventTime);
+  }
+
+  @Transactional(propagation = Propagation.MANDATORY)
+  public UUID recordCompanyVerification(Company company, Instant eventTime) {
+    NotificationEventType eventType = switch (company.getVerificationStatus()) {
+      case VERIFIED -> NotificationEventType.COMPANY_VERIFICATION_APPROVED;
+      case REJECTED -> NotificationEventType.COMPANY_VERIFICATION_REJECTED;
+      case PENDING -> throw new IllegalArgumentException("Company verification decision is required");
+    };
+    return persist(
+        company.getOwnerUserId(),
+        eventType,
+        NotificationAudience.RECRUITER,
+        NotificationPayload.company(company.getId(), company.getName()),
         eventTime);
   }
 
@@ -99,7 +114,9 @@ public class NotificationIntentService {
             NotificationEventType.JOB_UNASSIGNED,
             NotificationEventType.JOB_NEEDS_REASSIGNMENT,
             NotificationEventType.JOB_REVISION_APPROVED,
-            NotificationEventType.JOB_REVISION_REJECTED)
+            NotificationEventType.JOB_REVISION_REJECTED,
+            NotificationEventType.JOB_SUSPENDED,
+            NotificationEventType.JOB_RESTORED)
         .contains(eventType))
       throw new IllegalArgumentException("Unsupported job notification");
     return persist(
@@ -110,7 +127,7 @@ public class NotificationIntentService {
         eventTime);
   }
 
-  /** Application status/rejection notify the candidate; withdrawal notifies the employer. */
+  /** Status decisions notify the Candidate; submission and withdrawal notify the Company side. */
   @Transactional(propagation = Propagation.MANDATORY)
   public UUID recordApplication(
       Long recipient,
@@ -146,6 +163,7 @@ public class NotificationIntentService {
       String candidateFeedback,
       Instant eventTime) {
     if (!Set.of(
+            NotificationEventType.APPLICATION_SUBMITTED,
             NotificationEventType.APPLICATION_STATUS_CHANGED,
             NotificationEventType.APPLICATION_REJECTED,
             NotificationEventType.APPLICATION_WITHDRAWN,

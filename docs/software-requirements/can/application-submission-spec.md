@@ -39,7 +39,7 @@ actions, interview/offer records, Kafka, or an application outbox. Those remain 
 | Persistence scope | `applications` and `application_snapshots`; the submission transaction also writes one `candidate_cv_access_grants` row. |
 | Named human approver | `chiko`. |
 | Duplicate rule | At most one application per Candidate and Job Posting. |
-| Event delivery | Deferred. `EC-CAN-APP-03` remains open. |
+| Event delivery | [GW128-01](notification-flow-spec.md#11-gw-128-inbox-coverage) covers the Company-side inbox. General application event publication remains deferred under `EC-CAN-APP-03`. |
 
 ## 2. Domain model and lifecycle
 

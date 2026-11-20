@@ -14,6 +14,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -28,6 +30,15 @@ public class NotificationDispatcher {
   NotificationInboxRepository inbox;
   Clock clock;
   PlatformTransactionManager manager;
+
+  public void dispatchAfterCommit(UUID eventId) {
+    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+      @Override
+      public void afterCommit() {
+        dispatch(eventId);
+      }
+    });
+  }
 
   private TransactionTemplate newTx() {
     TransactionTemplate t = new TransactionTemplate(manager);

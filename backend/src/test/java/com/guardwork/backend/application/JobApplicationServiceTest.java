@@ -21,6 +21,7 @@ import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.job.service.JobPublicationService;
 import com.guardwork.backend.company.model.Company;
+import com.guardwork.backend.job.repository.JobAssignmentRepository;
 import com.guardwork.backend.membership.model.CompanyMembership;
 import com.guardwork.backend.membership.model.CompanyRole;
 import com.guardwork.backend.membership.service.CompanyAccessService;
@@ -74,6 +75,7 @@ class JobApplicationServiceTest {
     @Mock JobPublicationService jobs;
     @Mock CompanyMembershipRepository memberships;
     @Mock CompanyAccessService companyAccess;
+    @Mock JobAssignmentRepository assignments;
     @Mock JobApplicationRepository applications;
     @Mock ApplicationSnapshotRepository snapshots;
     @Mock ApplicationStatusHistoryRepository statusHistory;
@@ -125,8 +127,15 @@ class JobApplicationServiceTest {
 
     private JobPublicationService.ApplicationContext availableJob() {
         return new JobPublicationService.ApplicationContext(
-                JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
+                JOB_ID, company(), false, REVISION_ID, "Backend Engineer",
                 "Ha Noi", "HYBRID", Instant.parse("2026-11-30T17:00:00Z"), true, null);
+    }
+
+    private Company company() {
+        Company company = new Company();
+        company.setId(COMPANY_ID);
+        company.setName("Acme");
+        return company;
     }
 
     private CandidateCv cv(boolean isDefault) {
@@ -286,7 +295,7 @@ class JobApplicationServiceTest {
             when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
             when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
             when(jobs.applicationContext(JOB_ID)).thenReturn(new JobPublicationService.ApplicationContext(
-                    JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
+                    JOB_ID, company(), false, REVISION_ID, "Backend Engineer",
                     "Ha Noi", "HYBRID", Instant.parse("2026-11-30T17:00:00Z"), false, "EXPIRED"));
 
             AppException failure = assertThrows(AppException.class,
