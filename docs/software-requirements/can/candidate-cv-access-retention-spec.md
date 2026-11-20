@@ -6,12 +6,12 @@
 | **Project** | GuardWork |
 | **Module** | Candidate CV Library and Application CV Access |
 | **File** | `candidate-cv-access-retention-spec.md` |
-| **Version** | 0.2.0 |
+| **Version** | 0.3.0 |
 | **Date** | 2026-11-17 |
-| **Last Updated** | 2026-11-18 |
+| **Last Updated** | 2026-11-20 |
 | **Owner** | GuardWork thesis team |
 | **Named human approver** | chiko |
-| **Status** | Draft — implementation prepared; inactivity, reactivation and rejection-purge amendment approved by the requesting human user 2026-11-18, formal approval pending |
+| **Status** | Draft — implementation prepared; inactivity, reactivation, rejection-purge and binary Company download amendments approved by the requesting human user 2026-11-18 and 2026-11-20, formal approval pending |
 | **Related use cases** | UC-CAN-05 — Xóa hồ sơ xin việc; UC-CAN-11 — Điền thông tin ứng tuyển; EC-CAN-CV-04 |
 | **Related specifications** | GW-SR-CAND-02 (`candidate-cv-upload-spec.md`), GW-SR-APP-01 (`application-submission-spec.md`) |
 | **Access-control matrix** | [`../backend/candidate-cv-access-control-matrix.md`](../backend/candidate-cv-access-control-matrix.md) (Vietnamese implementation reference) |
@@ -116,8 +116,8 @@ The requirement is:
 | CVACL-031 | A Company **shall** read a `LEGACY_COPY` CV from the historical application copy while the existing Application access and terminal-status rules pass. |
 | CVACL-032 | A `SHARED` snapshot **shall not** fall back to `cv_storage_key` when the grant is missing, expired, revoked, or for another Company. |
 | CVACL-033 | The inline viewer **shall** continue to accept only PDF and **shall** return `406` for DOC and DOCX. |
-| CVACL-034 | The download-URL endpoint **shall** accept PDF, DOC, and DOCX and **shall** return a signed provider URL with a five-minute lifetime. |
-| CVACL-035 | A successful inline read **shall** record `APPLICATION_CV_VIEWED`. Issuing a download URL **shall** not write that audit event. |
+| CVACL-034 | The Company download endpoint **shall** accept PDF, DOC, and DOCX and **shall** return the authorized CV bytes as an attachment. |
+| CVACL-035 | A successful inline read or binary download **shall** record `APPLICATION_CV_VIEWED`. |
 | CVACL-036 | `REJECTED`, `WITHDRAWN`, and `INACTIVE` Applications **shall** conceal CV access. `HIRED` Applications **shall** remain readable while the other access checks pass. |
 | CVACL-037 | A rejected `LEGACY_COPY` whose bytes were purged **shall** return the concealed not-found response, while its snapshot metadata remains readable. |
 
@@ -318,28 +318,22 @@ Returns the CV as an inline binary response.
 - Success records `APPLICATION_CV_VIEWED`.
 - `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
 
-### 5.4 Company download URL
+### 5.4 Company CV download
 
 #### `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url`
 
-Returns a five-minute signed provider URL for PDF, DOC, or DOCX.
+Returns the authorized CV bytes as an attachment for PDF, DOC, or DOCX.
 
 **Response `200 OK`**
 
-```json
-{
-  "status": 200,
-  "message": "Success",
-  "data": {
-    "url": "https://...",
-    "expiresAt": "2026-11-17T10:05:00Z",
-    "fileName": "CV.pdf"
-  }
-}
-```
+- Media type is the stored CV content type.
+- `Content-Disposition: attachment` carries the submitted file name.
+- The response uses `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`.
+- The bytes are read only after the same grant and application-access checks as the inline view.
+- A successful read records `APPLICATION_CV_VIEWED`.
+- No storage key or signed provider URL appears in the response.
 
-The response uses `Cache-Control: no-store`. The URL is issued only after the same grant and
-application-access checks as the inline view. No audit event is written for URL issuance.
+The route path is retained for client compatibility; it no longer returns a JSON URL envelope.
 
 ### 5.5 Application detail access metadata
 
@@ -460,7 +454,7 @@ The library retention batch size is fixed at 20. Tests disable the workers and c
 | Rejected-copy purge | `ApplicationCvPurgeServiceTest` — legacy deletion, unsafe-key guard, retry, already-purged skip. |
 | Storage adapter | `CloudinaryCandidateCvStorageTest` — signed `access_mode`, failure mapping. |
 | Application behavior | `JobApplicationServiceTest` — grant creation, shared read, legacy read, revocation, candidate access after deletion. |
-| HTTP contract | `JobApplicationHttpTest` — submission grant, Candidate access loss, Company inline read, download URL, rejection revocation, legacy application, `INACTIVE` concealment, reactivation epoch, newly assigned recruiter read, company-only inactivity notification, rejected-copy purge, withdrawal from `INACTIVE`. |
+| HTTP contract | `JobApplicationHttpTest` — submission grant, Candidate access loss, Company inline read, binary download, rejection revocation, legacy application, `INACTIVE` concealment, reactivation epoch, newly assigned recruiter read, company-only inactivity notification, rejected-copy purge, withdrawal from `INACTIVE`. |
 | Database boundary | `JobApplicationMigrationTest` — grant epochs and partial live uniqueness, immutability trigger, live-grant query, purge query, snapshot mode, purge-marker trigger, inactivity query, `INACTIVE` status/history edges, `status_changed_at`. |
 | Controller contract | `CandidateCvControllerTest` — delete and download responses. |
 
@@ -474,4 +468,5 @@ shared test database already applied migrations from another branch.
 |---|---|---|
 | 2026-11-17 | Requesting human user | Approved the requirement amendment: grant-based CV access, no per-application copy, one-month Company review window after Candidate deletion, and automatic purge. |
 | 2026-11-18 | Requesting human user | Approved the second amendment: `INACTIVE` after 30 days without a status update; reversible reactivation with grant epochs; post-deletion window only for active stages (HIRED immediate); rejection deletes the legacy copy and keeps snapshot metadata; backfill for already-rejected Applications; company-only inactivity notification; retention agreement deferred. |
+| 2026-11-20 | Requesting human user | Approved replacing the Company download URL with an authenticated binary attachment download for PDF, DOC, DOCX, recording `APPLICATION_CV_VIEWED`. |
 | Pending | chiko | Formal approval of this specification. |

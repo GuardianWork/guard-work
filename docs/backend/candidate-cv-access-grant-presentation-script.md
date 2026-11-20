@@ -121,8 +121,8 @@ bị thu hồi một lần. Mọi thay đổi khác đều sinh epoch mới.”
 > “Live grant là `revoked_at IS NULL` **và** (`expires_at IS NULL` **hoặc**
 > `expires_at > now()`).”
 
-- Có grant → đọc file, hoặc tạo signed URL sống **5 phút**. Inline chỉ nhận PDF, DOC/DOCX trả
-  `406`. Inline có ghi audit `APPLICATION_CV_VIEWED`; phát URL thì không ghi.
+- Có grant → đọc file. Inline chỉ nhận PDF, DOC/DOCX trả `406`. Endpoint tải xuống trả file
+  đính kèm cho PDF/DOC/DOCX. Cả hai đều ghi audit `APPLICATION_CV_VIEWED`.
 - Không có grant → `404` ẩn, không giải thích lý do.
 
 **Nhấn mạnh:** “Kể cả khi snapshot có `cv_storage_key` hợp lệ, nếu grant không live thì **không
@@ -268,7 +268,7 @@ Bốn lớp bảo vệ:
 |---|---|---|
 | Cửa sổ review sau khi ứng viên xóa CV | **60 ngày**, cấu hình `CANDIDATE_CV_ACCESS_GRANT_TTL` | `backend/src/main/resources/application.properties` |
 | Ngưỡng inactivity | **30 ngày**, `APPLICATION_REVIEW_INACTIVITY_TTL` | `backend/src/main/resources/application.properties` |
-| Signed URL cho công ty | **5 phút** | `JobApplicationService` |
+| Tải CV cho công ty | **File đính kèm** PDF/DOC/DOCX | `JobApplicationService` |
 | Signed URL cho ứng viên | **15 phút** | `CandidateCvService` |
 | Batch purge thư viện | **20** | `CandidateCvRetentionService` |
 | Batch inactivity / purge legacy | **100** (1–1000) | cấu hình worker |
@@ -302,7 +302,7 @@ Rủi ro còn lại nên chủ động nêu nếu bị hỏi:
 ## 6. Checklist trước khi lên sóng
 
 - [ ] Mở sẵn 5 sơ đồ trong `candidate-cv-access-grant-diagrams.md` theo đúng thứ tự.
-- [ ] Chuẩn bị sẵn 2 endpoint để demo nếu có mạng: `GET .../cv/download-url` và
+- [ ] Chuẩn bị sẵn 2 endpoint để demo nếu có mạng: `GET .../cv/download-url` (file đính kèm) và
       `DELETE /api/candidate/cvs/{id}`.
 - [ ] Kiểm tra lại giá trị TTL đang cấu hình trong môi trường demo.
 - [ ] Xác nhận với nhóm câu chữ về trạng thái phê duyệt của `GW-SR-CV-02`.

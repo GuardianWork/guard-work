@@ -1056,10 +1056,18 @@ class JobApplicationHttpTest {
                         .header("Authorization", owner))
                 .andExpect(status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Type", PDF))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
                         .string("Cache-Control", "no-store"))
-                .andExpect(jsonPath("$.data.url").value("https://fake.example/" + cvKey))
-                .andExpect(jsonPath("$.data.fileName").value("private.pdf"))
-                .andExpect(jsonPath("$.data.expiresAt").isNotEmpty());
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Disposition", org.hamcrest.Matchers.allOf(
+                                org.hamcrest.Matchers.containsString("attachment"),
+                                org.hamcrest.Matchers.containsString("private.pdf"))))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .bytes(new byte[]{'P', 'D', 'F', '1'}));
+
+        assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE action='APPLICATION_CV_VIEWED' AND target_id=?",
+                Long.class, application.toString())).isEqualTo(2);
     }
 
     @Test
@@ -1968,7 +1976,7 @@ class JobApplicationHttpTest {
     }
 
     @Test
-    void nonPdfApplicationCvReturnsControlledNotAcceptable() throws Exception {
+    void nonPdfApplicationCvIsInlineRestrictedButDownloadable() throws Exception {
         String owner = account();
         long ownerId = userId(owner);
         database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
@@ -1978,10 +1986,27 @@ class JobApplicationHttpTest {
         UUID candidate = profile(userId(account()));
         UUID application = saveApplication(job, candidate, "Applicant", "2026-10-31T12:00:00Z",
                 UUID.randomUUID(), "application/msword");
+        String cvKey = "applications/" + application + "/cv/test.pdf";
+        storage.put(new CandidateCvStorage.StoredCvAsset(
+                cvKey, "doc", "application/msword", 4, "raw", "private.doc"));
+        storage.putContent(cvKey, new byte[]{'D', 'O', 'C', '1'});
 
         http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv", job.id(), application)
                         .header("Authorization", owner))
                 .andExpect(status().isNotAcceptable());
+
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url",
+                        job.id(), application)
+                        .header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Type", "application/msword"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Disposition", org.hamcrest.Matchers.allOf(
+                                org.hamcrest.Matchers.containsString("attachment"),
+                                org.hamcrest.Matchers.containsString("private.pdf"))))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .bytes(new byte[]{'D', 'O', 'C', '1'}));
     }
 
     @Test

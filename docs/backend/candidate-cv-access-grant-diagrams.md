@@ -63,9 +63,9 @@ sequenceDiagram
 
     alt live grant exists
         DB-->>API: live grant
-        API->>Storage: read CV or create 5-minute URL
-        Storage-->>API: bytes or signed URL
-        API-->>Company: PDF inline or short-lived URL
+        API->>Storage: read CV bytes
+        Storage-->>API: bytes
+        API-->>Company: PDF inline or PDF/DOC/DOCX attachment
     else missing, expired, revoked, or terminal
         DB-->>API: no live grant
         API-->>Company: 404 (concealed)

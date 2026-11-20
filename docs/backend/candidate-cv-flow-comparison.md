@@ -7,7 +7,7 @@
 | **Phạm vi** | So sánh luồng CV ứng tuyển trước và sau thay đổi access grant |
 | **Trạng thái** | Tài liệu kỹ thuật nội bộ — phản ánh implementation hiện tại |
 | **Nguồn chuẩn** | GW-SR-CV-02, GW-SR-APP-01 |
-| **Cập nhật** | 2026-11-18 |
+| **Cập nhật** | 2026-11-20 |
 
 > Tài liệu này dùng để so sánh và đối chiếu khi review. Khi có mâu thuẫn, GW-SR-CV-02 là
 > nguồn chuẩn cho vòng đời CV; GW-SR-APP-01 là nguồn chuẩn cho vòng đời đơn ứng tuyển.
@@ -31,7 +31,7 @@
 | **Lịch sử grant** | Không có. | Epoch append-only; tối đa một epoch chưa thu hồi cho mỗi đơn. |
 | **Thông báo** | Chủ yếu thông báo thay đổi trạng thái cho ứng viên. | Giữ thông báo cho ứng viên; thêm `APPLICATION_INACTIVE` chỉ cho chủ công ty và recruiter đang được phân công. |
 | **Lưu trữ sau kết thúc** | Bản sao có thể tồn tại vô thời hạn. | Purge bản sao cũ của đơn `REJECTED`; purge CV thư viện sau khi không còn grant hiệu lực. |
-| **Tải xuống** | Chỉ xem inline PDF; không có thao tác tải riêng. | Inline PDF cộng với URL tải ngắn hạn cho PDF/DOC/DOCX. |
+| **Tải xuống** | Chỉ xem inline PDF; không có thao tác tải riêng. | Inline PDF cộng với tải file đính kèm cho PDF/DOC/DOCX qua backend đã xác thực. |
 | **Đơn cũ** | Toàn bộ đơn dùng mô hình bản sao. | Đơn cũ giữ `LEGACY_COPY`, không backfill grant; đơn mới dùng `SHARED`. |
 | **Độ phức tạp vận hành** | Thấp hơn: copy khi nộp, đọc theo snapshot. | Cao hơn: grant, epoch, worker inactivity, worker purge, đối soát invariant. |
 
@@ -91,7 +91,8 @@ cho đến khi đơn kết thúc.
 
 ## 6. Rủi ro còn lại
 
-- URL tải là bearer token ngắn hạn: người có URL có thể tải cho đến khi hết hạn.
+- Response tải trả byte CV cho người đã được cấp quyền; backend không phát hành URL bearer cho
+  công ty, nhưng không ngăn được người nhận lưu hoặc sao chép file.
 - Object Cloudinary cũ có thể vẫn ở chế độ public; grant không sửa được rủi ro cấp storage.
 - Grant hết hạn không được sweep định kỳ; chỉ bị bỏ qua khi đọc.
 - Thỏa thuận lưu hồ sơ pháp lý vẫn deferred; mặc định là xóa bản sao cũ khi `REJECTED`.

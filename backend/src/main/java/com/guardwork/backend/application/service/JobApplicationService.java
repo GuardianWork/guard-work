@@ -72,7 +72,6 @@ public class JobApplicationService {
             Set.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING");
     private static final String DUPLICATE_CONSTRAINT = "uk_applications_candidate_job";
     private static final java.time.Duration DOWNLOAD_URL_TTL = java.time.Duration.ofMinutes(15);
-    private static final java.time.Duration COMPANY_CV_URL_TTL = java.time.Duration.ofMinutes(5);
 
     private static final java.util.Map<String, String> CONTENT_TYPE_TO_FORMAT = java.util.Map.of(
             "application/pdf", "pdf",
@@ -536,14 +535,18 @@ public class JobApplicationService {
         return new ApplicationCvDownload(content, contentType, cv.fileName());
     }
 
-    /** Issues a short-lived signed URL for one already-authorized application CV. */
+    /**
+     * Reads one already-authorized application CV for a file download. Unlike the inline viewer,
+     * a download supports PDF, DOC, and DOCX; the signed provider URL stays server-side.
+     */
     @Transactional
-    public ApplicationCvDownloadResponse companyCvDownloadUrl(Long userId, Long jobId, UUID applicationId) {
+    public ApplicationCvDownload companyCvDownload(Long userId, Long jobId, UUID applicationId) {
         CvLocation cv = resolveCompanyCv(userId, jobId, applicationId);
-        var expiresAt = clock.instant().plus(COMPANY_CV_URL_TTL);
-        String url = cvStorage.createDownloadUrl(
-                cv.storageKey(), cv.resourceType(), cv.format(), COMPANY_CV_URL_TTL);
-        return new ApplicationCvDownloadResponse(url, expiresAt, cv.fileName());
+        MediaType contentType = MediaType.parseMediaType(cv.contentType());
+        byte[] content = cvStorage.read(cv.storageKey(), cv.resourceType(), cv.format());
+        audit.recordLog(userId, "APPLICATION_CV_VIEWED", "APPLICATION", applicationId.toString(),
+                null, null, null, null, null);
+        return new ApplicationCvDownload(content, contentType, cv.fileName());
     }
 
     /**

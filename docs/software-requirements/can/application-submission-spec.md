@@ -302,8 +302,8 @@ Returns a short-lived signed download URL for the submitted CV owned by the auth
 Company-side CV reads are scoped to GW-SR-CV-02. The same submitted Application exposes:
 
 - `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv` for the inline PDF view; and
-- `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url` for a
-  five-minute signed URL covering PDF, DOC, and DOCX.
+- `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url` for an
+  authenticated attachment download covering PDF, DOC, and DOCX.
 
 A `SHARED` Application requires a live access grant for the authenticated Company. Expired,
 revoked, or other-Company grants return the concealed `404` (`JOB_NOT_FOUND`). A `LEGACY_COPY`
@@ -420,7 +420,7 @@ Implementation verification uses:
 - `CandidateCvRetentionServiceTest` for deferred object purge and retry;
 - `JobApplicationHttpTest` for the authenticated end-to-end form/submit flow, duplicate rejection,
   foreign-CV rejection, suspended account, missing library object, Candidate access loss after CV
-  deletion, Company inline read, Company download URL, rejection revocation, legacy Applications,
+  deletion, Company inline read, Company binary download, rejection revocation, legacy Applications,
   `INACTIVE` concealment/reactivation, company-only inactivity notifications, rejected-copy purge,
   and withdrawal from `INACTIVE`;
 - `ApplicationInactivityServiceTest` for the inactivity boundary, revocation, and notification

@@ -6,16 +6,18 @@
 | Project | GuardWork |
 | Owner | Thinh |
 | Approver | Thinh |
-| Status | Draft metadata retained under repository policy; explicit human approval recorded below; amended 2026-11-18 |
-| Version | 0.2.0 |
+| Status | Draft metadata retained under repository policy; explicit human approval recorded below; amended 2026-11-20 |
+| Version | 0.3.0 |
 | Date | 2026-11-03 |
-| Last Updated | 2026-11-18 |
+| Last Updated | 2026-11-20 |
 
 ## Scope and approval record
 
 On 2026-11-03, Thinh answered “yes” to Q16, confirming shared understanding and approving implementation of this document, including its concrete HTTP contracts and validation. Thinh subsequently approved the five-ticket breakdown. The agent has not set lifecycle metadata to Approved.
 
-Backend application details and authenticated viewing of the submitted CV. On 2026-11-03, Thinh approved snapshot-only evidence, listing-equivalent authorization, authenticated CV streaming with sensitive-access audit, and the terminal-access restriction below. The 2026-11-18 amendment replaces the per-Application copy with a shared access grant and adds a Company download-URL endpoint, inactivity and rejected-copy purge. No frontend, live profile enrichment, new education/experience snapshot, dependency or legal retention determination is included.
+On 2026-11-20, the requesting human user approved replacing the Company download URL with an authenticated binary download, because the client needs the file bytes without a provider URL. See the 2026-11-20 amendment below.
+
+Backend application details and authenticated viewing of the submitted CV. On 2026-11-03, Thinh approved snapshot-only evidence, listing-equivalent authorization, authenticated CV streaming with sensitive-access audit, and the terminal-access restriction below. The 2026-11-18 amendment replaces the per-Application copy with a shared access grant and adds a Company download-URL endpoint, inactivity and rejected-copy purge. The 2026-11-20 amendment makes that download return the file bytes as an attachment instead of a signed URL. No frontend, live profile enrichment, new education/experience snapshot, dependency or legal retention determination is included.
 
 This extends [Application Listing](application-listing-spec.md) and uses existing Application Snapshots. The [broader pipeline](../../feat/recruiters/application-pipeline-spec.md) remains a draft; this focused slice excludes Admin access consistently with the implemented listing contract.
 
@@ -37,7 +39,7 @@ This extends [Application Listing](application-listing-spec.md) and uses existin
 
 - `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}`: Company detail projection, with terminal redaction and `canViewCv` / `reviewWindowEndsAt` / `inactivityDeadline` access metadata.
 - `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv`: authenticated inline PDF response; DOC/DOCX snapshots return 406; terminal and `INACTIVE` access denied with 404.
-- `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url`: five-minute signed URL for PDF, DOC, or DOCX under the same grant and access checks.
+- `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url`: authenticated binary download (attachment) for PDF, DOC, or DOCX under the same grant and access checks; a successful read records `APPLICATION_CV_VIEWED`.
 - `GET /api/candidate/applications/{applicationId}`: Candidate-owned detail projection, inaccessible applications concealed with 404.
 - JSON responses reuse existing envelopes. CV success is binary with safe inline filename and media type. Storage failure shall return a controlled error without leaking upstream details.
 - No claim is made that browser viewing prevents saving or copying the CV.
@@ -51,7 +53,7 @@ approved retention policy. No legal compliance determination is made here.
 
 ## Verification
 
-Verify snapshot stability; Company and Candidate isolation; current assignment/membership revocation; Admin exclusion; suspended-job concealment; paused/closed/expired access; terminal redaction; authenticated CV streaming, download URL and audit; newly assigned Recruiter access; `INACTIVE` concealment and reactivation epochs; rejected-copy purge; no storage leakage; and Candidate-safe history. Use existing PostgreSQL HTTP integration infrastructure and documented backend checks.
+Verify snapshot stability; Company and Candidate isolation; current assignment/membership revocation; Admin exclusion; suspended-job concealment; paused/closed/expired access; terminal redaction; authenticated CV streaming, binary download and audit; newly assigned Recruiter access; `INACTIVE` concealment and reactivation epochs; rejected-copy purge; no storage leakage; and Candidate-safe history. Use existing PostgreSQL HTTP integration infrastructure and documented backend checks.
 
 ## Amendment 2026-11-18: grant-based CV access, inactivity, and rejected-copy purge
 
@@ -62,7 +64,7 @@ the HTTP contract above.
 | ID | Amended requirement |
 |---|---|
 | AD-010 | Company CV access **shall** be authorized by a live `candidate_cv_access_grants` row for the requested Application and the authenticated Company. The snapshot `cv_storage_key` **shall not** authorize access. New Applications share the Candidate library object; pre-existing Applications keep their `LEGACY_COPY` object. |
-| AD-011 | The Company **shall** also have `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url`, returning a five-minute signed provider URL for PDF, DOC, or DOCX. The inline route remains PDF-only. Neither route exposes a storage key or reusable URL. |
+| AD-011 | The Company **shall** also have `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url`, returning a five-minute signed provider URL for PDF, DOC, or DOCX. The inline route remains PDF-only. Neither route exposes a storage key or reusable URL. (Superseded by AD-017 on 2026-11-20.) |
 | AD-012 | `REJECTED`, `WITHDRAWN`, and `INACTIVE` Applications **shall** conceal Company CV access with the same non-enumerating not-found response. Company contact/cover-letter visibility remains for `INACTIVE`; terminal redaction is unchanged. |
 | AD-013 | If the Candidate deletes the shared library CV, the Company keeps a bounded review window (default 30 days) only while the Application is in an active review stage. `HIRED` ends shared-CV access immediately. The Candidate loses their own access immediately. |
 | AD-014 | `INACTIVE` is reversible through `UNDER_REVIEW` by an eligible Owner or currently assigned Recruiter. Reactivation starts a new CV grant epoch only while the shared library CV still exists. |
@@ -70,6 +72,16 @@ the HTTP contract above.
 | AD-016 | Company detail **shall** expose `canViewCv`, `reviewWindowEndsAt`, and `inactivityDeadline`. `canViewCv` reflects the same state as the CV endpoints; `reviewWindowEndsAt` is the live shared grant expiry (null when open-ended or unavailable); `inactivityDeadline` is `statusChangedAt` plus the configured inactivity TTL for active stages, and null otherwise. Candidate detail exposes `canViewCv` for the Candidate’s own submitted CV; Company-only deadlines are null for the Candidate. |
 
 The earlier statement that no standalone download action exists is superseded for Company readers
-by AD-011. The earlier statement that no automatic deletion exists is superseded by AD-015; the
+by AD-017. The earlier statement that no automatic deletion exists is superseded by AD-015; the
 legal retention-agreement exception remains deferred. Tests shall cover newly assigned Recruiters,
 `INACTIVE` concealment, reactivation epochs, HIRED deletion, and rejected-copy purge.
+
+## Amendment 2026-11-20: authenticated binary Company download
+
+Status: approved by the requesting human user on 2026-11-20. This amendment supersedes AD-011.
+
+| ID | Amended requirement |
+|---|---|
+| AD-017 | The Company **shall** have `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url`, returning the authorized CV bytes as an attachment for PDF, DOC, or DOCX. The route **shall** pass the same grant, application-access, terminal-status, and `INACTIVE` checks as the inline view. A successful read **shall** record `APPLICATION_CV_VIEWED`. Response headers **shall** use the stored media type, `Content-Disposition: attachment` with the submitted file name, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`; no storage key or provider URL **shall** be exposed. The inline route remains PDF-only. |
+
+The route path is retained for client compatibility; it no longer returns a signed URL.

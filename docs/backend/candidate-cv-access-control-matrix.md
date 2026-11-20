@@ -64,8 +64,8 @@ Mọi chủ thể khác đều bị từ chối. Quyền truy cập của công 
 | 7 | Trạng thái đơn không phải `REJECTED`, `WITHDRAWN`, `INACTIVE` | `40478` (ẩn) |
 | 8a | `SHARED`: có grant còn hiệu lực cho `(application_id, company_id)` | `40478` (ẩn) |
 | 8b | `LEGACY_COPY`: chưa bị purge (`cv_purged_at IS NULL`) | `40478` (ẩn) |
-| 9 | Định dạng: inline chỉ PDF; download URL nhận PDF/DOC/DOCX | `40600` (inline) |
-| 10 | Đọc storage và ghi audit `APPLICATION_CV_VIEWED` (chỉ inline) | `50300` nếu provider lỗi |
+| 9 | Định dạng: inline chỉ PDF; tải xuống nhận PDF/DOC/DOCX | `40600` (inline) |
+| 10 | Đọc storage và ghi audit `APPLICATION_CV_VIEWED` (inline và tải xuống) | `50300` nếu provider lỗi |
 
 **Recruiter mới được phân công** đi qua đúng các bước trên. Grant gắn với **công ty**, không gắn
 với recruiter gốc, nên recruiter mới có assignment hiện tại đọc được khi grant còn hiệu lực. Ngược
@@ -92,7 +92,7 @@ lại, mất assignment hoặc rời membership sẽ chặn recruiter đó dù g
 | **Đặt CV mặc định** (`PATCH …/{id}/default`) | ✅ chỉ khi CV đang hoạt động | ❌ `40405` / `40300` | ❌ `403` | ❌ `403` | ❌ `40100` |
 | **CV đã nộp của ứng viên** (`GET /api/candidate/applications/{id}/cv/download-url`) | ✅ khi CV nguồn đang hoạt động (`SHARED`) hoặc bản sao cũ chưa purge (`LEGACY_COPY`); ❌ `40405` nếu CV đã xóa/bản sao đã purge | ❌ `40478` | — | — | ❌ `40100` |
 | **Công ty xem trực tiếp** (`GET /api/companies/me/jobs/{jobId}/applications/{id}/cv`) | — | — | ✅ chỉ khi **grant còn hiệu lực** (`SHARED`) hoặc **bản sao cũ chưa xóa** (`LEGACY_COPY`); ❌ `40478` nếu hết hạn/đã thu hồi/`INACTIVE`/bản sao cũ đã xóa; ❌ `40600` nếu không phải PDF | ❌ `40478` | ❌ `40100` |
-| **Công ty lấy URL tải** (`…/cv/download-url`) | — | — | ✅ cùng điều kiện grant/bản sao cũ; PDF/DOC/DOCX; ❌ `40478` | ❌ `40478` | ❌ `40100` |
+| **Công ty tải CV** (`…/cv/download-url`) | — | — | ✅ cùng điều kiện grant/bản sao cũ; PDF/DOC/DOCX; trả file đính kèm và ghi audit; ❌ `40478` | ❌ `40478` | ❌ `40100` |
 
 ## 6. Trạng thái CV `SHARED` × kết quả đọc của công ty nhận đơn
 
