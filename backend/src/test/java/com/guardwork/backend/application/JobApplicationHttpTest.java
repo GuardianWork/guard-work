@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -95,6 +96,60 @@ class JobApplicationHttpTest {
         http.perform(get("/api/companies/me/jobs").header("Authorization", owner))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.content[?(@.id == " + job.id() + ")].applicationCount").value(org.hamcrest.Matchers.contains(org.hamcrest.Matchers.nullValue())));
+    }
+
+    @Test
+    void submissionNotifiesAssignedRecruitersOrTheSoleResponsibleOwner() throws Exception {
+        String candidate = account();
+        UUID cv = cv(profile(userId(candidate)));
+        long company = company();
+        long owner = userId(account());
+        addOwner(company, owner);
+        long recruiter = userId(account());
+        long membership = addRecruiter(company, recruiter);
+
+        Job assigned = publishedJob(company, owner);
+        assign(assigned, company, membership, owner);
+        long secondRecruiter = userId(account());
+        assign(assigned, company, addRecruiter(company, secondRecruiter), owner);
+        long suspendedRecruiter = userId(account());
+        assign(assigned, company, addRecruiter(company, suspendedRecruiter), owner);
+        database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", suspendedRecruiter);
+        Job ownerOnly = publishedJob(company, owner);
+        Job unmanaged = publishedJob(company, owner);
+        database.update("UPDATE job_postings SET owner_responsible=false WHERE id=?", unmanaged.id());
+
+        for (Job job : List.of(assigned, ownerOnly, unmanaged)) {
+            String request = submitBody(job.id(), cv, "Nguyễn Văn An", "Private cover letter");
+            var created = http.perform(post(APPLICATIONS).header("Authorization", candidate)
+                            .contentType(MediaType.APPLICATION_JSON).content(request))
+                    .andExpect(status().isCreated()).andReturn();
+            var applicationId = UUID.fromString(mapper.readTree(created.getResponse().getContentAsString())
+                    .path("data").path("id").asText());
+            http.perform(post(APPLICATIONS).header("Authorization", candidate)
+                            .contentType(MediaType.APPLICATION_JSON).content(request))
+                    .andExpect(status().isConflict());
+
+            var expected = job.equals(assigned) ? List.of(recruiter, secondRecruiter)
+                    : job.equals(ownerOnly) ? List.of(owner) : List.<Long>of();
+            assertThat(database.queryForList("""
+                    SELECT recipient_user_id FROM notification_outbox
+                    WHERE payload->>'applicationId'=? AND event_type='APPLICATION_SUBMITTED'
+                    """, Long.class, applicationId.toString())).containsExactlyInAnyOrderElementsOf(expected);
+            var inbox = database.queryForList("""
+                    SELECT recipient_user_id, audience, body, action_href FROM notification_inbox
+                    WHERE application_id=? AND event_type='APPLICATION_SUBMITTED'
+                    """, applicationId);
+            assertThat(inbox).extracting(item -> item.get("recipient_user_id"))
+                    .containsExactlyInAnyOrderElementsOf(expected);
+            assertThat(inbox).allSatisfy(item -> {
+                assertThat(item.get("audience")).isEqualTo("RECRUITER");
+                assertThat(item.get("action_href"))
+                        .isEqualTo("/companies/me/jobs/" + job.id() + "/applications/" + applicationId);
+                assertThat((String) item.get("body")).contains("Backend Engineer")
+                        .doesNotContain("Nguyễn Văn An", "Private cover letter", "an@example.vn");
+            });
+        }
     }
 
     @Test
@@ -270,6 +325,44 @@ class JobApplicationHttpTest {
                 JOIN applications a ON a.id=s.application_id
                 WHERE a.candidate_id=?
                 """, Long.class, profile)).isZero();
+    }
+
+    @Test
+    void submissionRollsBackAndDiscardsCopiedCvWhenNotificationIntentFails() throws Exception {
+        String candidate = account();
+        UUID profile = profile(userId(candidate));
+        UUID cv = cv(profile);
+        long company = company();
+        long owner = userId(account());
+        addOwner(company, owner);
+        Job job = publishedJob(company, owner);
+        database.execute("""
+                CREATE FUNCTION gw128_fail_submission_intent() RETURNS trigger AS $$
+                BEGIN
+                    RAISE EXCEPTION 'controlled notification intent failure' USING ERRCODE='23514';
+                END; $$ LANGUAGE plpgsql
+                """);
+        database.execute("""
+                CREATE TRIGGER gw128_fail_submission_intent BEFORE INSERT ON notification_outbox
+                FOR EACH ROW WHEN (NEW.event_type='APPLICATION_SUBMITTED' AND NEW.payload->>'jobId'='%d')
+                EXECUTE FUNCTION gw128_fail_submission_intent()
+                """.formatted(job.id()));
+        String request = submitBody(job.id(), cv, "Nguyễn Văn An", null);
+        try {
+            http.perform(post(APPLICATIONS).header("Authorization", candidate)
+                            .contentType(MediaType.APPLICATION_JSON).content(request))
+                    .andExpect(status().isInternalServerError());
+        } finally {
+            database.execute("DROP TRIGGER gw128_fail_submission_intent ON notification_outbox");
+            database.execute("DROP FUNCTION gw128_fail_submission_intent()");
+        }
+
+        assertThat(database.queryForObject("SELECT count(*) FROM applications WHERE candidate_id=?",
+                Long.class, profile)).isZero();
+        assertThat(storage.assets.keySet()).containsExactly("candidates/" + profile + "/cvs/source");
+        http.perform(post(APPLICATIONS).header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isCreated());
     }
 
     @Test

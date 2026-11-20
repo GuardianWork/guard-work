@@ -5,9 +5,7 @@ This document explains the outbox/inbox pattern used for in-app notifications in
 - **Outbox** — `notification_outbox`: a durable record that a notification is owed.
 - **Inbox** — `notification_inbox`: the recipient's durable, user-visible copy.
 
-Related: [ADR 0012](../architecture/decisions/0012-notification-outbox-inbox-contract.md) ·
-[ADR 0013](../architecture/decisions/0013-notification-outbox-payload.md) ·
-[Notification flow spec](../software-requirements/can/notification-flow-spec.md)
+Related requirements are in the [notification flow spec](../software-requirements/can/notification-flow-spec.md).
 
 ---
 
@@ -153,15 +151,15 @@ flowchart TD
 ### Migration order
 
 GW-117's `V2026.11.10.103__application_interview_stage.sql` and
-`V2026.11.10.104__application_hiring_confirmation.sql` are shared `dev` migrations and stay
-byte-identical here; they therefore run before this branch's notification migrations and still
-target the legacy `user_notifications` table. Order on a fresh database:
+`V2026.11.10.104__application_hiring_confirmation.sql` target the legacy
+`user_notifications` table. Notification migrations run in this order on a fresh database:
 
 `V2026.11.10.103/104` (application lifecycle, legacy table) →
 `V2026.11.10.105` (rename to `notification_inbox`) →
 `V2026.11.10.106` (envelope, re-adds event-type checks with the GW-117 keys and `UNKNOWN`) →
 `V2026.11.10.107` (audience) →
-`V2026.11.11.106` (outbox payload).
+`V2026.11.11.106` (outbox payload) →
+`V2026.11.20.128` (GW-128 event types).
 
 Do not renumber or edit `103/104`; environments have already applied them with their published
 checksums. New notification changes belong in migrations versioned above `2026.11.10.104`.
@@ -213,7 +211,25 @@ No schema migration accompanies these read endpoints.
 `audience` itself is added by `V2026.11.10.107__notification_audience.sql` (frozen intent
 context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`, `APPLICATION_REJECTED`,
 `APPLICATION_INTERVIEWING`, and `APPLICATION_HIRED` → `CANDIDATE`, everything else including
-`APPLICATION_WITHDRAWN` → `RECRUITER`). Only withdrawal is recruiter-facing.
+`APPLICATION_WITHDRAWN` → `RECRUITER`).
+
+### GW-128 Company-side events
+
+These events use audience `RECRUITER`. The relative `action.href` values identify Company views.
+Use the matching authenticated API when loading a view so it checks the User's current access.
+The recruiter portal opens a verification notice only when its `references.companyId`
+matches the signed-in User's current Owner membership.
+
+| Event type | Category | Action href |
+| --- | --- | --- |
+| `APPLICATION_SUBMITTED` | `application` | `/companies/me/jobs/{jobId}/applications/{applicationId}` |
+| `COMPANY_VERIFICATION_APPROVED`, `COMPANY_VERIFICATION_REJECTED` | `company` | `/companies/me/verification` |
+| `JOB_SUSPENDED`, `JOB_RESTORED` | `job` | `/companies/me/jobs/{jobId}` |
+
+Migration `V2026.11.20.128__extend_notification_coverage.sql` adds these values to both
+event-type checks. Stop older dispatchers before enabling new producers because older
+binaries cannot deserialize the new event values. Recipient and privacy rules are in
+[GW-SR-NOTIF-01, section 11](../software-requirements/can/notification-flow-spec.md#11-gw-128-inbox-coverage).
 
 ### Polling the inbox
 

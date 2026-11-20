@@ -2,16 +2,24 @@ package com.guardwork.backend.job.service;
 
 import com.guardwork.backend.audit.service.AuditService;
 import com.guardwork.backend.common.PageResponse;
+import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.model.VerificationStatus;
 import com.guardwork.backend.company.repository.CompanyRepository;
 import com.guardwork.backend.job.model.JobAuditEvent;
+import com.guardwork.backend.job.model.JobPosting;
+import com.guardwork.backend.job.repository.JobAssignmentRepository;
 import com.guardwork.backend.job.repository.JobAuditEventRepository;
 import com.guardwork.backend.job.repository.JobPostingRepository;
 import com.guardwork.backend.job.repository.JobRevisionRepository;
+import com.guardwork.backend.notification.model.NotificationAudience;
+import com.guardwork.backend.notification.model.NotificationEventType;
+import com.guardwork.backend.notification.service.NotificationDispatcher;
+import com.guardwork.backend.notification.service.NotificationIntentService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -29,6 +37,9 @@ public class StaffJobManagementService {
   private final JobAuditEventRepository events;
   private final JobDraftService drafts;
   private final AuditService audit;
+  private final JobAssignmentRepository assignments;
+  private final NotificationIntentService notifications;
+  private final NotificationDispatcher dispatcher;
   private final Clock clock;
   @PersistenceContext private EntityManager entities;
 
@@ -40,6 +51,9 @@ public class StaffJobManagementService {
       JobAuditEventRepository events,
       JobDraftService drafts,
       AuditService audit,
+      JobAssignmentRepository assignments,
+      NotificationIntentService notifications,
+      NotificationDispatcher dispatcher,
       Clock clock) {
     this.reviews = reviews;
     this.companies = companies;
@@ -48,6 +62,9 @@ public class StaffJobManagementService {
     this.events = events;
     this.drafts = drafts;
     this.audit = audit;
+    this.assignments = assignments;
+    this.notifications = notifications;
+    this.dispatcher = dispatcher;
     this.clock = clock;
   }
 
@@ -94,6 +111,7 @@ public class StaffJobManagementService {
             "reason", reason, "jobVersion", job.getVersion()));
     audit.recordLog(actor, "JOB_SUSPENDED", "JOB", jobId.toString(),
         "{\"status\":\"PUBLISHED\"}", "{\"status\":\"SUSPENDED\"}", reason, ip, agent);
+    notifyCompany(company, job, NotificationEventType.JOB_SUSPENDED, now);
     return new HideReceipt(jobId, job.getStatus(), job.getVersion(), actor, now, reason);
   }
 
@@ -128,7 +146,18 @@ public class StaffJobManagementService {
             "reason", reason, "jobVersion", job.getVersion()));
     audit.recordLog(actor, "JOB_RESTORED", "JOB", jobId.toString(),
         "{\"status\":\"SUSPENDED\"}", "{\"status\":\"PUBLISHED\"}", reason, ip, agent);
+    notifyCompany(company, job, NotificationEventType.JOB_RESTORED, now);
     return new RestoreReceipt(jobId, job.getStatus(), job.getVersion(), actor, now, reason);
+  }
+
+  private void notifyCompany(Company company, JobPosting job, NotificationEventType type, Instant eventTime) {
+    var recipients = new LinkedHashSet<>(assignments.currentRecruiterUserIds(job.getId()));
+    if (company.getOwnerUserId() != null) recipients.add(company.getOwnerUserId());
+    for (Long recipient : recipients) {
+      var event = notifications.recordJob(recipient, type, NotificationAudience.RECRUITER,
+          company, job.getId(), null, eventTime);
+      dispatcher.dispatchAfterCommit(event);
+    }
   }
 
   public PageResponse<HistoryEvent> history(Long actor, Long jobId, int page, int size) {

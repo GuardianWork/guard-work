@@ -267,7 +267,7 @@ class JobStaffManagementHttpTest {
         .content(mapper.writeValueAsString(Map.of("expectedJobVersion",current.path("version").asLong()))))
         .andExpect(status().isOk());
       var working=submit(owner,derive(owner,inspect(owner,job),null));
-      hide(staff,working,"reason").andExpect(status().isOk());var hidden=inspect(owner,job);
+      hide(staff,working,"Private suspension reason").andExpect(status().isOk());var hidden=inspect(owner,job);
       String base=JOBS+"/"+job;long version=hidden.path("version").asLong();
       http.perform(post(base+"/revisions/"+hidden.path("workingRevision").path("id").asLong()+"/withdraw")
         .header("Authorization",recruiter).contentType(MediaType.APPLICATION_JSON).content(confirm(hidden,true)))
@@ -282,7 +282,21 @@ class JobStaffManagementHttpTest {
         .content(mapper.writeValueAsString(Map.of("expectedJobVersion",version,"responsible",true))))
         .andExpect(status().isConflict());
       assertThat(inspect(owner,job).path("version").asLong()).isEqualTo(version);
-      restore(staff,hidden,"resolved").andExpect(status().isOk());
+      restore(staff,hidden,"Private restoration reason").andExpect(status().isOk());
+      restore(staff,hidden,"Stale restoration retry").andExpect(status().isConflict());
+      for (String type : List.of("JOB_SUSPENDED", "JOB_RESTORED")) {
+        var notices = database.queryForList("""
+                SELECT recipient_user_id, audience, body, action_href FROM notification_inbox
+                WHERE job_id=? AND event_type=?
+                """, job, type);
+        assertThat(notices).extracting(item -> item.get("recipient_user_id"))
+            .containsExactlyInAnyOrder(userId(owner), userId(recruiter));
+        assertThat(notices).allSatisfy(item -> {
+          assertThat(item.get("audience")).isEqualTo("RECRUITER");
+          assertThat(item.get("action_href")).isEqualTo("/companies/me/jobs/" + job);
+          assertThat((String) item.get("body")).doesNotContain("Private");
+        });
+      }
       var restored=inspect(owner,job);
       http.perform(post(base+"/revisions/"+restored.path("workingRevision").path("id").asLong()+"/withdraw")
         .header("Authorization",recruiter).contentType(MediaType.APPLICATION_JSON).content(confirm(restored,true)))
