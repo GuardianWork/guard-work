@@ -10,38 +10,31 @@ tuyển. Sơ đồ chỉ mô tả hành vi đã triển khai; GW-SR-CV-02 là ng
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#ffffff', 'primaryTextColor': '#333333', 'primaryBorderColor': '#333333', 'secondaryColor': '#ffffff', 'tertiaryColor': '#ffffff', 'mainBkg': '#ffffff', 'nodeBorder': '#333333', 'textColor': '#333333', 'lineColor': '#333333', 'clusterBkg': '#ffffff', 'clusterBorder': '#333333', 'edgeLabelBackground': '#ffffff', 'noteBkgColor': '#ffffff', 'noteBorderColor': '#333333', 'noteTextColor': '#333333', 'actorBkg': '#ffffff', 'actorBorder': '#333333', 'actorTextColor': '#333333', 'actorLineColor': '#333333', 'signalColor': '#333333', 'signalTextColor': '#333333', 'labelBoxBkgColor': '#ffffff', 'labelBoxBorderColor': '#333333', 'labelTextColor': '#333333', 'loopTextColor': '#333333', 'activationBkgColor': '#ffffff', 'activationBorderColor': '#333333', 'sequenceNumberColor': '#333333', 'fontFamily': 'Helvetica, Arial, sans-serif', 'fontSize': '13px'}, 'themeCSS': '.node rect, .statediagram-state rect, .statediagram-note rect, .note, .actor, .labelBox { rx: 0px !important; ry: 0px !important; }'}}%%
 stateDiagram-v2
 
-    state "Grant issued<br/>(epoch 1)" as Issued
-    state "Live grant" as Live
-    state "Review window<br/>(expires_at = deletion + 30d)" as Window
-    state "INACTIVE<br/>(grant revoked)" as Inactive
-    state "Expired<br/>(inert audit row)" as Expired
-    state "Closed<br/>(terminal, grant revoked)" as Closed
+    state "Quyền truy cập (grant) đã được cấp<br/>(chu kỳ 1)" as Issued
+    state "Grant đang hiệu lực" as Live
+    state "Thời hạn grant hết hạn<br/>(expires_at = ngày xóa + 60 ngày)" as Window
+    state "Tạm dừng (INACTIVE)<br/>(grant đã bị thu hồi)" as Inactive
+    state "Hết hạn<br/>(bản ghi kiểm toán không còn hiệu lực)" as Expired
+    state "Đã đóng<br/>(trạng thái cuối, grant đã bị thu hồi)" as Closed
 
-    [*] --> Issued: application submitted
-    Issued --> Live: company authorized
-    Live --> Window: candidate deletes CV<br/>(active review stage)
-    Live --> Inactive: 30 days without transition
-    Live --> Closed: REJECTED / WITHDRAWN
-    Live --> Closed: HIRED + CV deleted
-    Window --> Expired: review window elapses
-    Window --> Inactive: inactivity before expiry
-    Window --> Closed: terminal before expiry
-    Inactive --> Live: reactivate via UNDER_REVIEW<br/>(library CV exists, new epoch)
-    Inactive --> Closed: REJECTED / WITHDRAWN
+    [*] --> Issued: ứng viên nộp đơn ứng tuyển
+    Issued --> Live: công ty được cấp quyền
+    Live --> Window: ứng viên xóa CV - bắt đầu thu hồi grant đối với công ty
+    Live --> Inactive: 30 ngày không cập nhật trạng thái
+    Live --> Closed: TỪ CHỐI (REJECTED) / RÚT ĐƠN (WITHDRAWN)
+    Live --> Closed: ĐÃ TUYỂN (HIRED) + CV bị xóa
+    Window --> Expired: thời gian chờ hết hạn
+    Window --> Inactive: đơn tạm dừng trước khi hết hạn
+    Window --> Closed: đơn kết thúc (từ chối/đã thuê/rút đơn) trước khi hết hạn
+    Inactive --> Live: mở lại qua ĐANG XEM XÉT (UNDER_REVIEW)<br/>(CV thư viện vẫn tồn tại, chu kỳ mới)
+    Inactive --> Closed: TỪ CHỐI (REJECTED) / RÚT ĐƠN (WITHDRAWN)
     Expired --> [*]
     Closed --> [*]
 
-    note right of Window
-        Review window applies only to
-        SUBMITTED, UNDER_REVIEW,
-        SHORTLISTED, INTERVIEWING.
-        HIRED deletion revokes immediately.
-    end note
-
     note right of Inactive
-        Reactivation without a library CV
-        changes application status only:
-        the grant stays revoked and no epoch is added.
+        Nếu CV thư viện đã bị xóa, việc mở lại
+        chỉ đổi trạng thái đơn:
+        grant vẫn bị thu hồi và không thêm chu kỳ mới.
     end note
 
 
