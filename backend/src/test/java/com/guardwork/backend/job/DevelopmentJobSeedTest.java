@@ -36,8 +36,22 @@ class DevelopmentJobSeedTest {
       assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE action='JOB_SUSPENDED'", Long.class)).isEqualTo(2);
       assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE event_type='JOB_EXPIRED' AND actor_user_id IS NULL", Long.class)).isEqualTo(1);
       assertThat(database.queryForObject("SELECT bool_and(approved_deadline>now()) FROM job_postings WHERE status='PUBLISHED'", Boolean.class)).isTrue();
-      // Dev-seed fixtures own ten outbox intents (delivered inline); inbox copy mirrors them.
-      assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox", Long.class)).isEqualTo(10);
+      // Dev-seed fixtures own twelve outbox intents (delivered inline); inbox copy mirrors them.
+      assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox", Long.class)).isEqualTo(12);
+      assertThat(database.queryForObject("SELECT count(*) FROM candidate_cv_access_grants", Long.class)).isEqualTo(4);
+      assertThat(database.queryForObject("SELECT count(*) FROM candidate_cv_access_grants WHERE revoked_at IS NULL", Long.class)).isEqualTo(2);
+      assertThat(database.queryForObject("SELECT count(*) FROM applications WHERE status='INACTIVE'", Long.class)).isEqualTo(1);
+      assertThat(database.queryForObject("SELECT count(*) FROM applications WHERE status='HIRED'", Long.class)).isEqualTo(1);
+      assertThat(database.queryForObject("SELECT count(*) FROM application_snapshots WHERE cv_storage_mode='SHARED'", Long.class)).isEqualTo(4);
+      assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE event_type='APPLICATION_INACTIVE'", Long.class)).isEqualTo(2);
+      assertThat(database.queryForObject("SELECT status FROM applications WHERE id='a04a0000-0000-4000-8000-000000000005'", String.class)).isEqualTo("INACTIVE");
+      assertThat(database.queryForObject("SELECT status FROM applications WHERE id='a04a0000-0000-4000-8000-000000000007'", String.class)).isEqualTo("HIRED");
+      assertThat(database.queryForObject("SELECT revoked_reason FROM candidate_cv_access_grants WHERE application_id='a04a0000-0000-4000-8000-000000000005'", String.class)).isEqualTo("APPLICATION_INACTIVE");
+      assertThat(database.queryForObject("SELECT revoked_reason FROM candidate_cv_access_grants WHERE application_id='a04a0000-0000-4000-8000-000000000007'", String.class)).isEqualTo("CANDIDATE_CV_DELETED");
+      String reviewWindowExpiry = database.queryForObject(
+          "SELECT expires_at::text FROM candidate_cv_access_grants "
+              + "WHERE application_id='a04a0000-0000-4000-8000-000000000006'", String.class);
+      assertThat(reviewWindowExpiry).isNotNull();
       // Bulk company fixtures: 100 verified companies with six visible postings each,
       // one industry per company and at most two locations.
       assertThat(database.queryForObject("SELECT count(*) FROM companies WHERE tax_code LIKE 'GW-DEMO-BULK-%'", Long.class)).isEqualTo(100);
@@ -71,6 +85,12 @@ class DevelopmentJobSeedTest {
       assertThat(database.queryForObject("SELECT count(*) FROM job_assignments WHERE ended_at IS NULL", Long.class)).isZero();
       assertThat(database.queryForObject("SELECT count(*) FROM company_memberships WHERE role='RECRUITER' AND status='ACTIVE'", Long.class)).isZero();
       assertThat(database.queryForObject("SELECT is_banned FROM companies WHERE tax_code='GW-DEMO-LOCAL-001'", Boolean.class)).isTrue();
+      assertThat(database.queryForObject("SELECT count(*) FROM candidate_cv_access_grants", Long.class)).isEqualTo(4);
+      assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE event_type='APPLICATION_INACTIVE'", Long.class)).isEqualTo(2);
+      assertThat(database.queryForObject(
+          "SELECT expires_at::text FROM candidate_cv_access_grants "
+              + "WHERE application_id='a04a0000-0000-4000-8000-000000000006'", String.class))
+          .isEqualTo(reviewWindowExpiry);
     });
   }
 
