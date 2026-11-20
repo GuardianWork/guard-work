@@ -8,6 +8,7 @@ import com.guardwork.backend.application.model.JobApplication;
 import com.guardwork.backend.application.repository.ApplicationSnapshotRepository;
 import com.guardwork.backend.application.repository.ApplicationStatusHistoryRepository;
 import com.guardwork.backend.application.repository.JobApplicationRepository;
+import com.guardwork.backend.application.service.ApplicationInactivityService;
 import com.guardwork.backend.application.service.JobApplicationService;
 import com.guardwork.backend.candidate.CandidateProfile;
 import com.guardwork.backend.candidate.CandidateProfileService;
@@ -77,6 +78,7 @@ class JobApplicationServiceTest {
     @Mock ApplicationSnapshotRepository snapshots;
     @Mock ApplicationStatusHistoryRepository statusHistory;
     @Mock CandidateCvAccessGrantRepository cvGrants;
+    @Mock ApplicationInactivityService inactivity;
     @Mock Clock clock;
 
     @InjectMocks JobApplicationService service;

@@ -51,9 +51,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -66,6 +68,8 @@ public class JobApplicationService {
     private static final String STORAGE_PROVIDER = "CLOUDINARY";
     private static final String STORAGE_MODE_SHARED = "SHARED";
     private static final String STORAGE_MODE_LEGACY_COPY = "LEGACY_COPY";
+    private static final Set<String> ACTIVE_STATUSES =
+            Set.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING");
     private static final String DUPLICATE_CONSTRAINT = "uk_applications_candidate_job";
     private static final java.time.Duration DOWNLOAD_URL_TTL = java.time.Duration.ofMinutes(15);
     private static final java.time.Duration COMPANY_CV_URL_TTL = java.time.Duration.ofMinutes(5);
@@ -93,6 +97,7 @@ public class JobApplicationService {
     ApplicationStatusHistoryRepository statusHistory;
     CandidateCvAccessGrantRepository cvGrants;
     CandidateCvStorage cvStorage;
+    ApplicationInactivityService inactivity;
     AuditService audit;
     Clock clock;
 
@@ -394,6 +399,7 @@ public class JobApplicationService {
         JobApplication application = access.application();
         boolean terminal = "REJECTED".equals(application.getStatus())
                 || "WITHDRAWN".equals(application.getStatus());
+        CompanyCvAccess cvAccess = companyCvAccess(application, snapshot, clock.instant());
         var history = statusHistory.findByApplicationIdOrderById(applicationId);
         // Resolve attribution only after Company authorization, in one batch.
         Map<Long, String> actorNames = new HashMap<>();
@@ -423,7 +429,10 @@ public class JobApplicationService {
                         .toList(),
                 history.stream()
                         .map(com.guardwork.backend.application.model.ApplicationStatusHistory::getCandidateFeedback)
-                        .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null));
+                        .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null),
+                cvAccess.canView(),
+                cvAccess.reviewWindowEndsAt(),
+                inactivityDeadline(application));
     }
 
     @Transactional
@@ -452,7 +461,66 @@ public class JobApplicationService {
                         item.getFromStatus(), item.getToStatus(), null, null, item.getOccurredAt(), null, null,
                         item.getCandidateFeedback())).toList(),
                 history.stream().map(com.guardwork.backend.application.model.ApplicationStatusHistory::getCandidateFeedback)
-                        .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null));
+                        .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null),
+                candidateCanViewCv(snapshot),
+                null,
+                null);
+    }
+
+    /**
+     * Company-facing access flags are resolved from the same state the CV endpoint enforces.
+     * Metadata remains visible for INACTIVE Applications; the flag tells the client not to
+     * request the bytes. Terminal Applications keep their existing metadata redaction.
+     */
+    private CompanyCvAccess companyCvAccess(
+            JobApplication application, ApplicationSnapshot snapshot, Instant now) {
+        if ("REJECTED".equals(application.getStatus())
+                || "WITHDRAWN".equals(application.getStatus())
+                || "INACTIVE".equals(application.getStatus())) {
+            return CompanyCvAccess.NONE;
+        }
+        if (STORAGE_MODE_SHARED.equals(snapshot.getCvStorageMode())) {
+            CandidateCvAccessGrant grant = cvGrants.findLive(
+                    application.getId(), application.getCompanyId(), now).orElse(null);
+            if (grant == null
+                    || !STORAGE_PROVIDER.equals(grant.getStorageProvider())
+                    || !CONTENT_TYPE_TO_FORMAT.containsKey(grant.getContentType())) {
+                return CompanyCvAccess.NONE;
+            }
+            return new CompanyCvAccess(true, grant.getExpiresAt());
+        }
+        if (STORAGE_MODE_LEGACY_COPY.equals(snapshot.getCvStorageMode())
+                && STORAGE_PROVIDER.equals(snapshot.getCvStorageProvider())
+                && snapshot.getCvPurgedAt() == null
+                && CONTENT_TYPE_TO_FORMAT.containsKey(snapshot.getCvContentType())) {
+            return new CompanyCvAccess(true, null);
+        }
+        return CompanyCvAccess.NONE;
+    }
+
+    /**
+     * The Candidate keeps access to their submitted CV until they delete the shared library
+     * object, independent of the Application status. A rejected legacy copy loses its bytes.
+     */
+    private boolean candidateCanViewCv(ApplicationSnapshot snapshot) {
+        if (STORAGE_MODE_SHARED.equals(snapshot.getCvStorageMode())) {
+            UUID sourceCvId = snapshot.getSourceCvId();
+            CandidateCv source = sourceCvId == null ? null : cvs.findById(sourceCvId).orElse(null);
+            return source != null && !source.isDeleted()
+                    && CONTENT_TYPE_TO_FORMAT.containsKey(snapshot.getCvContentType());
+        }
+        return STORAGE_MODE_LEGACY_COPY.equals(snapshot.getCvStorageMode())
+                && STORAGE_PROVIDER.equals(snapshot.getCvStorageProvider())
+                && snapshot.getCvPurgedAt() == null
+                && CONTENT_TYPE_TO_FORMAT.containsKey(snapshot.getCvContentType());
+    }
+
+    private Instant inactivityDeadline(JobApplication application) {
+        if (!ACTIVE_STATUSES.contains(application.getStatus())
+                || application.getStatusChangedAt() == null) {
+            return null;
+        }
+        return application.getStatusChangedAt().plus(inactivity.inactivityTtl());
     }
 
     @Transactional
@@ -570,6 +638,10 @@ public class JobApplicationService {
     }
 
     private record CompanyApplicationAccess(JobApplication application) {}
+
+    private record CompanyCvAccess(boolean canView, Instant reviewWindowEndsAt) {
+        private static final CompanyCvAccess NONE = new CompanyCvAccess(false, null);
+    }
 
     public record ApplicationCvDownload(byte[] content, MediaType contentType, String fileName) {}
 

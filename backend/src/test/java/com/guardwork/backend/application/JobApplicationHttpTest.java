@@ -169,6 +169,10 @@ class JobApplicationHttpTest {
                         .header("Authorization", candidate))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.status").value(ErrorCode.CV_NOT_FOUND.getCode()));
+        http.perform(get("/api/candidate/applications/{applicationId}", application)
+                        .header("Authorization", candidate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.canViewCv").value(false));
 
         http.perform(post(APPLICATIONS)
                         .header("Authorization", candidate)
@@ -267,7 +271,12 @@ class JobApplicationHttpTest {
                         job.id(), application).header("Authorization", owner))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("INACTIVE"))
-                .andExpect(jsonPath("$.data.email").value("an@example.vn"));
+                .andExpect(jsonPath("$.data.email").value("an@example.vn"))
+                .andExpect(jsonPath("$.data.canViewCv").value(false))
+                .andExpect(jsonPath("$.data.reviewWindowEndsAt").value(
+                        org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.inactivityDeadline").value(
+                        org.hamcrest.Matchers.nullValue()));
         http.perform(get(APPLICATIONS).header("Authorization", candidate)
                         .queryParam("status", "INACTIVE"))
                 .andExpect(status().isOk())
@@ -990,13 +999,22 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
                 .andExpect(jsonPath("$.data.version").value(0))
                 .andExpect(jsonPath("$.data.cvFileName").value("private.pdf"))
-                .andExpect(jsonPath("$.data.cvStorageKey").doesNotExist());
+                .andExpect(jsonPath("$.data.cvStorageKey").doesNotExist())
+                .andExpect(jsonPath("$.data.canViewCv").value(true))
+                .andExpect(jsonPath("$.data.reviewWindowEndsAt").value(
+                        org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.inactivityDeadline").isNotEmpty());
 
         http.perform(get("/api/candidate/applications/{applicationId}", application)
                         .header("Authorization", candidate))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.email").value("candidate@example.vn"))
-                .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+                .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+                .andExpect(jsonPath("$.data.canViewCv").value(true))
+                .andExpect(jsonPath("$.data.reviewWindowEndsAt").value(
+                        org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.inactivityDeadline").value(
+                        org.hamcrest.Matchers.nullValue()));
 
         http.perform(get("/api/candidate/applications/{applicationId}", application)
                         .header("Authorization", owner))

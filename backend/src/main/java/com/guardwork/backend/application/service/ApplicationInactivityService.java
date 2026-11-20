@@ -98,6 +98,11 @@ public class ApplicationInactivityService {
         this.transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
+    /** The configured review inactivity window, also used by detail responses. */
+    public Duration inactivityTtl() {
+        return inactivityTtl;
+    }
+
     /** Bounded operational entry point; each Application commits independently. */
     public int expireDue() {
         Instant cutoff = clock.instant().minus(inactivityTtl);
