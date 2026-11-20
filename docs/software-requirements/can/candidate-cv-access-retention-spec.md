@@ -341,7 +341,22 @@ Returns a five-minute signed provider URL for PDF, DOC, or DOCX.
 The response uses `Cache-Control: no-store`. The URL is issued only after the same grant and
 application-access checks as the inline view. No audit event is written for URL issuance.
 
-### 5.5 Application status and notify
+### 5.5 Application detail access metadata
+
+`GET /api/companies/me/jobs/{jobId}/applications/{applicationId}` includes:
+
+- `canViewCv`: whether the authenticated Company may currently read the submitted CV through
+  either CV endpoint. It is false for `REJECTED`, `WITHDRAWN`, `INACTIVE`, missing/expired grants,
+  and purged copies.
+- `reviewWindowEndsAt`: the live shared grant expiry after Candidate deletion; null when
+  open-ended or unavailable.
+- `inactivityDeadline`: `statusChangedAt` plus `application.review.inactivity-ttl` for active
+  stages; null for `HIRED`, terminal, and `INACTIVE` Applications.
+
+`GET /api/candidate/applications/{applicationId}` includes `canViewCv` for the Candidate’s own
+submitted-CV download. The Company-only `reviewWindowEndsAt` and `inactivityDeadline` are null.
+
+### 5.6 Application status and notify
 
 `INACTIVE` is a valid value in the Candidate and Company list/status filters. The Candidate sees
 the status in list/detail; only the Company owner and currently assigned Recruiters receive the

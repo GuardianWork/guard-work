@@ -35,7 +35,7 @@ This extends [Application Listing](application-listing-spec.md) and uses existin
 
 ## Human-approved HTTP contract
 
-- `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}`: Company detail projection, with terminal redaction.
+- `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}`: Company detail projection, with terminal redaction and `canViewCv` / `reviewWindowEndsAt` / `inactivityDeadline` access metadata.
 - `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv`: authenticated inline PDF response; DOC/DOCX snapshots return 406; terminal and `INACTIVE` access denied with 404.
 - `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url`: five-minute signed URL for PDF, DOC, or DOCX under the same grant and access checks.
 - `GET /api/candidate/applications/{applicationId}`: Candidate-owned detail projection, inaccessible applications concealed with 404.
@@ -67,6 +67,7 @@ the HTTP contract above.
 | AD-013 | If the Candidate deletes the shared library CV, the Company keeps a bounded review window (default 30 days) only while the Application is in an active review stage. `HIRED` ends shared-CV access immediately. The Candidate loses their own access immediately. |
 | AD-014 | `INACTIVE` is reversible through `UNDER_REVIEW` by an eligible Owner or currently assigned Recruiter. Reactivation starts a new CV grant epoch only while the shared library CV still exists. |
 | AD-015 | On `REJECTED`, the application-specific `LEGACY_COPY` bytes **shall** be deleted by a bounded, retryable worker while snapshot metadata is retained. `SHARED` library objects **shall not** be deleted by this path. Already-rejected copies are backfilled. `WITHDRAWN` copies are retained. |
+| AD-016 | Company detail **shall** expose `canViewCv`, `reviewWindowEndsAt`, and `inactivityDeadline`. `canViewCv` reflects the same state as the CV endpoints; `reviewWindowEndsAt` is the live shared grant expiry (null when open-ended or unavailable); `inactivityDeadline` is `statusChangedAt` plus the configured inactivity TTL for active stages, and null otherwise. Candidate detail exposes `canViewCv` for the Candidate’s own submitted CV; Company-only deadlines are null for the Candidate. |
 
 The earlier statement that no standalone download action exists is superseded for Company readers
 by AD-011. The earlier statement that no automatic deletion exists is superseded by AD-015; the
