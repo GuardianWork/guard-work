@@ -62,6 +62,7 @@ public class SecurityConfig {
             .permitAll()
             .requestMatchers("/api/jobs/search").permitAll()
             .requestMatchers("/health").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/ai/health").permitAll()
             .anyRequest().authenticated())
         .addFilterBefore(portalCorsFilter, CorsFilter.class)
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
