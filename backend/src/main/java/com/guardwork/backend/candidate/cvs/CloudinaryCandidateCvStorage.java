@@ -47,7 +47,7 @@ public class CloudinaryCandidateCvStorage implements CandidateCvStorage {
         params.put("public_id", publicId);
         params.put("access_mode", AUTHENTICATED_ACCESS_MODE);
         params.put("timestamp", timestamp);
-
+        
         String signature = cloudinary.apiSignRequest(params, cloudinary.config.apiSecret);
         String uploadUrl = cloudinary.cloudinaryApiUrl("upload", Map.of("resource_type", "auto"));
         return new UploadSignature(uploadUrl, cloudinary.config.apiKey, timestamp, signature,
