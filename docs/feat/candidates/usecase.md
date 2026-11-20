@@ -33,7 +33,7 @@
 - Gộp **UC-CAN-12** "Chọn / Đính kèm CV" vào UC-CAN-11.
 - Tách **UC-CAN-15** thành "Lưu lại" (UC-CAN-15) và "Bỏ lưu" (UC-CAN-19).
 - Thêm mới UC-CAN-20, 21, 22, 23; ưu tiên của các use case mới là đề xuất, cần xác nhận lại.
-- Hồ sơ đã nộp được sao chép thành bản lưu riêng gắn với đơn ứng tuyển (cập nhật UC-CAN-11, UC-CAN-05 và EC-CAN-CV-04).
+- Hồ sơ đã nộp được chia sẻ qua cơ chế quyền truy cập (access grant) giới hạn cho công ty nhận đơn thay vì sao chép thành bản riêng (cập nhật UC-CAN-11, UC-CAN-05 và EC-CAN-CV-04).
 - Bổ sung edge case EC-CAN-LAW-01 đến 03 cho UC-CAN-22.
 - Thêm mới **UC-CAN-24** "Rút hồ sơ ứng tuyển" cho luồng ứng viên rút đơn đang còn hiệu lực (Đã nộp / Đang xem xét / Được chọn sơ bộ), kèm thông báo cho chủ công ty và nhà tuyển dụng được phân công; trạng thái kết thúc không thể hoàn tác.
 - Bổ sung các edge case EC-CAN-APP-06 đến EC-CAN-APP-11 cho luồng rút hồ sơ.
@@ -152,20 +152,19 @@
 ## Xóa hồ sơ xin việc
 
 - **Tác nhân:** Ứng viên
-- **Mô tả:** Cho phép ứng viên xóa một tệp hồ sơ xin việc đã tải lên khỏi danh sách hồ sơ xin việc và hệ thống lưu trữ Cloudinary.
+- **Mô tả:** Cho phép ứng viên xóa một tệp hồ sơ xin việc đã tải lên khỏi danh sách hồ sơ xin việc. Thao tác xóa không hoàn tác.
 - **Pre-condition:** Ứng viên đã đăng nhập và đang ở trang Quản lý hồ sơ xin việc, danh sách hồ sơ có ít nhất một tệp.
-- **Post-condition:** Tệp hồ sơ được xóa khỏi cơ sở dữ liệu và hệ thống lưu trữ Cloudinary, không còn hiển thị trong danh sách hồ sơ của ứng viên. Các đơn ứng tuyển đã nộp không bị ảnh hưởng.
+- **Post-condition:** Tệp hồ sơ được đánh dấu đã xóa trong cơ sở dữ liệu và không còn hiển thị trong danh sách hồ sơ của ứng viên, không còn mặc định và không tải xuống được cho ứng viên. Ứng viên không còn quyền truy cập tệp đã xóa. Nếu tệp đã được dùng để ứng tuyển, công ty nhận đơn (công ty duy nhất được cấp quyền) vẫn truy cập được tệp trong thời hạn còn lại (mặc định 30 ngày kể từ thời điểm xóa, cấu hình bằng `candidate.cv.access-grant-ttl`) **khi đơn còn ở giai đoạn đánh giá đang hoạt động**; đơn đã tuyển (`HIRED`) mất quyền ngay. Sau thời hạn đó quyền truy cập bị thu hồi và tệp bị xóa tự động khỏi hệ thống lưu trữ. Nếu không còn quyền truy cập nào còn hiệu lực, tệp được xóa khỏi Cloudinary ngay; nếu xóa thất bại, hệ thống tự động thử lại. Các đơn ứng tuyển đã nộp không bị thay đổi về dữ liệu khác.
 - **Luồng sự kiện:**
   - **Luồng chính:**
     1. Ứng viên chọn "Xóa" tại tệp hồ sơ xin việc muốn xóa trong danh sách.
-    2. Hệ thống hiển thị hộp thoại xác nhận việc xóa hồ sơ kèm cảnh báo hành động này không thể hoàn tác và nêu rõ các đơn ứng tuyển đã nộp trước đó vẫn giữ bản hồ sơ đã gửi.
+    2. Hệ thống hiển thị hộp thoại xác nhận việc xóa hồ sơ kèm cảnh báo hành động này không thể hoàn tác và nêu rõ: công ty nhận đơn (nếu tệp đã được dùng để ứng tuyển) vẫn truy cập được tệp trong tối đa 30 ngày kể từ khi xóa, bao gồm đơn đã nộp, và ứng viên không còn truy cập được tệp.
     3. Ứng viên chọn "Xác nhận xóa".
-    4. Hệ thống gửi yêu cầu xóa tệp tương ứng với publicId trên Cloudinary.
-    5. Hệ thống nhận phản hồi thành công từ Cloudinary và cập nhật cơ sở dữ liệu để xóa bản ghi thông tin hồ sơ.
-    6. Hệ thống thông báo xóa hồ sơ thành công và cập nhật lại danh sách hồ sơ hiển thị.
+    4. Hệ thống đánh dấu tệp là đã xóa trong cơ sở dữ liệu, bỏ cờ mặc định, và cấp phát thời hạn truy cập còn lại cho tất cả quyền truy cập còn hiệu lực của tệp. Nếu không còn quyền truy cập nào còn hiệu lực, hệ thống xóa tệp tương ứng trên Cloudinary ngay và ghi nhận kết quả.
+    5. Hệ thống thông báo xóa hồ sơ thành công và cập nhật lại danh sách hồ sơ hiển thị.
   - **Luồng thay thế:**
     - *3a.* Ứng viên chọn "Hủy bỏ". Hệ thống đóng hộp thoại xác nhận và giữ nguyên trạng thái danh sách hồ sơ.
-    - *4a.* Lỗi kết nối hoặc xóa tệp trên Cloudinary thất bại. Hệ thống báo lỗi "Không thể xóa tệp, vui lòng thử lại sau" và giữ nguyên bản ghi trong cơ sở dữ liệu.
+    - *4a.* Xóa tệp trên Cloudinary thất bại. Hệ thống vẫn ghi nhận việc tệp đã được gỡ khỏi danh sách và thông báo thành công; hệ thống tự động thử xóa lại đối tượng lưu trữ sau.
 
 ## Đặt hồ sơ xin việc làm mặc định
 
@@ -188,7 +187,7 @@
 - **Tác nhân:** Ứng viên
 - **Mô tả:** Cho phép ứng viên điền các thông tin cần thiết, tự động trích xuất thông tin từ hồ sơ cá nhân và đính kèm hồ sơ xin việc để nộp đơn ứng tuyển cho một tin tuyển dụng cụ thể.
 - **Pre-condition:** Ứng viên đã đăng nhập, đang xem thông tin chi tiết của tin tuyển dụng và tin tuyển dụng đang còn hạn nộp.
-- **Post-condition:** Đơn ứng tuyển kèm bản sao tệp hồ sơ đã nộp được ghi nhận vào cơ sở dữ liệu với trạng thái "Đã nộp", thông tin hiển thị danh sách đã ứng tuyển được cập nhật.
+- **Post-condition:** Đơn ứng tuyển kèm quyền truy cập tệp hồ sơ đính kèm được ghi nhận vào cơ sở dữ liệu với trạng thái "Đã nộp", thông tin hiển thị danh sách đã ứng tuyển được cập nhật.
 - **Luồng sự kiện:**
   - **Luồng chính:**
     1. Ứng viên nhấn nút "Ứng tuyển" tại tin tuyển dụng.
@@ -203,13 +202,13 @@
       - *Số điện thoại*: kiểu chuỗi, chấp nhận 0xxxxxxxxx hoặc +84xxxxxxxxx, tối đa 10 ký tự.
       - *Thư giới thiệu*: kiểu chuỗi, tùy chọn, tối đa 1000 ký tự.
       - *Hồ sơ đính kèm*: phải có ít nhất 1 tệp hồ sơ xin việc hợp lệ được chọn.
-    8. Hệ thống tạo bản ghi đơn ứng tuyển mới với trạng thái "Đã nộp", sao chép tệp hồ sơ đính kèm thành bản lưu riêng gắn với đơn ứng tuyển (không phụ thuộc vào tệp trong danh sách hồ sơ của ứng viên) và thông báo ứng tuyển thành công.
+    8. Hệ thống tạo bản ghi đơn ứng tuyển mới với trạng thái "Đã nộp", ghi nhận quyền truy cập tệp hồ sơ đính kèm cho công ty nhận đơn (không sao chép tệp; tệp vẫn thuộc danh sách hồ sơ của ứng viên) và thông báo ứng tuyển thành công.
   - **Luồng thay thế:**
     - *3a.* Ứng viên muốn nhập mới hoàn toàn. Ứng viên chọn "Nhập thủ công", hệ thống xóa thông tin đã điền sẵn để ứng viên tự điền lại từ đầu.
     - *4a.* Hồ sơ cá nhân chưa có thông tin hoặc thông tin chưa đầy đủ. Hệ thống chỉ điền các trường hiện có, đưa ra gợi ý "Cập nhật hồ sơ cá nhân" hoặc yêu cầu ứng viên nhập bổ sung trực tiếp các trường còn thiếu.
     - *7a.* Thông tin điền chưa hợp lệ hoặc thiếu hồ sơ đính kèm. Hệ thống báo lỗi chi tiết tại các trường vi phạm và yêu cầu ứng viên hoàn thiện.
     - *8a.* Ứng viên đã ứng tuyển vào tin tuyển dụng này trước đó. Hệ thống đưa ra thông báo "Bạn đã nộp hồ sơ cho vị trí này" và ngăn việc gửi lại đơn.
-    - *8b.* Sao chép tệp hồ sơ đính kèm thất bại. Hệ thống không tạo đơn ứng tuyển, thông báo lỗi và yêu cầu ứng viên gửi lại.
+    - *8b.* Không thể ghi nhận tệp hồ sơ hoặc tạo đơn ứng tuyển (ví dụ tệp hồ sơ đã bị xóa khỏi thư viện). Hệ thống không tạo đơn ứng tuyển, thông báo lỗi và yêu cầu ứng viên gửi lại.
 
 ## Xem danh sách tin tuyển dụng đã ứng tuyển
 
@@ -428,7 +427,7 @@
 | **EC-CAN-CV-01** | **Giả mạo định dạng file CV** | Ứng viên đổi tên file thực thi (`.exe`, `.bat`, `.sh`) thành `.pdf`, `.doc` hoặc `.docx` rồi tải lên.<br>$\rightarrow$ **Xử lý:** Hệ thống không chỉ kiểm tra phần mở rộng file mà còn kiểm tra kiểu MIME thực tế phải tương ứng với định dạng PDF, DOC hoặc DOCX (dung lượng tối đa 10 MB). Nếu sai, từ chối tải lên, báo lỗi `INVALID_CV_FILE_FORMAT` (HTTP 400) và yêu cầu ứng viên chọn tệp khác (luồng thay thế 4a). |
 | **EC-CAN-CV-02** | **Gián đoạn kết nối Cloudinary** | Dịch vụ lưu trữ Cloudinary gặp sự cố hoặc timeout khi đang tải tệp hồ sơ lên.<br>$\rightarrow$ **Xử lý:** Hệ thống không ghi nhận thông tin tệp vào cơ sở dữ liệu, thông báo nguyên nhân lỗi thân thiện và gợi ý ứng viên thử lại (luồng thay thế 6a). |
 | **EC-CAN-CV-03** | **Vượt quá số lượng CV cho phép** | Ứng viên tải lên vượt quá số lượng CV tối đa cho phép (ví dụ: tối đa 5 CV/ứng viên).<br>$\rightarrow$ **Xử lý:** Hệ thống kiểm tra số lượng CV hiện tại trước khi nhận file. Nếu đã đạt giới hạn, chặn thao tác và yêu cầu ứng viên xóa bớt CV cũ trước khi tải CV mới. |
-| **EC-CAN-CV-04** | **Xóa CV đã dùng để ứng tuyển** | Ứng viên xóa một tệp hồ sơ xin việc đã được dùng để gửi đơn ứng tuyển trước đó.<br>$\rightarrow$ **Xử lý:** Khi nộp đơn, tệp hồ sơ được sao chép thành bản lưu riêng gắn với đơn ứng tuyển (Immutable Snapshot). Hộp thoại xác nhận xóa nêu rõ các đơn đã nộp vẫn giữ bản hồ sơ đã gửi. Thao tác xóa chỉ xóa tệp theo `publicId` trên Cloudinary và bản ghi trong danh sách hồ sơ của ứng viên, không ảnh hưởng đến dữ liệu hiển thị của nhà tuyển dụng. Nếu xóa trên Cloudinary thất bại, hệ thống giữ nguyên bản ghi và báo lỗi "Không thể xóa tệp, vui lòng thử lại sau" (luồng thay thế 4a). |
+| **EC-CAN-CV-04** | **Xóa CV đã dùng để ứng tuyển** | Ứng viên xóa một tệp hồ sơ xin việc đã được dùng để gửi đơn ứng tuyển trước đó.<br>$\rightarrow$ **Xử lý:** Khi nộp đơn, hệ thống cấp quyền truy cập tệp cho công ty nhận đơn (access grant, không sao chép tệp). Hộp thoại xác nhận xóa nêu rõ ứng viên không còn truy cập được tệp; công ty nhận đơn vẫn truy cập được tệp trong tối đa 30 ngày kể từ khi xóa **nếu đơn còn ở giai đoạn đánh giá đang hoạt động**, còn đơn đã tuyển (`HIRED`) mất quyền ngay; sau đó quyền truy cập bị thu hồi và tệp bị xóa tự động. Thao tác xóa đánh dấu bản ghi là đã xóa (tombstone) và bỏ cờ mặc định, không làm thay đổi dữ liệu khác của đơn ứng tuyển; đơn đã nộp không bị ảnh hưởng. Nếu xóa trên Cloudinary thất bại, hệ thống vẫn ghi nhận xóa phía ứng viên và tự động thử xóa lại đối tượng lưu trữ (luồng thay thế 4a). |
 | **EC-CAN-CV-05** | **Gửi request upload trùng lặp (Double Click)** | Ứng viên nhấn nút "Tải lên" nhiều lần liên tiếp do mạng chậm.<br>$\rightarrow$ **Xử lý:** Client disable nút bấm ngay khi submit; backend sử dụng token idempotency / rate limiter để loại bỏ các request trùng lặp trong thời gian ngắn. |
 
 ---
@@ -461,6 +460,7 @@
 | **EC-CAN-APP-09** | **Rút hồ sơ ở trạng thái kết thúc** | Đơn đã ở trạng thái "Từ chối" hoặc trạng thái kết thúc khác.<br>$\rightarrow$ **Xử lý:** Hệ thống báo không thể rút và giữ nguyên trạng thái hiện tại. |
 | **EC-CAN-APP-10** | **Phiên bản đơn ứng tuyển không khớp (Stale Version)** | Client gửi phiên bản cũ khi rút hồ sơ.<br>$\rightarrow$ **Xử lý:** Trả về xung đột phiên bản `409`, không thay đổi trạng thái; client tải lại thông tin và thử lại. |
 | **EC-CAN-APP-11** | **Thông báo rút hồ sơ tới nhiều người nhận** | Nhiều nhà tuyển dụng được phân công cho tin tuyển dụng hoặc chủ công ty trùng với người được phân công.<br>$\rightarrow$ **Xử lý:** Mỗi người nhận chỉ nhận một thông báo; khử trùng (dedup) theo recipient trước khi ghi nhận outbox. |
+| **EC-CAN-APP-12** | **Đơn ứng tuyển không hoạt động** | Nhà tuyển dụng không cập nhật trạng thái đơn trong 30 ngày (mặc định).<br>$\rightarrow$ **Xử lý:** Hệ thống chuyển đơn sang `INACTIVE`, thu hồi quyền truy cập CV hiện tại và chỉ thông báo cho chủ công ty/nhà tuyển dụng đang được phân công. Ứng viên vẫn thấy trạng thái trong danh sách và có thể rút đơn. Công ty có thể mở lại đơn qua `UNDER_REVIEW`; quyền truy cập CV chỉ được cấp lại nếu CV thư viện vẫn còn. |
 
 ---
 

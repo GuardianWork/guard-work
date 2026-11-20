@@ -42,6 +42,10 @@ public class JobApplication {
     @Column(name = "status", nullable = false, length = 30)
     private String status;
 
+    /** Last lifecycle status transition; the inactivity worker measures from here. */
+    @Column(name = "status_changed_at", nullable = false)
+    private Instant statusChangedAt;
+
     @Version
     @Column(name = "version", nullable = false)
     private Long version;

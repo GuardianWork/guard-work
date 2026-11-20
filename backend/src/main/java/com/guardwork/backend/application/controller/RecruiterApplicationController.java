@@ -4,6 +4,7 @@ import com.guardwork.backend.application.dto.RecruiterApplicationSummaryResponse
 import com.guardwork.backend.application.dto.CompanyApplicationSummaryResponse;
 import com.guardwork.backend.application.dto.ApplicationDetailResponse;
 import com.guardwork.backend.application.service.JobApplicationService;
+import com.guardwork.backend.application.service.JobApplicationService.ApplicationCvDownload;
 import com.guardwork.backend.common.ApiResponse;
 import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.common.utils.SecurityUtils;
@@ -16,7 +17,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 @RestController
@@ -61,14 +65,26 @@ public class RecruiterApplicationController {
 
     @GetMapping("/jobs/{jobId}/applications/{applicationId}/cv")
     public ResponseEntity<byte[]> cv(@PathVariable Long jobId, @PathVariable UUID applicationId) {
-        var cv = applications.companyCv(SecurityUtils.getCurrentUserId(), jobId, applicationId);
+        return binaryCvResponse(
+                applications.companyCv(SecurityUtils.getCurrentUserId(), jobId, applicationId),
+                ContentDisposition.inline());
+    }
+
+    @GetMapping("/jobs/{jobId}/applications/{applicationId}/cv/download-url")
+    public ResponseEntity<byte[]> cvDownload(@PathVariable Long jobId, @PathVariable UUID applicationId) {
+        return binaryCvResponse(
+                applications.companyCvDownload(SecurityUtils.getCurrentUserId(), jobId, applicationId),
+                ContentDisposition.attachment());
+    }
+
+    private static ResponseEntity<byte[]> binaryCvResponse(
+            ApplicationCvDownload cv, ContentDisposition.Builder disposition) {
         String safeName = cv.fileName().replaceAll("[\\r\\n]", "_");
         return ResponseEntity.ok()
                 .contentType(cv.contentType())
                 .cacheControl(CacheControl.noStore())
-                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
-                        org.springframework.http.ContentDisposition.inline()
-                                .filename(safeName, java.nio.charset.StandardCharsets.UTF_8).build().toString())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        disposition.filename(safeName, StandardCharsets.UTF_8).build().toString())
                 .header("X-Content-Type-Options", "nosniff")
                 .body(cv.content());
     }
