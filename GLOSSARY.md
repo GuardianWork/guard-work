@@ -60,6 +60,10 @@ _Avoid_: Platform role, submitter job title
 A Company Member with the OWNER role; in new-Company onboarding, the applicant becomes Owner when the complete initial dossier is successfully submitted. Ownership does not mean the Company has been approved.
 _Avoid_: Platform administrator, legal representative as a synonym for Owner
 
+**Owner Responsibility**:
+The Company Owner's explicit responsibility for an individual Job Posting. It can coexist with Recruiter assignments and is separate from ownership of the Company.
+_Avoid_: Company ownership, Owner access
+
 **Recruiter**:
 A Company Member with the RECRUITER role, obtained in the onboarding journey through acceptance of a valid invitation after email verification.
 _Avoid_: Employer Applicant, global Recruiter role

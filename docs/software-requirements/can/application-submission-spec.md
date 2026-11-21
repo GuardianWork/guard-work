@@ -37,7 +37,7 @@ Kafka, or an application outbox. Those remain separate work.
 | Persistence scope | `applications` and `application_snapshots` only. |
 | Named human approver | `chiko`. |
 | Duplicate rule | At most one application per Candidate and Job Posting. |
-| Event delivery | Deferred. `EC-CAN-APP-03` remains open. |
+| Event delivery | [GW128-01](notification-flow-spec.md#11-gw-128-inbox-coverage) covers the Company-side inbox. General application event publication remains deferred under `EC-CAN-APP-03`. |
 
 ## 2. Domain model and lifecycle
 
@@ -354,11 +354,11 @@ Submits the application.
 
 | ID | Gap | Disposition |
 |---|---|---|
-| EC-CAN-APP-03 | No durable application event/outbox and no Kafka delivery. | Deferred by the approved scope; the application is still persisted atomically. |
+| EC-CAN-APP-03 | General application event publication and Kafka delivery. | Deferred. The existing notification outbox covers the focused Company-side inbox requirement in GW128-01. |
 | APP-GAP-01 | Company-side list, detail, CV access, status transitions, and withdrawal are scoped to GW-SR-APPLICATION-LISTING, GW-SR-APPLICATION-DETAILS, and GW-SR-APPLICATION-REVIEW. | Separate recruiter workflow; this submission specification remains Candidate-side and snapshot focused. |
 | APP-GAP-02 | `application_status_history` is owned by GW-SR-APPLICATION-REVIEW, not this submission specification. | Status values remain part of the Application lifecycle; this submission specification supplies only the initial `SUBMITTED` record. |
 | APP-GAP-03 | Candidate application list endpoint supports read-only tracking with status filtering, job/company search, pagination, submitted-CV download, and exclusion of suspended-Job-Posting applications. Full status transitions remain separate recruiter pipeline work. | Implemented for UC-CAN-13 listing scope. |
-| APP-GAP-04 | No notification to Candidate or Recruiter (UC-CAN-14). | Depends on EC-CAN-APP-03 and notification workflow. |
+| APP-GAP-04 | Company-side inbox notification on submission. | Covered by [GW128-01](notification-flow-spec.md#11-gw-128-inbox-coverage). The Candidate receives the existing submission receipt. |
 | APP-GAP-05 | No frontend form. | No frontend exists in this repository. |
 | APP-GAP-06 | No backend form prefill endpoint. | Prefill is assembled by the frontend from profile and CV endpoints. |
 

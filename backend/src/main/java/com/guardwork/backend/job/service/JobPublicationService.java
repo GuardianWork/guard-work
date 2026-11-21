@@ -214,9 +214,12 @@ public class JobPublicationService {
     entities.refresh(revision);
   }
 
-  public record ApplicationContext(Long jobId, Long companyId, String companyName,
+  public record ApplicationContext(Long jobId, Company company, boolean ownerResponsible,
       Long submittedRevisionId, String title, String location, String workMode, Instant deadline,
-      boolean available, String reason) {}
+      boolean available, String reason) {
+    public Long companyId() { return company.getId(); }
+    public String companyName() { return company.getName(); }
+  }
 
   /**
    * Locks Company then job, reconciles expiry and returns the approved content needed by the
@@ -243,7 +246,7 @@ public class JobPublicationService {
             : decoded.get("workArrangement").toString();
     String reason=!"PUBLISHED".equals(job.getStatus())?job.getStatus()
         :company.getVerificationStatus()!=VerificationStatus.VERIFIED?"COMPANY_NOT_VERIFIED":null;
-    return new ApplicationContext(id,company.getId(),company.getName(),job.getPublishedRevisionId(),
+    return new ApplicationContext(id,company,job.isOwnerResponsible(),job.getPublishedRevisionId(),
         title,location,workArrangement,job.getApprovedDeadline(),reason==null,reason);
   }
 

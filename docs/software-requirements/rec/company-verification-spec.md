@@ -32,6 +32,10 @@
 
 > Company Membership MVP coordination (2026-10-08): the user confirmed completion of GW-001 and authorized dependent implementation under [GW-SR-REC-02](company-membership-mvp-spec.md). That companion contract supersedes anonymous Company creation, dossier reads, and resubmission below. `POST /api/companies/verification-request` now requires an active authenticated User and creates the Company plus its Owner atomically. Owner status/correction use `/api/companies/me/verification`; retained ID/tax-code selectors require current Owner authority and hide unrelated records. Only rejected Companies may be corrected; Company identity, immutable tax code, version checks, and moderation history are preserved. Existing unowned Companies remain inaccessible until reviewed assignment. Clients must authenticate before Company onboarding; legacy anonymous clients receive `401`. Platform verification decisions retain their existing rules and Bearer authentication. Membership notifications do not implement the separately deferred verification-decision notification requirement.
 
+The later [GW128-02 inbox requirement](../can/notification-flow-spec.md#11-gw-128-inbox-coverage)
+covers approval and rejection notices for the current Owner alongside the existing retained-dossier
+decision email.
+
 ## Table of Contents
 
 1. [Introduction](#1-introduction)
