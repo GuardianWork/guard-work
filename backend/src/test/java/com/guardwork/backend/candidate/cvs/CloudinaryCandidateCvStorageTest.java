@@ -115,6 +115,26 @@ class CloudinaryCandidateCvStorageTest {
     }
 
     @Test
+    void signsAuthenticatedAccessModeSoClientsCannotDowngradeDelivery() {
+        CandidateCvStorage.UploadSignature signature =
+                storage.createUploadSignature("candidates/candidate/cvs/cv");
+
+        assertEquals("authenticated", signature.accessMode());
+        assertEquals("candidates/candidate/cvs/cv", signature.publicId());
+
+        Map<String, Object> params = new java.util.LinkedHashMap<>();
+        params.put("public_id", "candidates/candidate/cvs/cv");
+        params.put("access_mode", "authenticated");
+        params.put("timestamp", signature.timestamp());
+        assertEquals(provider.getIfAvailable().apiSignRequest(params, "test-secret"),
+                signature.signature());
+
+        params.remove("access_mode");
+        assertNotEquals(provider.getIfAvailable().apiSignRequest(params, "test-secret"),
+                signature.signature());
+    }
+
+    @Test
     void mapsProviderReadFailuresAndDisconnects() throws Exception {
         doReturn(connection).when(storage).openConnection(any(URI.class));
         when(connection.getResponseCode()).thenThrow(new IOException("Provider unavailable"));

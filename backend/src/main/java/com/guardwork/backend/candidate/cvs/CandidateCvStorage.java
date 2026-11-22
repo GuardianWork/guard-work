@@ -11,6 +11,9 @@ import java.util.Optional;
  */
 public interface CandidateCvStorage {
 
+    /** Cloudinary access mode required for every new Candidate CV upload. */
+    String AUTHENTICATED_ACCESS_MODE = "authenticated";
+
     UploadSignature createUploadSignature(String publicId);
 
     /**
@@ -20,17 +23,15 @@ public interface CandidateCvStorage {
      */
     Optional<StoredCvAsset> find(String publicId);
 
-    void delete(String publicId, String resourceType);
-
     /**
-     * Copies an existing CV object to a new storage key. The target is an independent object so
-     * deleting the candidate's library CV later cannot affect an application snapshot.
+     * Removes an object. The operation is idempotent: an already-missing object is treated as
+     * success so deferred library purges can be retried safely.
      */
-    StoredCvAsset copy(String sourcePublicId, String targetPublicId, String resourceType, String format);
+    void delete(String publicId, String resourceType);
 
     String createDownloadUrl(String publicId, String resourceType, String format, Duration ttl);
 
-    /** Fetches one already-authorized application copy without returning its signed URL to a client. */
+    /** Fetches one already-authorized CV without returning its signed URL to a client. */
     byte[] read(String publicId, String resourceType, String format);
 
     record UploadSignature(
@@ -38,7 +39,8 @@ public interface CandidateCvStorage {
             String apiKey,
             String timestamp,
             String signature,
-            String publicId
+            String publicId,
+            String accessMode
     ) {}
 
     record StoredCvAsset(
@@ -47,6 +49,13 @@ public interface CandidateCvStorage {
             String contentType,
             long bytes,
             String resourceType,
-            String originalFileName
-    ) {}
+            String originalFileName,
+            String accessMode
+    ) {
+        /** Convenience for callers that only care about metadata identity. */
+        public StoredCvAsset(String publicId, String format, String contentType, long bytes,
+                             String resourceType, String originalFileName) {
+            this(publicId, format, contentType, bytes, resourceType, originalFileName, null);
+        }
+    }
 }

@@ -986,4 +986,279 @@ BEGIN
 END;
 $$;
 
+-- GW-112: shared-CV access grants, a paused application, a post-deletion review
+-- window, and a hired application whose library CV was deleted. These are
+-- synthetic development fixtures; no Cloudinary object is created.
+DO $$
+DECLARE
+    company_id_value BIGINT;
+    company_name_value TEXT;
+    owner_id_value BIGINT;
+    recruiter_id_value BIGINT;
+    candidate_user_id_value BIGINT;
+    candidate_id_value UUID;
+    shared_cv_id UUID;
+    shared_cv_key TEXT;
+    deleted_cv_id UUID;
+    deleted_cv_key TEXT;
+    job_live_id BIGINT;
+    job_paused_id BIGINT;
+    job_window_id BIGINT;
+    job_hired_id BIGINT;
+    rev_live_id BIGINT;
+    rev_paused_id BIGINT;
+    rev_window_id BIGINT;
+    rev_hired_id BIGINT;
+    app_live_id UUID := 'a04a0000-0000-4000-8000-000000000004';
+    app_paused_id UUID := 'a04a0000-0000-4000-8000-000000000005';
+    app_window_id UUID := 'a04a0000-0000-4000-8000-000000000006';
+    app_hired_id UUID := 'a04a0000-0000-4000-8000-000000000007';
+    fixture_time TIMESTAMPTZ := now();
+    paused_notice_time TIMESTAMPTZ := now() - interval '31 days';
+BEGIN
+    SELECT c.id, c.name, c.owner_user_id
+    INTO STRICT company_id_value, company_name_value, owner_id_value
+    FROM companies c WHERE c.tax_code = 'GW-DEMO-LOCAL-001';
+    SELECT id INTO STRICT recruiter_id_value FROM users WHERE username = 'demo_recruiter';
+    SELECT id INTO STRICT candidate_user_id_value FROM users WHERE username = 'demo_candidate';
+    SELECT id INTO STRICT candidate_id_value
+    FROM candidate_profiles WHERE user_id = candidate_user_id_value;
+
+    -- A live shared library CV and a tombstoned CV cover both sides of deletion.
+    INSERT INTO candidate_cvs (id, candidate_id, file_name, file_size, content_type, public_id,
+        is_default, created_at, updated_at)
+    SELECT gen_random_uuid(), cp.id, 'GuardianWork_Shared_CV.pdf', 204800, 'application/pdf',
+        'candidates/' || cp.id || '/cvs/demo-shared-live', false,
+        fixture_time - interval '40 days', fixture_time - interval '40 days'
+    FROM candidate_profiles cp WHERE cp.id = candidate_id_value
+    ON CONFLICT (public_id) DO NOTHING;
+
+    INSERT INTO candidate_cvs (id, candidate_id, file_name, file_size, content_type, public_id,
+        is_default, created_at, updated_at, deleted_at)
+    SELECT gen_random_uuid(), cp.id, 'GuardianWork_Review_Window.pdf', 180000, 'application/pdf',
+        'candidates/' || cp.id || '/cvs/demo-review-window', false,
+        fixture_time - interval '20 days', fixture_time - interval '1 day',
+        fixture_time - interval '1 day'
+    FROM candidate_profiles cp WHERE cp.id = candidate_id_value
+    ON CONFLICT (public_id) DO NOTHING;
+
+    SELECT id, public_id INTO STRICT shared_cv_id, shared_cv_key
+    FROM candidate_cvs
+    WHERE candidate_id = candidate_id_value
+      AND public_id = 'candidates/' || candidate_id_value || '/cvs/demo-shared-live';
+    SELECT id, public_id INTO STRICT deleted_cv_id, deleted_cv_key
+    FROM candidate_cvs
+    WHERE candidate_id = candidate_id_value
+      AND public_id = 'candidates/' || candidate_id_value || '/cvs/demo-review-window';
+
+    SELECT e.job_id INTO STRICT job_live_id
+    FROM job_audit_events e
+    WHERE e.event_type = 'JOB_CREATED' AND e.facts ->> 'developmentFixture' = 'PUBLISHED-JOB-002';
+    SELECT e.job_id INTO STRICT job_paused_id
+    FROM job_audit_events e
+    WHERE e.event_type = 'JOB_CREATED' AND e.facts ->> 'developmentFixture' = 'PUBLISHED-JOB-003';
+    SELECT e.job_id INTO STRICT job_window_id
+    FROM job_audit_events e
+    WHERE e.event_type = 'JOB_CREATED' AND e.facts ->> 'developmentFixture' = 'PUBLISHED-JOB-004';
+    SELECT e.job_id INTO STRICT job_hired_id
+    FROM job_audit_events e
+    WHERE e.event_type = 'JOB_CREATED' AND e.facts ->> 'developmentFixture' = 'PUBLISHED-JOB-005';
+    SELECT published_revision_id INTO STRICT rev_live_id FROM job_postings WHERE id = job_live_id;
+    SELECT published_revision_id INTO STRICT rev_paused_id FROM job_postings WHERE id = job_paused_id;
+    SELECT published_revision_id INTO STRICT rev_window_id FROM job_postings WHERE id = job_window_id;
+    SELECT published_revision_id INTO STRICT rev_hired_id FROM job_postings WHERE id = job_hired_id;
+    IF rev_live_id IS NULL OR rev_paused_id IS NULL OR rev_window_id IS NULL OR rev_hired_id IS NULL THEN
+        RAISE EXCEPTION 'GW-112 seed requires published demo jobs.';
+    END IF;
+
+    INSERT INTO applications (id, candidate_id, job_id, company_id, submitted_revision_id,
+        status, version, applied_at, updated_at, status_changed_at)
+    VALUES (app_live_id, candidate_id_value, job_live_id, company_id_value, rev_live_id,
+        'UNDER_REVIEW', 0, fixture_time - interval '5 days',
+        fixture_time - interval '5 days', fixture_time - interval '5 days')
+    ON CONFLICT (candidate_id, job_id) DO NOTHING;
+    INSERT INTO applications (id, candidate_id, job_id, company_id, submitted_revision_id,
+        status, version, applied_at, updated_at, status_changed_at)
+    VALUES (app_paused_id, candidate_id_value, job_paused_id, company_id_value, rev_paused_id,
+        'INACTIVE', 1, fixture_time - interval '40 days',
+        paused_notice_time, paused_notice_time)
+    ON CONFLICT (candidate_id, job_id) DO NOTHING;
+    INSERT INTO applications (id, candidate_id, job_id, company_id, submitted_revision_id,
+        status, version, applied_at, updated_at, status_changed_at)
+    VALUES (app_window_id, candidate_id_value, job_window_id, company_id_value, rev_window_id,
+        'SHORTLISTED', 1, fixture_time - interval '20 days',
+        fixture_time - interval '10 days', fixture_time - interval '10 days')
+    ON CONFLICT (candidate_id, job_id) DO NOTHING;
+    INSERT INTO applications (id, candidate_id, job_id, company_id, submitted_revision_id,
+        status, version, applied_at, updated_at, status_changed_at)
+    VALUES (app_hired_id, candidate_id_value, job_hired_id, company_id_value, rev_hired_id,
+        'HIRED', 2, fixture_time - interval '15 days',
+        fixture_time - interval '2 days', fixture_time - interval '2 days')
+    ON CONFLICT (candidate_id, job_id) DO NOTHING;
+
+    INSERT INTO application_snapshots (
+        application_id, full_name, email, phone_number, cover_letter, job_title, company_name,
+        source_cv_id, cv_storage_key, cv_storage_provider, cv_storage_mode, cv_file_name,
+        cv_content_type, cv_file_size, snapshot_schema_version, captured_at)
+    SELECT app_live_id, 'An Nguyen Van', 'candidate@demo.guardwork.test', '0900000001',
+        'Mong duoc gia nhan vao cong ty GuardWork.', r.content ->> 'title', company_name_value,
+        shared_cv_id, shared_cv_key, 'CLOUDINARY', 'SHARED', 'GuardianWork_Shared_CV.pdf',
+        'application/pdf', 204800, 1, fixture_time - interval '5 days'
+    FROM job_posting_revisions r
+    WHERE r.id = rev_live_id AND EXISTS (SELECT 1 FROM applications a WHERE a.id = app_live_id)
+    ON CONFLICT (application_id) DO NOTHING;
+    INSERT INTO application_snapshots (
+        application_id, full_name, email, phone_number, cover_letter, job_title, company_name,
+        source_cv_id, cv_storage_key, cv_storage_provider, cv_storage_mode, cv_file_name,
+        cv_content_type, cv_file_size, snapshot_schema_version, captured_at)
+    SELECT app_paused_id, 'An Nguyen Van', 'candidate@demo.guardwork.test', '0900000001',
+        'Mong duoc gia nhan vao cong ty GuardWork.', r.content ->> 'title', company_name_value,
+        shared_cv_id, shared_cv_key, 'CLOUDINARY', 'SHARED', 'GuardianWork_Shared_CV.pdf',
+        'application/pdf', 204800, 1, fixture_time - interval '40 days'
+    FROM job_posting_revisions r
+    WHERE r.id = rev_paused_id AND EXISTS (SELECT 1 FROM applications a WHERE a.id = app_paused_id)
+    ON CONFLICT (application_id) DO NOTHING;
+    INSERT INTO application_snapshots (
+        application_id, full_name, email, phone_number, cover_letter, job_title, company_name,
+        source_cv_id, cv_storage_key, cv_storage_provider, cv_storage_mode, cv_file_name,
+        cv_content_type, cv_file_size, snapshot_schema_version, captured_at)
+    SELECT app_window_id, 'An Nguyen Van', 'candidate@demo.guardwork.test', '0900000001',
+        'Mong duoc gia nhan vao cong ty GuardWork.', r.content ->> 'title', company_name_value,
+        deleted_cv_id, deleted_cv_key, 'CLOUDINARY', 'SHARED', 'GuardianWork_Review_Window.pdf',
+        'application/pdf', 180000, 1, fixture_time - interval '20 days'
+    FROM job_posting_revisions r
+    WHERE r.id = rev_window_id AND EXISTS (SELECT 1 FROM applications a WHERE a.id = app_window_id)
+    ON CONFLICT (application_id) DO NOTHING;
+    INSERT INTO application_snapshots (
+        application_id, full_name, email, phone_number, cover_letter, job_title, company_name,
+        source_cv_id, cv_storage_key, cv_storage_provider, cv_storage_mode, cv_file_name,
+        cv_content_type, cv_file_size, snapshot_schema_version, captured_at)
+    SELECT app_hired_id, 'An Nguyen Van', 'candidate@demo.guardwork.test', '0900000001',
+        'Mong duoc gia nhan vao cong ty GuardWork.', r.content ->> 'title', company_name_value,
+        deleted_cv_id, deleted_cv_key, 'CLOUDINARY', 'SHARED', 'GuardianWork_Review_Window.pdf',
+        'application/pdf', 180000, 1, fixture_time - interval '15 days'
+    FROM job_posting_revisions r
+    WHERE r.id = rev_hired_id AND EXISTS (SELECT 1 FROM applications a WHERE a.id = app_hired_id)
+    ON CONFLICT (application_id) DO NOTHING;
+
+    INSERT INTO application_status_history (
+        application_id, from_status, to_status, actor_user_id, occurred_at)
+    SELECT v.application_id, v.from_status, v.to_status, v.actor_user_id, v.occurred_at
+    FROM (VALUES
+        (app_live_id, NULL::VARCHAR, 'SUBMITTED', candidate_user_id_value, fixture_time - interval '5 days'),
+        (app_live_id, 'SUBMITTED', 'UNDER_REVIEW', owner_id_value, fixture_time - interval '4 days'),
+        (app_paused_id, NULL::VARCHAR, 'SUBMITTED', candidate_user_id_value, fixture_time - interval '40 days'),
+        (app_paused_id, 'SUBMITTED', 'UNDER_REVIEW', owner_id_value, fixture_time - interval '39 days'),
+        (app_paused_id, 'UNDER_REVIEW', 'INACTIVE', NULL::BIGINT, paused_notice_time),
+        (app_window_id, NULL::VARCHAR, 'SUBMITTED', candidate_user_id_value, fixture_time - interval '20 days'),
+        (app_window_id, 'SUBMITTED', 'UNDER_REVIEW', owner_id_value, fixture_time - interval '15 days'),
+        (app_window_id, 'UNDER_REVIEW', 'SHORTLISTED', owner_id_value, fixture_time - interval '10 days'),
+        (app_hired_id, NULL::VARCHAR, 'SUBMITTED', candidate_user_id_value, fixture_time - interval '15 days'),
+        (app_hired_id, 'SUBMITTED', 'UNDER_REVIEW', owner_id_value, fixture_time - interval '12 days'),
+        (app_hired_id, 'UNDER_REVIEW', 'SHORTLISTED', owner_id_value, fixture_time - interval '5 days'),
+        (app_hired_id, 'SHORTLISTED', 'HIRED', owner_id_value, fixture_time - interval '2 days')
+    ) AS v(application_id, from_status, to_status, actor_user_id, occurred_at)
+    WHERE EXISTS (SELECT 1 FROM applications a WHERE a.id = v.application_id)
+      AND NOT EXISTS (
+          SELECT 1 FROM application_status_history h
+          WHERE h.application_id = v.application_id AND h.to_status = v.to_status
+      );
+
+    INSERT INTO candidate_cv_access_grants (
+        id, application_id, epoch, cv_id, candidate_id, company_id, scope, storage_provider,
+        storage_key, resource_type, file_name, content_type, file_size, granted_at,
+        expires_at, revoked_at, revoked_reason)
+    SELECT 'a0560000-0000-4000-8000-000000001201', app_live_id, 1, shared_cv_id,
+        candidate_id_value, company_id_value, 'APPLICATION_REVIEW', 'CLOUDINARY', shared_cv_key,
+        'image', 'GuardianWork_Shared_CV.pdf', 'application/pdf', 204800,
+        fixture_time - interval '5 days', NULL, NULL, NULL
+    WHERE EXISTS (SELECT 1 FROM applications a WHERE a.id = app_live_id)
+    ON CONFLICT (application_id, epoch) DO NOTHING;
+    INSERT INTO candidate_cv_access_grants (
+        id, application_id, epoch, cv_id, candidate_id, company_id, scope, storage_provider,
+        storage_key, resource_type, file_name, content_type, file_size, granted_at,
+        expires_at, revoked_at, revoked_reason)
+    SELECT 'a0560000-0000-4000-8000-000000001202', app_paused_id, 1, shared_cv_id,
+        candidate_id_value, company_id_value, 'APPLICATION_REVIEW', 'CLOUDINARY', shared_cv_key,
+        'image', 'GuardianWork_Shared_CV.pdf', 'application/pdf', 204800,
+        fixture_time - interval '40 days', NULL, paused_notice_time, 'APPLICATION_INACTIVE'
+    WHERE EXISTS (SELECT 1 FROM applications a WHERE a.id = app_paused_id)
+    ON CONFLICT (application_id, epoch) DO NOTHING;
+    INSERT INTO candidate_cv_access_grants (
+        id, application_id, epoch, cv_id, candidate_id, company_id, scope, storage_provider,
+        storage_key, resource_type, file_name, content_type, file_size, granted_at,
+        expires_at, revoked_at, revoked_reason)
+    SELECT 'a0560000-0000-4000-8000-000000001203', app_window_id, 1, deleted_cv_id,
+        candidate_id_value, company_id_value, 'APPLICATION_REVIEW', 'CLOUDINARY', deleted_cv_key,
+        'image', 'GuardianWork_Review_Window.pdf', 'application/pdf', 180000,
+        fixture_time - interval '20 days', fixture_time + interval '29 days', NULL, NULL
+    WHERE EXISTS (SELECT 1 FROM applications a WHERE a.id = app_window_id)
+    ON CONFLICT (application_id, epoch) DO NOTHING;
+    INSERT INTO candidate_cv_access_grants (
+        id, application_id, epoch, cv_id, candidate_id, company_id, scope, storage_provider,
+        storage_key, resource_type, file_name, content_type, file_size, granted_at,
+        expires_at, revoked_at, revoked_reason)
+    SELECT 'a0560000-0000-4000-8000-000000001204', app_hired_id, 1, deleted_cv_id,
+        candidate_id_value, company_id_value, 'APPLICATION_REVIEW', 'CLOUDINARY', deleted_cv_key,
+        'image', 'GuardianWork_Review_Window.pdf', 'application/pdf', 180000,
+        fixture_time - interval '15 days', NULL, fixture_time - interval '2 days',
+        'CANDIDATE_CV_DELETED'
+    WHERE EXISTS (SELECT 1 FROM applications a WHERE a.id = app_hired_id)
+    ON CONFLICT (application_id, epoch) DO NOTHING;
+
+    -- Inactivity notifications are visible only to the Owner and currently assigned Recruiter.
+    INSERT INTO notification_outbox (
+        event_id, recipient_user_id, event_type, audience, payload, created_at,
+        attempt_count, next_attempt_at, delivered_at, error_category)
+    SELECT 'a0550000-0000-4000-8000-000000001101', owner_id_value, 'APPLICATION_INACTIVE',
+        'RECRUITER',
+        jsonb_strip_nulls(jsonb_build_object(
+            'companyId', company_id_value, 'companyName', company_name_value,
+            'jobId', a.job_id, 'jobTitle', r.content ->> 'title', 'applicationId', a.id)),
+        paused_notice_time, 0, paused_notice_time,
+        paused_notice_time + interval '5 seconds', NULL
+    FROM applications a JOIN job_posting_revisions r ON r.id = a.submitted_revision_id
+    WHERE a.id = app_paused_id
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox (
+        source_event_id, recipient_user_id, event_type, audience, company_id, company_name,
+        job_id, application_id, category, title, body, action_href, created_at)
+    SELECT 'a0550000-0000-4000-8000-000000001101', owner_id_value, 'APPLICATION_INACTIVE',
+        'RECRUITER', company_id_value, company_name_value, a.job_id, a.id, 'application',
+        'Hồ sơ ứng tuyển đã không hoạt động',
+        'Hồ sơ ứng tuyển cho vị trí ' || (r.content ->> 'title') || ' tại ' || company_name_value
+            || ' đã không hoạt động sau một thời gian không cập nhật trạng thái. Quyền truy cập CV đã bị thu hồi; mở lại hồ sơ để tiếp tục xem xét.',
+        '/applications/' || a.id, paused_notice_time
+    FROM applications a JOIN job_posting_revisions r ON r.id = a.submitted_revision_id
+    WHERE a.id = app_paused_id
+    ON CONFLICT (source_event_id) DO NOTHING;
+
+    INSERT INTO notification_outbox (
+        event_id, recipient_user_id, event_type, audience, payload, created_at,
+        attempt_count, next_attempt_at, delivered_at, error_category)
+    SELECT 'a0550000-0000-4000-8000-000000001102', recruiter_id_value, 'APPLICATION_INACTIVE',
+        'RECRUITER',
+        jsonb_strip_nulls(jsonb_build_object(
+            'companyId', company_id_value, 'companyName', company_name_value,
+            'jobId', a.job_id, 'jobTitle', r.content ->> 'title', 'applicationId', a.id)),
+        paused_notice_time, 0, paused_notice_time,
+        paused_notice_time + interval '5 seconds', NULL
+    FROM applications a JOIN job_posting_revisions r ON r.id = a.submitted_revision_id
+    WHERE a.id = app_paused_id
+    ON CONFLICT (event_id) DO NOTHING;
+    INSERT INTO notification_inbox (
+        source_event_id, recipient_user_id, event_type, audience, company_id, company_name,
+        job_id, application_id, category, title, body, action_href, created_at)
+    SELECT 'a0550000-0000-4000-8000-000000001102', recruiter_id_value, 'APPLICATION_INACTIVE',
+        'RECRUITER', company_id_value, company_name_value, a.job_id, a.id, 'application',
+        'Hồ sơ ứng tuyển đã không hoạt động',
+        'Hồ sơ ứng tuyển cho vị trí ' || (r.content ->> 'title') || ' tại ' || company_name_value
+            || ' đã không hoạt động sau một thời gian không cập nhật trạng thái. Quyền truy cập CV đã bị thu hồi; mở lại hồ sơ để tiếp tục xem xét.',
+        '/applications/' || a.id, paused_notice_time
+    FROM applications a JOIN job_posting_revisions r ON r.id = a.submitted_revision_id
+    WHERE a.id = app_paused_id
+    ON CONFLICT (source_event_id) DO NOTHING;
+END;
+$$;
+
 COMMIT;

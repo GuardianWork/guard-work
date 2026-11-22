@@ -49,7 +49,7 @@ Add INTERVIEWING and HIRED to Application Status. Interviews and hiring agreemen
 - HIRED means the Company confirms that the Candidate agreed to join outside GuardWork. The approved additive request contract is optional Boolean `hiringConfirmed` on the existing versioned status mutation: HIRED requires Boolean `true`, including a same-status retry; any non-null value is invalid for another target. Omitted fields preserve existing requests. No in-app Candidate acceptance is required.
 - INTERVIEWING signifies progression to externally arranged interviews; it does not assert that a meeting is scheduled or completed. Use standard Vietnamese notification content, with no custom message, times or locations. Suggested copy: “Hồ sơ của bạn đã chuyển sang vòng phỏng vấn. Nhà tuyển dụng sẽ liên hệ để trao đổi chi tiết.”
 - Both new transitions append attributed history and notify the Candidate using existing atomic history/outbox and retry semantics. Notifications contain no CV, contact data or internal rejection details.
-- HIRED retains Company access to submitted contact details, cover letter and CV under current live authorization. Account, email, membership, assignment, Company and suspended-job restrictions continue to apply. Removed or unassigned Recruiters retain no access by virtue of the hire.
+- HIRED retains Company access to submitted contact details, cover letter and CV under current live authorization. Account, email, membership, assignment, Company and suspended-job restrictions continue to apply. Removed or unassigned Recruiters retain no access by virtue of the hire. **Amended 2026-11-18:** if the Candidate deletes the shared library CV while the Application is `HIRED`, Company CV access ends immediately (no post-deletion window); contact/cover-letter visibility is unchanged.
 - Preserve rejection/withdrawal privacy restrictions. Introduce no retention period, automatic deletion or modification of immutable Application Snapshots.
 - Closed or expired Job Postings permit otherwise authorized processing of existing Applications; they do not alter Application Status.
 - Reuse existing status mutation and read contracts where compatible. Extend accepted/returned enums and persistence constraints through reviewed additive changes; preserve historical rows and migrations. Thinh approved migration `V2026.11.10.104__application_hiring_confirmation.sql` to add HIRED to the Application status constraint, allow UNDER_REVIEW/SHORTLISTED/INTERVIEWING to HIRED in history, and add `APPLICATION_HIRED` to both notification event constraints. The Boolean field is additive and does not break existing callers; hiring-capable clients must send `hiringConfirmed: true` and handle HIRED as terminal. No dependency or other schema/API changes are approved.
@@ -67,10 +67,27 @@ Add INTERVIEWING and HIRED to Application Status. Interviews and hiring agreemen
 
 ## Out of Scope
 
-Interview scheduling, meeting records, calendar/video integration, interview response/completion tracking, custom interview messages, Offer drafts/sending/acceptance/decline/expiry/attachments, employment contracts, Candidate in-app hiring acceptance, backward corrections, reopening, reapplication, bulk actions, new retention policies, AI features, and changes to Typst.
+Interview scheduling, meeting records, calendar/video integration, interview response/completion tracking, custom interview messages, Offer drafts/sending/acceptance/decline/expiry/attachments, employment contracts, Candidate in-app hiring acceptance, backward corrections, reopening, reapplication, bulk actions, new retention policies (except the approved rejected legacy-copy purge in LC-004), AI features, and changes to Typst.
 
 ## Further Notes
 
 Thinh explicitly confirmed the product decisions through the conversation, including direct hiring from UNDER_REVIEW and retained hired-Application data access under live authorization. On 2026-11-10, Thinh also approved the concrete optional Boolean request field and additive HIRED/application-history/notification migration described above. Shared understanding was confirmed before this synthesis. Lifecycle metadata remains Draft under repository policy; this records human approval rather than an agent setting Approved.
 
 This specification records the approved contract and migration for GW-117 implementation. The local Markdown tracker carries the delivery label; its testing boundary was explicitly confirmed by Thinh on 2026-11-10. No dependency or Typst change is included.
+
+> Amendment (2026-11-18): adds `INACTIVE` and Candidate-deletion behavior for `HIRED`; see the amendment at the end. GW-SR-CV-02 remains the CV lifecycle authority.
+
+## Amendment 2026-11-18: INACTIVE and grant-based CV access
+
+Status: approved by the requesting human user on 2026-11-18. GW-SR-CV-02 is the normative owner of
+the CV lifecycle; this section extends the status set and HIRED behavior above.
+
+| ID | Amended requirement |
+|---|---|
+| LC-001 | Add `INACTIVE` as a reversible Application status. An active Application with no status transition for the configured period (default 30 days) becomes `INACTIVE`; `HIRED`, `REJECTED`, and `WITHDRAWN` are excluded. |
+| LC-002 | `INACTIVE` revokes the current CV grant epoch and conceals Company CV access. Reactivation is only `INACTIVE -> UNDER_REVIEW` and starts a new grant epoch only while the shared library CV still exists. |
+| LC-003 | HIRED remains terminal and retains detail access, but Candidate deletion of the shared library CV ends Company CV access immediately. Pre-existing `LEGACY_COPY` applications remain readable until a rejection purge; HIRED legacy copies are not purged. |
+| LC-004 | On `REJECTED`, the legacy application CV copy is deleted while snapshot metadata is retained. This supersedes the earlier "no automatic deletion" assumption for rejected legacy copies; `SHARED` library objects are never deleted by this path. |
+| LC-005 | Only the Company owner and currently assigned Recruiters receive the `APPLICATION_INACTIVE` notification. The Candidate sees the status without a notification. |
+
+All other HIRED rules, transitions, history and notification semantics are unchanged.

@@ -304,6 +304,9 @@ content bounds, eligibility, single migration, and notification compatibility.
 
 See [Recruiter Application listing](../docs/backend/recruiter-application-listing.md)
 for its access rules, query parameters, privacy boundary, and response contract.
+Submitted-CV access and retention are documented in
+[ADR 0012](../docs/architecture/decisions/0012-cv-access-grants-and-retention.md) and
+[GW-SR-CV-02](../docs/software-requirements/can/candidate-cv-access-retention-spec.md).
 
 ### Candidate Public Company Discovery and Dossier (GW-123)
 
@@ -351,6 +354,31 @@ for the approved contract, response shapes and error catalogue.
   default `900000`, or 15 minutes). Spring Boot imports an optional `.env` file from the backend
   working directory. Its values override the optional `../ai/.env.local` fallback;
   exported environment variables (including Render settings) override both files.
+
+### Candidate CV access grants
+
+A CV shared with a submitted application is authorized by a `candidate_cv_access_grants` row for
+the receiving Company, never by the snapshot storage key. The grant is open-ended while the
+Candidate keeps the library CV, bounds itself to `deleted_at + CANDIDATE_CV_ACCESS_GRANT_TTL`
+(default `30d`) once the Candidate removes it from the library **while the Application is in an
+active review stage**, and is revoked immediately on `REJECTED`, `WITHDRAWN`, `INACTIVE`, or when
+the Candidate deletes the CV for a `HIRED` Application. An Application with no status change for
+`APPLICATION_REVIEW_INACTIVITY_TTL` (default `30d`) becomes reversible `INACTIVE`; reactivation goes
+through `UNDER_REVIEW` and starts a new grant epoch only while the library CV exists.
+`CANDIDATE_CV_RETENTION_POLL_MS` (default `60000`) controls the library purge worker's batch delay
+and `CANDIDATE_CV_RETENTION_WORKER_ENABLED` disables it; purge is append-only and idempotent, and
+access is denied at read time regardless of worker timing. Inactivity uses
+`APPLICATION_REVIEW_INACTIVITY_POLL_MS`, `APPLICATION_REVIEW_INACTIVITY_WORKER_ENABLED`, and
+`APPLICATION_REVIEW_INACTIVITY_BATCH_SIZE` (default `100`). Rejection deletes only the
+application-specific legacy copy through `APPLICATION_CV_PURGE_POLL_MS`/`_WORKER_ENABLED`/`_BATCH_SIZE`
+and records `application_snapshots.cv_purged_at`; snapshot metadata is retained and shared library
+objects are never deleted by that path. Tests disable the workers and call
+`CandidateCvRetentionService.purgeDue`, `ApplicationInactivityService.expireDue`, and
+`ApplicationCvPurgeService.purgeDue` directly.
+`BACKEND_TEST_DATABASE_URL` points the integration suite at an isolated test database, which is
+required when a shared test database has already applied migrations from another branch. The
+[access-control matrix](../docs/backend/candidate-cv-access-control-matrix.md) (Vietnamese) lists
+every principal, resource state, and endpoint outcome.
 
 ## Tooling
 
@@ -479,16 +507,17 @@ identifier collisions. No schema migration or dependency is added.
 
 ### Notification inbox fixtures
 
-The local seed also inserts ten synthetic notifications covering every current event type
+The local seed also inserts twelve synthetic notifications covering every current event type
 (`JOB_*`, `APPLICATION_*`, `RECRUITER_ACCEPTED`, `MEMBERSHIP_REMOVED`), so graders can
 open the inbox without triggering real business flows. They reuse `GW93` jobs and create
 three demo applications for the `demo_candidate` so `APPLICATION_*` rows satisfy the
-`ck_application_inbox_context` check without mail or outbox delivery.
+`ck_application_inbox_context` check without mail or outbox delivery. Two additional
+`APPLICATION_INACTIVE` rows point to the paused GW-112 fixture described below.
 
 | Recipient | Fixture | Manual check |
 | --- | --- | --- |
-| `demo_recruiter` | `JOB_ASSIGNED` (read), `JOB_UNASSIGNED` (unread), `MEMBERSHIP_REMOVED` (unread) | Last: title and receiver survive `GET /api/me/notifications`. |
-| `demo_owner` | `JOB_NEEDS_REASSIGNMENT` (unread), `JOB_REVISION_APPROVED` (read), `JOB_REVISION_REJECTED` (unread), `APPLICATION_WITHDRAWN` (unread), `RECRUITER_ACCEPTED` (read) | Mark one unread read via `PATCH`; rerun must not reset it. |
+| `demo_recruiter` | `JOB_ASSIGNED` (read), `JOB_UNASSIGNED` (unread), `APPLICATION_INACTIVE` (unread), `MEMBERSHIP_REMOVED` (unread) | Last: title and receiver survive `GET /api/me/notifications`. |
+| `demo_owner` | `JOB_NEEDS_REASSIGNMENT` (unread), `JOB_REVISION_APPROVED` (read), `JOB_REVISION_REJECTED` (unread), `APPLICATION_WITHDRAWN` (unread), `APPLICATION_INACTIVE` (unread), `RECRUITER_ACCEPTED` (read) | Mark one unread read via `PATCH`; rerun must not reset it. |
 | `demo_candidate` | `APPLICATION_STATUS_CHANGED` (unread), `APPLICATION_REJECTED` (read) | Read one via `PATCH`; rerun preserves the read timestamp. |
 
 Outbox rows are inserted already `delivered_at`-ed, so the dispatcher never re-sends them. Each
@@ -497,10 +526,27 @@ outbox fixture stores its context in `payload` (`companyId`, `companyName`, `job
 to the inbox columns. `title`/`body` mirror `NotificationTemplate` copy for manual browsing only;
 the frozen snapshot never rewrites history. Reruns identify fixtures by fixed `event_id` UUIDs and
 `ON CONFLICT DO NOTHING`, so they are idempotent and preserve existing reads.
-Each fixture also carries its `audience`: `APPLICATION_STATUS_CHANGED` and
-`APPLICATION_REJECTED` are `CANDIDATE`; all other fixtures, including
-`APPLICATION_WITHDRAWN`, are `RECRUITER`. Browsing as `demo_candidate` with
-`?audience=CANDIDATE` shows only the candidate items.
+Each fixture also carries its `audience`: `APPLICATION_STATUS_CHANGED`,
+`APPLICATION_REJECTED`, `APPLICATION_INTERVIEWING`, and `APPLICATION_HIRED` are `CANDIDATE`;
+`APPLICATION_WITHDRAWN` and `APPLICATION_INACTIVE` are `RECRUITER`. Browsing as
+`demo_candidate` with `?audience=CANDIDATE` shows only the candidate items.
+
+### CV access and inactivity fixtures (GW-112)
+
+The seed adds two Candidate CV rows and four Applications on `PUBLISHED-JOB-002` through
+`PUBLISHED-JOB-005`:
+
+| Application | Status | Seeded access state |
+| --- | --- | --- |
+| `a04a0000-0000-4000-8000-000000000004` | `UNDER_REVIEW` | `SHARED` snapshot with a live grant; the Company can read the shared CV. |
+| `a04a0000-0000-4000-8000-000000000005` | `INACTIVE` | Grant revoked; the Company can read the Application but not the CV. Owner and assigned Recruiter receive `APPLICATION_INACTIVE`. |
+| `a04a0000-0000-4000-8000-000000000006` | `SHORTLISTED` | Candidate CV tombstoned; live grant expires after the bounded review window (about 29 days from first seeding). |
+| `a04a0000-0000-4000-8000-000000000007` | `HIRED` | Candidate CV tombstoned; grant already revoked, so Company access ended immediately. |
+
+The CV keys are synthetic and no Cloudinary object is created, matching the existing demo
+fixtures. The rows exercise grant state, `canViewCv`, `reviewWindowEndsAt`, `inactivityDeadline`,
+and Company-only inactivity notifications. Reruns preserve manual status changes, grant state,
+read markers, and the review-window expiry. No schema migration or dependency is added.
 
 ### Own account control (GW-95)
 

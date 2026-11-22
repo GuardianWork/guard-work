@@ -105,6 +105,17 @@ public enum NotificationTemplate {
     }
     @Override public String actionHref(NotificationOutbox e) { return withApplicationHref(e); }
   },
+  APPLICATION_INACTIVE(NotificationEventType.APPLICATION_INACTIVE, NotificationCategory.APPLICATION) {
+    @Override public String title(NotificationOutbox e) { return "Hồ sơ ứng tuyển đã không hoạt động"; }
+    @Override public String body(NotificationOutbox e) {
+      String jobTitle = e.payloadView().jobTitle();
+      String position = jobTitle == null || jobTitle.isBlank() ? "" : " cho vị trí " + jobTitle;
+      return "Hồ sơ ứng tuyển" + position + " tại " + companyName(e)
+          + " đã không hoạt động sau một thời gian không cập nhật trạng thái. Quyền truy cập CV đã bị thu hồi;"
+          + " mở lại hồ sơ để tiếp tục xem xét.";
+    }
+    @Override public String actionHref(NotificationOutbox e) { return withApplicationHref(e); }
+  },
   /** Fallback for unknown keys; keeps the raw backend key as its title. */
   UNKNOWN(NotificationEventType.UNKNOWN, NotificationCategory.SYSTEM) {
     @Override public String title(NotificationOutbox e) {
