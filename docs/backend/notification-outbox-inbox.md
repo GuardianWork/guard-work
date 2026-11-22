@@ -5,9 +5,7 @@ This document explains the outbox/inbox pattern used for in-app notifications in
 - **Outbox** — `notification_outbox`: a durable record that a notification is owed.
 - **Inbox** — `notification_inbox`: the recipient's durable, user-visible copy.
 
-Related: [ADR 0012](../architecture/decisions/0012-notification-outbox-inbox-contract.md) ·
-[ADR 0013](../architecture/decisions/0013-notification-outbox-payload.md) ·
-[Notification flow spec](../software-requirements/can/notification-flow-spec.md)
+Related requirements are in the [notification flow spec](../software-requirements/can/notification-flow-spec.md).
 
 ---
 
@@ -16,12 +14,12 @@ Related: [ADR 0012](../architecture/decisions/0012-notification-outbox-inbox-con
 A business action and its notification are two writes that must not diverge. Each naive approach
 fails in a different way:
 
-| Approach | Failure |
-|---|---|
+| Approach                                                    | Failure                                                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Write the business row, commit, then write the notification | A crash between the two loses the notification after the business action is already final. |
-| Write and render both in one transaction | A template or inbox failure rolls back a valid business decision. |
-| Hold the notification in memory or a Spring event | A restart loses anything not yet delivered. |
-| Retry from memory | A partial failure can create duplicates. |
+| Write and render both in one transaction                    | A template or inbox failure rolls back a valid business decision.                          |
+| Hold the notification in memory or a Spring event           | A restart loses anything not yet delivered.                                                |
+| Retry from memory                                           | A partial failure can create duplicates.                                                   |
 
 The constraint is asymmetric: the business decision must not be undone by a notification problem,
 the notification must not be lost after commit, and retrying must not duplicate it.
@@ -101,21 +99,21 @@ The result: at-least-once delivery, but at most one inbox row per event.
 
 ### 2.5 Terminology
 
-In classic messaging, an *inbox* usually means a consumer-side deduplication table: the consumer
+In classic messaging, an _inbox_ usually means a consumer-side deduplication table: the consumer
 stores message IDs so it can ignore repeats. GuardWork's `notification_inbox` is different: it is
 the **user-visible read model**. It carries the deduplication identity (`source_event_id`) and
 also owns presentation and read state.
 
 ### 2.6 What the pattern guarantees
 
-| Guarantee | Meaning |
-|---|---|
-| **Atomic at record time** | The intent commits or rolls back with the business fact. |
-| **Isolated at delivery time** | A failed inbox write becomes retry state, not a business failure. |
-| **Crash-safe** | Undelivered intents are durable and findable by the worker. |
-| **Duplicate-safe** | Unique event identity prevents a second inbox copy. |
-| **Stable history** | Copy is rendered once; later renames and template edits do not rewrite it. |
-| **Cheap reads** | The inbox query reads one table and joins no business model. |
+| Guarantee                     | Meaning                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------- |
+| **Atomic at record time**     | The intent commits or rolls back with the business fact.                   |
+| **Isolated at delivery time** | A failed inbox write becomes retry state, not a business failure.          |
+| **Crash-safe**                | Undelivered intents are durable and findable by the worker.                |
+| **Duplicate-safe**            | Unique event identity prevents a second inbox copy.                        |
+| **Stable history**            | Copy is rendered once; later renames and template edits do not rewrite it. |
+| **Cheap reads**               | The inbox query reads one table and joins no business model.               |
 
 ---
 
@@ -142,26 +140,26 @@ flowchart TD
 
 ## 4. How GuardWork applies it
 
-| Component | Job |
-|---|---|
-| `NotificationIntentService` | Writes the outbox intent inside the business transaction. |
-| `NotificationDispatcher` | Reads the outbox, renders copy, writes the inbox, records retries. |
-| `NotificationTemplate` | Holds the title/body/link for each event type. |
-| `MembershipNotificationWorker` | Polls undelivered outbox rows and retries them. |
-| `NotificationInboxService` | Lists the user's inbox and marks items read. |
+| Component                      | Job                                                                |
+| ------------------------------ | ------------------------------------------------------------------ |
+| `NotificationIntentService`    | Writes the outbox intent inside the business transaction.          |
+| `NotificationDispatcher`       | Reads the outbox, renders copy, writes the inbox, records retries. |
+| `NotificationTemplate`         | Holds the title/body/link for each event type.                     |
+| `MembershipNotificationWorker` | Polls undelivered outbox rows and retries them.                    |
+| `NotificationInboxService`     | Lists the user's inbox and marks items read.                       |
 
 ### Migration order
 
 GW-117's `V2026.11.10.103__application_interview_stage.sql` and
-`V2026.11.10.104__application_hiring_confirmation.sql` are shared `dev` migrations and stay
-byte-identical here; they therefore run before this branch's notification migrations and still
-target the legacy `user_notifications` table. Order on a fresh database:
+`V2026.11.10.104__application_hiring_confirmation.sql` target the legacy
+`user_notifications` table. Notification migrations run in this order on a fresh database:
 
 `V2026.11.10.103/104` (application lifecycle, legacy table) →
 `V2026.11.10.105` (rename to `notification_inbox`) →
 `V2026.11.10.106` (envelope, re-adds event-type checks with the GW-117 keys and `UNKNOWN`) →
 `V2026.11.10.107` (audience) →
-`V2026.11.11.106` (outbox payload).
+`V2026.11.11.106` (outbox payload) →
+`V2026.11.20.128` (GW-128 event types).
 
 Do not renumber or edit `103/104`; environments have already applied them with their published
 checksums. New notification changes belong in migrations versioned above `2026.11.10.104`.
@@ -200,14 +198,14 @@ One User can be both a Candidate and a company member, so every endpoint accepts
 `rec` → `RECRUITER`). Omitted returns the all-audience inbox (backwards compatibility).
 Detail/single-read return `40406` for cross-audience IDs; unknown `audience` → `40000`.
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/me/notifications` (+ `page`, `size`, `read`, `category`, `eventType`, `sinceId`, `audience`) | Paginated list with server-side filtering. `read=false` = unread, `read=true` = read. `sinceId` returns only `id > sinceId` for polling. Unknown `category`/`eventType`/`audience` or negative `sinceId` → `40000 INVALID_INPUT`. |
-| `GET /api/me/notifications/unread-count` (+ `audience`) | `{ unreadCount }` for badge/tab counts (don't derive from a single page). |
-| `GET /api/me/notifications/{id}` (+ `audience`) | One recipient-owned item (detail view / deep-link check). Missing/foreign/cross-audience → `40406`. |
-| `PATCH /api/me/notifications/{id}/read` (+ `audience`) | Mark one row read (`read_at` set once, idempotent). |
-| `PATCH /api/me/notifications/read` (+ `audience`) | Mark every unread row read in one transaction; returns `{ updatedCount, readAt }`. Replaces client per-item fan-out. |
-| `GET /api/me/notifications/sync` (+ `audience`, `sinceId`, `limit`) | One polling round: the rows with `id > sinceId` (no `read` filter) plus `unreadCount`, `totalCount`, `latestId` and `hasMore`. The response carries an entity tag; repeating the current tag answers `304 Not Modified` without a body. |
+| Endpoint                                                                                               | Purpose                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/me/notifications` (+ `page`, `size`, `read`, `category`, `eventType`, `sinceId`, `audience`) | Paginated list with server-side filtering. `read=false` = unread, `read=true` = read. `sinceId` returns only `id > sinceId` for polling. Unknown `category`/`eventType`/`audience` or negative `sinceId` → `40000 INVALID_INPUT`.       |
+| `GET /api/me/notifications/unread-count` (+ `audience`)                                                | `{ unreadCount }` for badge/tab counts (don't derive from a single page).                                                                                                                                                               |
+| `GET /api/me/notifications/{id}` (+ `audience`)                                                        | One recipient-owned item (detail view / deep-link check). Missing/foreign/cross-audience → `40406`.                                                                                                                                     |
+| `PATCH /api/me/notifications/{id}/read` (+ `audience`)                                                 | Mark one row read (`read_at` set once, idempotent).                                                                                                                                                                                     |
+| `PATCH /api/me/notifications/read` (+ `audience`)                                                      | Mark every unread row read in one transaction; returns `{ updatedCount, readAt }`. Replaces client per-item fan-out.                                                                                                                    |
+| `GET /api/me/notifications/sync` (+ `audience`, `sinceId`, `limit`)                                    | One polling round: the rows with `id > sinceId` (no `read` filter) plus `unreadCount`, `totalCount`, `latestId` and `hasMore`. The response carries an entity tag; repeating the current tag answers `304 Not Modified` without a body. |
 
 No schema migration accompanies these read endpoints.
 `audience` itself is added by `V2026.11.10.107__notification_audience.sql` (frozen intent
@@ -216,10 +214,28 @@ context, backfilled by event kind: `APPLICATION_STATUS_CHANGED`, `APPLICATION_RE
 `APPLICATION_WITHDRAWN` and `APPLICATION_INACTIVE` → `RECRUITER`). Withdrawal and inactivity are
 recruiter-facing.
 
+### GW-128 Company-side events
+
+These events use audience `RECRUITER`. The relative `action.href` values identify Company views.
+Use the matching authenticated API when loading a view so it checks the User's current access.
+The recruiter portal opens a verification notice only when its `references.companyId`
+matches the signed-in User's current Owner membership.
+
+| Event type                                                       | Category      | Action href                                               |
+| ---------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
+| `APPLICATION_SUBMITTED`                                          | `application` | `/companies/me/jobs/{jobId}/applications/{applicationId}` |
+| `COMPANY_VERIFICATION_APPROVED`, `COMPANY_VERIFICATION_REJECTED` | `company`     | `/companies/me/verification`                              |
+| `JOB_SUSPENDED`, `JOB_RESTORED`                                  | `job`         | `/companies/me/jobs/{jobId}`                              |
+
+Migration `V2026.11.20.128__extend_notification_coverage.sql` adds these values to both
+event-type checks. Stop older dispatchers before enabling new producers because older
+binaries cannot deserialize the new event values. Recipient and privacy rules are in
+[GW-SR-NOTIF-01, section 11](../software-requirements/can/notification-flow-spec.md#11-gw-128-inbox-coverage).
+
 ### Polling the inbox
 
 A client that wants to know whether something new arrived does not reload the inbox. It keeps
-the highest inbox id it has seen (the *watermark*) and asks for the rows above it:
+the highest inbox id it has seen (the _watermark_) and asks for the rows above it:
 
 ```http
 GET /api/me/notifications/sync?audience=CANDIDATE&sinceId=137
@@ -251,16 +267,16 @@ All fact-time outbox context lives in `payload JSONB NOT NULL DEFAULT '{}'`. The
 `NotificationPayload`; the column stores raw JSON, so rendering and inbox delivery never join a
 business table.
 
-| Key | Type | Present | Meaning |
-|---|---|---|---|
-| `companyId` | number | always | Owning Company at fact time. |
-| `companyName` | string | always | Frozen Company name. |
-| `jobId` | number | job events | Job context. |
-| `revisionId` | number | job events | Job revision context; requires `jobId`. |
-| `jobTitle` | string | application events | Applied-for role, copied from `application_snapshots.job_title`. |
-| `applicationId` | UUID string | `APPLICATION_*` only | Application context. |
-| `candidateFeedback` | string | rejection only | Candidate-facing rejection feedback. |
-| `actorUserId`, `actorName` | number / string | reserved | Frozen actor attribution. |
+| Key                        | Type            | Present              | Meaning                                                          |
+| -------------------------- | --------------- | -------------------- | ---------------------------------------------------------------- |
+| `companyId`                | number          | always               | Owning Company at fact time.                                     |
+| `companyName`              | string          | always               | Frozen Company name.                                             |
+| `jobId`                    | number          | job events           | Job context.                                                     |
+| `revisionId`               | number          | job events           | Job revision context; requires `jobId`.                          |
+| `jobTitle`                 | string          | application events   | Applied-for role, copied from `application_snapshots.job_title`. |
+| `applicationId`            | UUID string     | `APPLICATION_*` only | Application context.                                             |
+| `candidateFeedback`        | string          | rejection only       | Candidate-facing rejection feedback.                             |
+| `actorUserId`, `actorName` | number / string | reserved             | Frozen actor attribution.                                        |
 
 The `NotificationDispatcher` maps payload keys to the inbox context columns at delivery; the
 inbox is still column-based because it is the join-free read model.

@@ -35,6 +35,10 @@ import com.guardwork.backend.membership.model.CompanyRole;
 import com.guardwork.backend.membership.repository.CompanyMembershipRepository;
 import com.guardwork.backend.membership.service.CompanyAccessService;
 import com.guardwork.backend.company.model.VerificationStatus;
+import com.guardwork.backend.notification.model.NotificationAudience;
+import com.guardwork.backend.notification.model.NotificationEventType;
+import com.guardwork.backend.notification.service.NotificationDispatcher;
+import com.guardwork.backend.notification.service.NotificationIntentService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import com.guardwork.backend.user.model.User;
@@ -98,6 +102,8 @@ public class JobApplicationService {
     CandidateCvStorage cvStorage;
     ApplicationInactivityService inactivity;
     AuditService audit;
+    NotificationIntentService notifications;
+    NotificationDispatcher dispatcher;
     Clock clock;
 
     @Transactional
@@ -183,6 +189,7 @@ public class JobApplicationService {
             submitted.setActorUserId(userId);
             submitted.setOccurredAt(appliedAt);
             statusHistory.saveAndFlush(submitted);
+            notifyApplicationSubmitted(job, applicationId, appliedAt);
         } catch (DataIntegrityViolationException failure) {
             if (isDuplicateApplication(failure)) {
                 throw new AppException(ErrorCode.APPLICATION_ALREADY_SUBMITTED);
@@ -206,6 +213,21 @@ public class JobApplicationService {
                 appliedAt,
                 cv.fileName()
         );
+    }
+
+    private void notifyApplicationSubmitted(JobPublicationService.ApplicationContext job,
+                                            UUID applicationId, java.time.Instant appliedAt) {
+        List<Long> recipients = assignments.currentRecruiterUserIds(job.jobId());
+        Long owner = job.company().getOwnerUserId();
+        if (recipients.isEmpty() && job.ownerResponsible() && owner != null) {
+            recipients = List.of(owner);
+        }
+        for (Long recipient : recipients) {
+            UUID event = notifications.recordApplication(recipient,
+                    NotificationEventType.APPLICATION_SUBMITTED, NotificationAudience.RECRUITER,
+                    job.company(), job.jobId(), job.title(), applicationId, null, appliedAt);
+            dispatcher.dispatchAfterCommit(event);
+        }
     }
 
     @Transactional(readOnly = true)

@@ -110,6 +110,48 @@ class StaffVerificationHttpTest {
     }
 
     @Test
+    void verificationDecisionsNotifyOnlyOwnersAndKeepDossierEmailIntents() throws Exception {
+        Account staff = account("STAFF");
+        for (String outcome : new String[]{"VERIFIED", "REJECTED"}) {
+            Account owner = account("USER");
+            var created = http.perform(completeDossier("POST", "/api/companies/verification-request",
+                            json.writeValueAsString(Map.of("name", "Company dossier",
+                                    "taxCode", UUID.randomUUID().toString(), "email", owner.email())))
+                            .header("Authorization", owner.token()))
+                    .andExpect(status().isCreated()).andReturn();
+            long company = json.readTree(created.getResponse().getContentAsString()).path("data").path("id").asLong();
+            Account recruiter = account("USER");
+            database.update("""
+                    INSERT INTO company_memberships(company_id,user_id,role,status,joined_at)
+                    VALUES (?,?,'RECRUITER','ACTIVE',now())
+                    """, company, recruiter.id());
+            String decision = json.writeValueAsString(Map.of("status", outcome, "expectedVersion", 0,
+                    "rejectionReason", "Private verification feedback"));
+            var request = put("/api/staff/companies/{id}/verify", company).header("Authorization", staff.token())
+                    .contentType(MediaType.APPLICATION_JSON).content(decision);
+            http.perform(request).andExpect(status().isOk());
+            http.perform(request).andExpect(status().isBadRequest());
+
+            String type = outcome.equals("VERIFIED")
+                    ? "COMPANY_VERIFICATION_APPROVED" : "COMPANY_VERIFICATION_REJECTED";
+            assertThat(database.queryForList("""
+                    SELECT recipient_user_id FROM notification_outbox WHERE payload->>'companyId'=?
+                    """, Long.class, Long.toString(company))).containsExactly(owner.id());
+            http.perform(get("/api/me/notifications").param("audience", "RECRUITER")
+                            .header("Authorization", owner.token()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.content.length()").value(1))
+                    .andExpect(jsonPath("$.data.content[0].type").value(type))
+                    .andExpect(jsonPath("$.data.content[0].action.href").value("/companies/me/verification"))
+                    .andExpect(jsonPath("$.data.content[0].body",
+                            org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Private verification feedback"))));
+            assertThat(database.queryForObject("""
+                    SELECT count(*) FROM company_decision_deliveries WHERE recipient_email=? AND outcome=?
+                    """, Long.class, owner.email(), outcome)).isEqualTo(1);
+        }
+    }
+
+    @Test
     void companyAdminMembershipRemainsAdminAndDoesNotGrantStaffAccess() throws Exception {
         Account owner = account("USER");
         Account member = account("USER");
