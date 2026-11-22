@@ -82,6 +82,7 @@ class JdScanHttpTest {
         report.put("outcome", "NEEDS_REVIEW");
         report.putArray("findings"); report.putArray("warnings").add("Stub only");
         report.putObject("usage").put("available", false);
+        report.put("internalTrace", "Not part of the public report");
         byte[] body = json.writeValueAsBytes(report);
         exchange.sendResponseHeaders(200, body.length);
         exchange.getResponseBody().write(body); exchange.close();
@@ -152,6 +153,304 @@ class JdScanHttpTest {
     assertThat(request(owner, path, job).path("scanId").asLong()).isEqualTo(scan.path("scanId").asLong());
   }
 
+  @Test void candidatesReadThePersistedPublishedAnalysisWithoutStartingAnotherScan() throws Exception {
+    String owner = owner(), candidate = account();
+    JsonNode job = publishable(owner, "Published JD " + UUID.randomUUID());
+    var scan = request(owner, scanPath(job), job);
+    String publicPath = "/api/jobs/" + job.path("id").asLong();
+    http.perform(get(publicPath).header("Authorization", candidate)).andExpect(status().isNotFound());
+    publish(owner, job);
+    http.perform(get(publicPath)).andExpect(status().isOk()).andExpect(jsonPath("$.data.aiAnalysis").isEmpty());
+    assertThat(worker.runOnce()).isTrue();
+    long attempts = database.queryForObject("SELECT count(*) FROM jd_scan_attempts", Long.class);
+    long runs = database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class);
+    for (String actor : new String[] {candidate, ""}) {
+      http.perform(get(publicPath).header("Authorization", actor)).andExpect(status().isOk())
+          .andExpect(header().string("Cache-Control", "no-store"))
+          .andExpect(jsonPath("$.data.aiAnalysis.report.outcome").value("NEEDS_REVIEW"))
+          .andExpect(jsonPath("$.data.aiAnalysis.report.warnings[0]").value("Stub only"))
+          .andExpect(jsonPath("$.data.aiAnalysis.mode").value("stub"))
+          .andExpect(jsonPath("$.data.aiAnalysis.outdated").value(false))
+          .andExpect(jsonPath("$.data.aiAnalysis.completedAt").isNotEmpty())
+          .andExpect(jsonPath("$.data.aiAnalysis.asOfDate").isNotEmpty())
+          .andExpect(jsonPath("$.data.aiAnalysis.scanId").doesNotExist())
+          .andExpect(jsonPath("$.data.aiAnalysis.report.internalTrace").doesNotExist())
+          .andExpect(jsonPath("$.data.aiAnalysis.report.usage").doesNotExist());
+    }
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_attempts", Long.class)).isEqualTo(attempts);
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class)).isEqualTo(runs);
+    ((AdjustableClock) clock).advance(86400);
+    http.perform(get(publicPath)).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.aiAnalysis.outdated").value(true));
+    assertThat(requestPublished(owner, job).path("scanId").asLong())
+        .isEqualTo(scan.path("scanId").asLong());
+    // A date change marks the report outdated without spending on identical content.
+    assertThat(worker.runOnce()).isFalse();
+    http.perform(get(publicPath)).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.aiAnalysis.report.outcome").value("NEEDS_REVIEW"));
+    database.update("UPDATE job_postings SET staff_suspended=true WHERE id=?", job.path("id").asLong());
+    http.perform(get(publicPath)).andExpect(status().isNotFound());
+  }
+
+  @Test void publicAnalysisNeverIncludesRemovedDraftContentOrUnassociatedScans() throws Exception {
+    String owner = owner();
+    JsonNode job = publishable(owner, "Private text removed before publishing");
+    request(owner, scanPath(job), job);
+    assertThat(worker.runOnce()).isTrue();
+    var fields = mapper.convertValue(job.path("workingRevision").path("content"), Map.class);
+    fields.put("description", "Approved text " + UUID.randomUUID());
+    JsonNode edited = mapper.readTree(http.perform(put(JOBS + "/" + job.path("id").asLong() + "/draft")
+        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("expectedJobVersion", job.path("version").asLong(),
+            "expectedRevisionVersion", job.path("workingRevision").path("version").asLong(), "content", fields))))
+        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+    publish(owner, edited);
+    http.perform(get("/api/jobs/" + job.path("id").asLong())).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.aiAnalysis").isEmpty());
+    requestPublished(owner, edited);
+    assertThat(worker.runOnce()).isTrue();
+    http.perform(get("/api/jobs/" + job.path("id").asLong())).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.aiAnalysis.analysisText").value(org.hamcrest.Matchers.containsString("Approved text")));
+    // Even identical content in the same Company requires an explicit revision association.
+    JsonNode other = publishable(owner, fields.get("description").toString());
+    publish(owner, other);
+    http.perform(get("/api/jobs/" + other.path("id").asLong())).andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.aiAnalysis").isEmpty());
+  }
+
+  @Test void allAuthenticatedRolesShareOneAnalysisAndReceiveOnlySafeFields() throws Exception {
+    String owner = owner(), candidate = account(), staff = staff();
+    JsonNode job = publishable(owner, "Shared across roles " + UUID.randomUUID());
+    String recruiter = recruiter(job);
+    publish(owner, job);
+    long version = currentVersion(job);
+    String path = sharedPath(job);
+    http.perform(get("/api/jobs/" + job.path("id").asLong()).header("Authorization", candidate))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.revisionId").value(job.path("workingRevision").path("id").asLong()))
+        .andExpect(jsonPath("$.data.revisionVersion").value(version));
+    http.perform(get(path + "/latest").header("Authorization", candidate)
+        .param("expectedRevisionVersion", Long.toString(version)))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
+    long before = database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class);
+    try (var threads = Executors.newFixedThreadPool(4)) {
+      var requests = new java.util.ArrayList<>(java.util.List.of(candidate, staff, recruiter).stream()
+          .map(actor -> threads.submit(() -> sharedRequest(actor, path, version))).toList());
+      requests.add(threads.submit(() -> requestPublished(owner, job)));
+      for (var pending : requests) assertThat(pending.get(15, TimeUnit.SECONDS).path("status").asText()).isEqualTo("QUEUED");
+    }
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class)).isEqualTo(before + 1);
+    var claim = queue.claim().orElseThrow();
+    for (String actor : new String[] {candidate, staff, recruiter}) {
+      http.perform(get(path + "/latest").header("Authorization", actor)
+          .param("expectedRevisionVersion", Long.toString(version)))
+          .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("RUNNING"));
+    }
+    assertThat(queue.complete(claim, client.analyze(claim))).isTrue();
+    long attempts = database.queryForObject("SELECT count(*) FROM jd_scan_attempts", Long.class);
+    for (String actor : new String[] {candidate, staff, recruiter}) {
+      JsonNode result = sharedRequest(actor, path, version);
+      assertThat(result.path("status").asText()).isEqualTo("COMPLETED");
+      assertThat(result.path("revisionVersion").asLong()).isEqualTo(version);
+      assertThat(result.path("report").path("outcome").asText()).isEqualTo("NEEDS_REVIEW");
+      assertThat(result.toString()).doesNotContain("requestedBy", "scanId", "inputContent", "profile",
+          "legalSnapshot", "internalTrace", "usage", "failureCode", "lease", "attempt", "availableAt");
+      http.perform(get(path + "/latest").header("Authorization", actor)
+          .param("expectedRevisionVersion", Long.toString(version)))
+          .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+          .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+          .andExpect(jsonPath("$.data.report.internalTrace").doesNotExist());
+    }
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class)).isEqualTo(before + 1);
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_attempts", Long.class)).isEqualTo(attempts);
+    ((AdjustableClock) clock).advance(86400);
+    assertThat(sharedRequest(candidate, path, version).path("status").asText()).isEqualTo("COMPLETED");
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class)).isEqualTo(before + 1);
+    http.perform(post(path).contentType(MediaType.APPLICATION_JSON).content("{\"expectedRevisionVersion\":" + version + "}"))
+        .andExpect(status().isUnauthorized());
+    http.perform(get(path + "/latest").param("expectedRevisionVersion", Long.toString(version)))
+        .andExpect(status().isUnauthorized());
+    http.perform(post(path).header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON)
+        .content("{\"expectedRevisionVersion\":0}")).andExpect(status().isConflict());
+    http.perform(get(path + "/latest").header("Authorization", candidate).param("expectedRevisionVersion", "0"))
+        .andExpect(status().isConflict());
+    http.perform(post(path).header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON)
+        .content("{}")).andExpect(status().isBadRequest());
+    http.perform(get(path + "/latest").header("Authorization", candidate)).andExpect(status().isBadRequest());
+    database.update("UPDATE job_postings SET staff_suspended=true WHERE id=?", job.path("id").asLong());
+    deniedShared(candidate, path, version);
+  }
+
+  @Test void recruitersFromDifferentCompaniesCanAnalyzeEachOthersPublishedJobsConcurrently() throws Exception {
+    String firstOwner = owner(), secondOwner = owner();
+    JsonNode first = publishable(firstOwner, "Cross-company first " + UUID.randomUUID());
+    JsonNode second = publishable(secondOwner, "Cross-company second " + UUID.randomUUID());
+    String firstRecruiter = recruiter(first), secondRecruiter = recruiter(second);
+    publish(firstOwner, first); publish(secondOwner, second);
+    var ready = new java.util.concurrent.CountDownLatch(2);
+    try (var threads = Executors.newFixedThreadPool(2)) {
+      var one = threads.submit(() -> {
+        ready.countDown(); assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+        return sharedRequest(firstRecruiter, sharedPath(second), currentVersion(second));
+      });
+      var two = threads.submit(() -> {
+        ready.countDown(); assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+        return sharedRequest(secondRecruiter, sharedPath(first), currentVersion(first));
+      });
+      assertThat(one.get(15, TimeUnit.SECONDS).path("status").asText()).isEqualTo("QUEUED");
+      assertThat(two.get(15, TimeUnit.SECONDS).path("status").asText()).isEqualTo("QUEUED");
+    }
+  }
+
+  @Test void retainedCompletedContentWinsOverNewerHistoricalFailures() throws Exception {
+    String owner = owner(), candidate = account();
+    JsonNode job = publishable(owner, "Historical analysis " + UUID.randomUUID());
+    JsonNode first = request(owner, scanPath(job), job);
+    assertThat(worker.runOnce()).isTrue();
+    // Older releases could create another run solely for date/profile drift.
+    database.update("INSERT INTO jd_scan_runs(company_id,input_hash,input_content,analysis_text,profile,"
+        + "legal_snapshot,mode,as_of_date,status,available_at,created_at,finished_at,failure_code) "
+        + "SELECT company_id,input_hash,input_content,analysis_text,profile || '-old',legal_snapshot,mode,"
+        + "as_of_date + 1,'FAILED',now(),now(),now(),'INVALID_RESPONSE' FROM jd_scan_runs WHERE id=?",
+        first.path("scanId").asLong());
+    publish(owner, job);
+    long before = database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class);
+    long version = currentVersion(job);
+    assertThat(sharedRequest(candidate, sharedPath(job), version).path("status").asText()).isEqualTo("COMPLETED");
+    http.perform(get(sharedPath(job) + "/latest").header("Authorization", candidate)
+        .param("expectedRevisionVersion", Long.toString(version)))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("COMPLETED"));
+    assertThat(requestPublished(owner, job).path("scanId").asLong()).isEqualTo(first.path("scanId").asLong());
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class)).isEqualTo(before);
+    assertThat(worker.runOnce()).isFalse();
+  }
+
+  @Test void privateDraftsChangedContentAndFailedResultsKeepTheirBoundaries() throws Exception {
+    String owner = owner(), candidate = account(), staff = staff();
+    JsonNode job = publishable(owner, "Secret removed draft " + UUID.randomUUID());
+    String recruiter = recruiter(job);
+    String path = sharedPath(job);
+    deniedShared(candidate, path, 0);
+    deniedShared(staff, path, 0);
+    deniedShared(recruiter, path, 0); // Membership alone cannot open the owner's private JD.
+    sharedRequest(owner, path, 0);
+    assertThat(worker.runOnce()).isTrue();
+    var fields = mapper.convertValue(job.path("workingRevision").path("content"), Map.class);
+    fields.put("description", "Safe published text " + UUID.randomUUID());
+    JsonNode edited = mapper.readTree(http.perform(put(JOBS + "/" + job.path("id").asLong() + "/draft")
+        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("expectedJobVersion", job.path("version").asLong(),
+            "expectedRevisionVersion", 0, "content", fields))))
+        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+    http.perform(get(path + "/latest").header("Authorization", owner).param("expectedRevisionVersion", "1"))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
+    publish(owner, edited);
+    long version = currentVersion(edited);
+    http.perform(get(path + "/latest").header("Authorization", candidate)
+        .param("expectedRevisionVersion", Long.toString(version)))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
+    long before = database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class);
+    assertThat(sharedRequest(candidate, path, version).path("status").asText()).isEqualTo("QUEUED");
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class)).isEqualTo(before + 1);
+    RESPONSE.set("malformed");
+    assertThat(worker.runOnce()).isTrue();
+    for (String actor : new String[] {candidate, staff, recruiter}) {
+      JsonNode failed = sharedRequest(actor, path, version);
+      assertThat(failed.path("status").asText()).isEqualTo("FAILED");
+      assertThat(failed.path("analysisText").isNull()).isTrue();
+      assertThat(failed.path("report").isNull()).isTrue();
+      assertThat(failed.toString()).doesNotContain("Secret removed draft", "INVALID_RESPONSE", "failureCode");
+    }
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class)).isEqualTo(before + 1);
+    assertThat(worker.runOnce()).isFalse();
+    // A new private working revision must not become accessible through the published job.
+    var draft = mapper.readTree(http.perform(post(JOBS + "/" + job.path("id").asLong() + "/draft")
+        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("expectedJobVersion", database.queryForObject(
+            "SELECT version FROM job_postings WHERE id=?", Long.class, job.path("id").asLong())))))
+        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+    deniedShared(candidate, sharedPath(draft), draft.path("workingRevision").path("version").asLong());
+    deniedShared(staff, sharedPath(draft), draft.path("workingRevision").path("version").asLong());
+    deniedShared(recruiter, sharedPath(draft), draft.path("workingRevision").path("version").asLong());
+  }
+
+  void deniedShared(String actor, String path, long version) throws Exception {
+    http.perform(post(path).header("Authorization", actor).contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("expectedRevisionVersion", version))))
+        .andExpect(status().isNotFound());
+    http.perform(get(path + "/latest").header("Authorization", actor)
+        .param("expectedRevisionVersion", Long.toString(version))).andExpect(status().isNotFound());
+  }
+
+  long currentVersion(JsonNode job) {
+    return database.queryForObject("SELECT version FROM job_posting_revisions WHERE id=?", Long.class,
+        job.path("workingRevision").path("id").asLong());
+  }
+
+  String sharedPath(JsonNode job) { return scanPath(job).replace("/api/companies/me/jobs", "/api/jobs"); }
+
+  JsonNode sharedRequest(String actor, String path, long version) throws Exception {
+    return mapper.readTree(http.perform(post(path).header("Authorization", actor)
+        .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("expectedRevisionVersion", version))))
+        .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+        .andReturn().getResponse().getContentAsString()).path("data");
+  }
+
+  String recruiter(JsonNode job) throws Exception {
+    String token = account();
+    long user = context.getBean(com.guardwork.backend.auth.service.JwtService.class).extractUserId(token.substring(7));
+    database.update("INSERT INTO company_memberships(company_id,user_id,role,status,joined_at) VALUES (?,?,'RECRUITER','ACTIVE',now())",
+        job.path("companyId").asLong(), user);
+    return token;
+  }
+
+  String staff() throws Exception {
+    String token = account();
+    var jwt = context.getBean(com.guardwork.backend.auth.service.JwtService.class);
+    long user = jwt.extractUserId(token.substring(7));
+    database.update("UPDATE users SET role='STAFF' WHERE id=?", user);
+    var identity = database.queryForMap("SELECT username,email FROM users WHERE id=?", user);
+    return "Bearer " + jwt.generateAccessToken(user, (String) identity.get("username"), (String) identity.get("email"), "STAFF");
+  }
+
+  JsonNode requestPublished(String owner, JsonNode job) throws Exception {
+    long version = database.queryForObject("SELECT version FROM job_posting_revisions WHERE id=?", Long.class,
+        job.path("workingRevision").path("id").asLong());
+    return mapper.readTree(http.perform(post(scanPath(job)).header("Authorization", owner)
+        .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("expectedRevisionVersion", version))))
+        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+  }
+
+  JsonNode publishable(String owner, String description) throws Exception {
+    return mapper.readTree(http.perform(post(JOBS).header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+        .content(mapper.writeValueAsString(Map.of("content", Map.of("title", "Tuyển bảo vệ", "description", description,
+            "location", "Hồ Chí Minh", "employmentType", "FULL_TIME", "workArrangement", "ONSITE",
+            "deadline", "2099-12-01T12:00:00+07:00")))))
+        .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).path("data");
+  }
+
+  void publish(String owner, JsonNode job) throws Exception {
+    database.update("UPDATE companies SET verification_status='VERIFIED' WHERE id=?", job.path("companyId").asLong());
+    long revision = job.path("workingRevision").path("id").asLong();
+    var pending = mapper.readTree(http.perform(post(JOBS + "/" + job.path("id").asLong() + "/revisions/" + revision + "/submit")
+        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(
+            "expectedJobVersion", job.path("version").asLong(), "expectedRevisionVersion",
+            job.path("workingRevision").path("version").asLong(), "confirmed", true))))
+        .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data");
+    String moderator = account();
+    var jwt = context.getBean(com.guardwork.backend.auth.service.JwtService.class);
+    long user = jwt.extractUserId(moderator.substring(7));
+    database.update("UPDATE users SET role='STAFF' WHERE id=?", user);
+    var identity = database.queryForMap("SELECT username,email FROM users WHERE id=?", user);
+    String staff = "Bearer " + jwt.generateAccessToken(user, (String) identity.get("username"),
+        (String) identity.get("email"), "STAFF");
+    http.perform(put("/api/staff/job-revisions/" + revision + "/decision").header("Authorization", staff)
+        .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(
+            "expectedJobVersion", pending.path("version").asLong(), "expectedRevisionVersion",
+            pending.path("workingRevision").path("version").asLong(), "outcome", "APPROVED"))))
+        .andExpect(status().isOk());
+  }
+
   @Test void scanPreservesExactCompensationDecimalsInItsInput() throws Exception {
     String owner = owner();
     var job = mapper.readTree(http.perform(post(JOBS).header("Authorization", owner)
@@ -189,11 +488,13 @@ class JdScanHttpTest {
         .content("{\"expectedRevisionVersion\":0}")).andExpect(status().isNotFound());
     JsonNode assigned = create(recruiter, "Assigned draft");
     var scan = request(recruiter, scanPath(assigned), assigned);
+    assertThat(sharedRequest(recruiter, sharedPath(assigned), 0).path("status").asText()).isEqualTo("QUEUED");
     String poll = scanPath(assigned) + "/" + scan.path("scanId").asLong();
     http.perform(delete(JOBS + "/" + assigned.path("id").asLong() + "/assignments/" + member)
         .header("Authorization", owner).param("expectedJobVersion", assigned.path("version").asText()))
         .andExpect(status().isOk());
     http.perform(get(poll).header("Authorization", recruiter)).andExpect(status().isNotFound());
+    deniedShared(recruiter, sharedPath(assigned), 0);
     http.perform(get(poll).header("Authorization", owner)).andExpect(status().isOk());
   }
 
@@ -271,6 +572,13 @@ class JdScanHttpTest {
             "expectedJobVersion", edited.path("version").asLong(), "expectedRevisionVersion",
             edited.path("workingRevision").path("version").asLong(), "confirmed", true))))
         .andExpect(status().isOk());
+    long submittedVersion = currentVersion(edited);
+    long count = database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class);
+    assertThat(sharedRequest(staff, sharedPath(edited), submittedVersion).path("status").asText()).isEqualTo("QUEUED");
+    assertThat(database.queryForObject("SELECT count(*) FROM jd_scan_runs", Long.class)).isEqualTo(count);
+    http.perform(get(sharedPath(edited) + "/latest").header("Authorization", staff)
+        .param("expectedRevisionVersion", Long.toString(submittedVersion)))
+        .andExpect(status().isOk()).andExpect(jsonPath("$.data.analysisText").isEmpty());
     http.perform(get(staffPath + current.path("scanId").asLong()).header("Authorization", staff))
         .andExpect(status().isOk()).andExpect(jsonPath("$.data.outdated").value(false));
     http.perform(get(staffPath + old.path("scanId").asLong()).header("Authorization", staff))

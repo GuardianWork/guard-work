@@ -108,14 +108,57 @@ any source in the shared retrieved evidence;
 every emitted quotation must still match that source exactly. This avoids losing
 correct citations when a detector suggests the wrong existing article.
 Verification is skipped for an empty, valid detection. Repeated requests reuse the
-same scan within a Company for identical complete content/profile/corpus/mode and
-Vietnam date. There is no semantic-similarity cache. Provider retries can cost more.
+same scan within a Company for identical complete content across requester roles.
+Date or configuration drift marks a result outdated without scheduling it again.
+There is no semantic-similarity cache. Provider retries can cost more.
 The existing provider wrapper does not expose token accounting, so `usage.available`
 is false; it does not mean the call was free.
 
 ## API and result behavior
 
+### Shared API for all signed-in roles
+
 Use the normal Bearer token and existing response envelope:
+
+```text
+POST /api/jobs/{jobId}/revisions/{revisionId}/scans
+Body: {"expectedRevisionVersion":0}
+
+GET /api/jobs/{jobId}/revisions/{revisionId}/scans/latest?expectedRevisionVersion=0
+```
+
+Candidate, Staff and Recruiter clients use these same routes. Obtain `revisionId` and
+`revisionVersion` for the published JD from job detail (`GET /api/jobs/{jobId}`);
+Company and Staff private views retain their current version fields. Both operations
+return 200 and `Cache-Control: no-store`. A missing analysis returns `data: null` on
+GET; reads never create work. Version is mandatory (400 when missing/negative, 409
+when stale). Anonymous requests return 401 and inaccessible revisions return 404.
+Candidates can access only the publicly viewable published revision. Staff can also
+access submitted revisions, and Owners/assigned Recruiters retain private JD access.
+A visible published JD grants no access to a newer private draft.
+
+The shared result contains only `revisionId`, current `revisionVersion`, `status`,
+`mode`, `outdated`, `asOfDate`, `completedAt`, `analysisText` and an allowlisted `report`.
+Status is `QUEUED`, `RUNNING`, `COMPLETED` or `FAILED`. Text, report and completion time
+are null until completed. No requester identity, scan ID, raw input, provider settings,
+failures, usage, queue, attempt or lease information is returned. Preserve advisory
+warnings, legal uncertainty and stub labeling when displaying the completed report.
+
+The complete canonical content determines reuse within its Company, regardless of
+requester role or revision version. An existing completed result takes priority over
+unfinished/failed historical runs; otherwise active work or a retained failure is
+reused. Date/profile/corpus/mode changes only mark a result outdated. New content
+can start new work. Failed scans remain failed when requested again. Requests serialize
+under the existing Company lock across these routes and the legacy Company route,
+so concurrent requests from different roles create one scan. When a recruiter analyzes
+another Company's published JD, the target and account Company locks are acquired in
+ascending ID order before job/user locks to avoid reciprocal-request deadlocks. Disabled scanning blocks
+new creation (503), but permits reuse and reads. No schema migration or dependency
+change is needed.
+
+### Existing Company and Staff clients
+
+The scoped routes remain available with their existing response contracts:
 
 ```text
 POST /api/companies/me/jobs/{jobId}/revisions/{revisionId}/scans
@@ -129,7 +172,47 @@ POST returns HTTP 200 with the queued, running, completed or failed existing sca
 Store its `scanId` and poll GET. Missing/stale versions return 400/409; disabled
 scanning returns 503. Reads enforce current Company membership/assignment; Staff
 reads require current Staff authority and submitted content. Staff cannot open an
-earlier scan containing private text removed before submission. No public scan API.
+earlier scan containing private text removed before submission. Scan operations
+remain protected; shared clients use the minimal projection above. Published analysis
+is also available through job detail as below.
+
+### Candidate job-detail integration
+
+`GET /api/jobs/{jobId}` now includes nullable `data.aiAnalysis` for anonymous and
+signed-in readers under the existing public job visibility rules. It reads the
+latest completed scan associated with the exact published revision and matching
+saved content, ordered by completion time then scan ID. Private draft text and
+analyses of other revisions are never returned. Missing, queued-only or failed-only
+analysis returns `null`; newer unfinished/failed work does not hide a completed
+matching report. Opening a job does not queue work or call AI.
+
+Example `aiAnalysis` (stub; never present as real legal detection):
+
+```json
+{
+  "mode": "stub",
+  "outdated": false,
+  "asOfDate": "2026-11-22",
+  "completedAt": "2026-11-22T08:00:00Z",
+  "analysisText": "description:\nNội dung tuyển dụng\n\n",
+  "report": {
+    "schemaVersion": "1",
+    "outcome": "NEEDS_REVIEW",
+    "findings": [],
+    "warnings": ["Stub only"]
+  }
+}
+```
+
+Render this as advisory analysis on the job detail, with its analysis date, stub
+label when applicable, warnings and an outdated notice. `outdated` covers the Vietnam
+date and configured mode/profile/corpus changes. Findings and citations retain
+uncertainty markers; use the returned `analysisText` for code-point highlights and
+render text safely. Public reports exclude internal IDs, usage, queue/attempt
+metadata and arbitrary adapter extension fields. Existing job detail 404 and
+`Cache-Control: no-store` behavior applies. Search results leave `aiAnalysis=null`;
+fetch the detail rather than using that list field to infer analysis availability.
+No frontend source is included in this checkout; the client must render this field.
 
 The response includes processing `status`, `mode`, `outdated`, `revisionVersion`,
 `analysisText`, profile, corpus, analysis date, safe failure code and `report`.
@@ -162,7 +245,7 @@ The worker holds no transaction during HTTP/model calls and does not occupy the
 scheduler used by unrelated expiry/delivery tasks. Expired workers cannot
 complete/fail a replacement claim. Transient failures retry after 5/10 seconds,
 with at most three claims. Invalid output fails immediately. A failed run remains
-failed when reopened; changing input or the versioned profile creates a new run.
+failed when reopened; changing input may create a new run. Profile/date changes alone do not create work.
 The mini workflow has no manual retry/admin API.
 
 `jd_scan_attempts` records safe outcomes and duration. Provider requests can repeat
