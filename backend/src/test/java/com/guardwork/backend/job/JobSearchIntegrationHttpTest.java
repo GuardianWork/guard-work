@@ -220,6 +220,74 @@ class JobSearchIntegrationHttpTest {
   }
 
   @Test
+  void companyNameSearchIgnoresCaseAndAccentsAndKeepsPaginationConsistent() throws Exception {
+    String token = "COMPANY-NAME-" + System.nanoTime();
+    long owner = uniqueUser("company-name-owner");
+    long employer = company(owner, "company-name", "Công ty Ánh Dương " + token, true, false);
+    Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+    long newest = insertPosting(employer, owner, "Accountant", "Prepare financial reports", "Ha Noi",
+        "FULL_TIME", "ONSITE", 8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now);
+    insertPosting(employer, owner, "Recruiter", "Interview candidates", "Ha Noi",
+        "FULL_TIME", "ONSITE", 8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now.minus(1, ChronoUnit.DAYS));
+    insertPosting(employer, owner, "Designer", "Create illustrations", "Ha Noi",
+        "FULL_TIME", "ONSITE", 8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now.minus(2, ChronoUnit.DAYS));
+
+    for (String keyword : List.of("  CÔNG TY ÁNH DƯƠNG " + token + "  ", "cong ty anh duong " + token)) {
+      http.perform(get("/api/jobs/search").param("keyword", keyword).param("size", "2"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.content.length()").value(2))
+          .andExpect(jsonPath("$.data.content[0].id").value(newest))
+          .andExpect(jsonPath("$.data.content[0].company.id").value(employer))
+          .andExpect(jsonPath("$.data.totalElements").value(3))
+          .andExpect(jsonPath("$.data.totalPages").value(2));
+      http.perform(get("/api/jobs/search").param("keyword", keyword).param("size", "2").param("page", "1"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data.content.length()").value(1))
+          .andExpect(jsonPath("$.data.totalElements").value(3));
+    }
+  }
+
+  @Test
+  void companyNameSearchTreatsWildcardsLiterally() throws Exception {
+    String token = "LITERAL-NAME-" + System.nanoTime();
+    long owner = uniqueUser("literal-name-owner");
+    long employer = company(owner, "literal-name", token + " 100%_", true, false);
+    long otherOwner = uniqueUser("literal-decoy-owner");
+    long otherEmployer = company(otherOwner, "literal-decoy", token + " 100percent", true, false);
+    Instant now = Instant.now();
+    long matching = insertPosting(employer, owner, "Accountant", "Prepare reports", "Ha Noi",
+        "FULL_TIME", "ONSITE", 8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now);
+    insertPosting(otherEmployer, otherOwner, "Accountant", "Prepare reports", "Ha Noi",
+        "FULL_TIME", "ONSITE", 8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now);
+
+    http.perform(get("/api/jobs/search").param("keyword", token + " 100%_"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.content[0].id").value(matching));
+  }
+
+  @Test
+  void textFiltersTreatWildcardsLiterally() throws Exception {
+    String token = "LITERAL-TEXT-" + System.nanoTime();
+    long owner = uniqueUser("literal-text-owner");
+    long employer = company(owner, "literal-text", "Literal Text Employer " + token, true, false);
+    Instant now = Instant.now();
+    long matching = insertPosting(employer, owner, token + " 100%_", "Prepare reports", "Ha Noi 100%_",
+        "FULL_TIME", "ONSITE", 8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now);
+    insertPosting(employer, owner, token + " 100percent", "Prepare reports", "Ha Noi 100percent",
+        "FULL_TIME", "ONSITE", 8000000, 12000000, true, now.plus(30, ChronoUnit.DAYS), now.minus(1, ChronoUnit.HOURS));
+
+    http.perform(get("/api/jobs/search").param("keyword", token + " 100%_"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.content[0].id").value(matching));
+    http.perform(get("/api/jobs/search").param("keyword", token).param("location", "Ha Noi 100%_"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.totalElements").value(1))
+        .andExpect(jsonPath("$.data.content[0].id").value(matching));
+  }
+
+  @Test
   void filtersNarrowToMatchingPosting() throws Exception {
     String token = "FILTER-" + System.nanoTime();
     long owner = uniqueUser("filter");

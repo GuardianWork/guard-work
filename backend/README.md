@@ -395,6 +395,14 @@ branch, use a separately named isolated test database via
 `BACKEND_TEST_DATABASE_URL`; do not repair migration history or reset a shared
 or development database to hide a build mismatch.
 
+### Public job search
+
+`GET /api/jobs/search` matches `keyword` against the published title, description,
+location, and Company name without case or Vietnamese accent sensitivity. SQL wildcard
+characters (`%` and `_`) are treated literally. Company-name matches use the same
+visibility rules and pagination/count query as other keyword matches. Signed-in callers
+still do not see postings from their current Company in search results.
+
 ### Job publication and expiry
 
 Platform Staff members decide pending submitted revisions with
