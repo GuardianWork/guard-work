@@ -44,8 +44,23 @@ public class CandidateCv {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    /**
+     * Set when the Candidate removes the CV from their library. The row stays as an audit
+     * tombstone so access grants keep a valid reference and storage cleanup can be retried.
+     */
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    /** Set once the Cloudinary object no longer exists; null after deletion means purge is pending. */
+    @Column(name = "storage_deleted_at")
+    private Instant storageDeletedAt;
+
     @PreUpdate
     public void onUpdate() {
         updatedAt = Instant.now();
+    }
+
+    public boolean isDeleted() {
+        return deletedAt != null;
     }
 }

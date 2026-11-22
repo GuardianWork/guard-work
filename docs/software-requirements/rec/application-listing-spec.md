@@ -24,6 +24,8 @@ Provide a paginated backend listing for one selected Job Posting. Authorized Com
 
 The user accepted interview Q1–Q3 and Q4–Q8 on 2026-11-01. These decisions define a backend-only Application listing for one selected Job Posting. Application details, CV access, stage changes, and a Company-wide Application inbox are separate delivery slices.
 
+> Amendment (2026-11-18): the current listing accepts the full status set including `INACTIVE`; see the amendment at the end. The original SUBMITTED-only slice is historical.
+
 This focused specification follows the approved Job Publishing MVP's Owner/Recruiter authorization boundary. It does not approve the broader Application Pipeline draft's Admin access or replace the current `SUBMITTED` status with its proposed `APPLIED` status.
 
 After the suspended-job restriction was recorded, Thinh explicitly answered “Yes. $to-spec” to the request to confirm shared understanding and approve this specification for implementation. This records human approval on 2026-11-01; the agent has not changed the metadata status to Approved. Thinh subsequently answered “Yes” to the proposed HTTP integration-test boundary with Spring Security and PostgreSQL, completing the to-spec confirmation.
@@ -140,3 +142,17 @@ Owner and named approver remain Thinh. The original per-job slice stays compatib
 Validation: PostgreSQL-backed HTTP tests cover multi-job isolation, current assignment
 and membership revocation, Owner access, filtering, deterministic pagination, accurate
 totals, privacy, parameter errors and existing Company eligibility checks.
+
+## Amendment 2026-11-18: current Application status set
+
+Status: approved by the requesting human user on 2026-11-18. GW-SR-CV-02 owns the CV lifecycle.
+
+| ID | Amended requirement |
+|---|---|
+| RAL-AML-001 | The current listing accepts the full Application status set: `SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, `INTERVIEWING`, `HIRED`, `REJECTED`, `WITHDRAWN`, and `INACTIVE`. The earlier SUBMITTED-only RAL-004 slice is historical and was already superseded by AR-011. |
+| RAL-AML-002 | `INACTIVE` rows remain listed with their submitted name, status and applied time. Listing exposes no contact, CV, profile or storage data and performs no state change. |
+| RAL-AML-003 | A Company that has not updated a row for the configured period may see the row become `INACTIVE`; reactivation uses the status endpoint and does not change list ordering or pagination. |
+
+This amendment records the current contract. The `INACTIVE` status and supporting columns are
+introduced by `V2026.11.18.109__application_inactive_and_cv_purge.sql`; no additional schema or
+dependency change is part of the listing slice itself.

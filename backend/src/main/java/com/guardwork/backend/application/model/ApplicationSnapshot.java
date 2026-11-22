@@ -61,6 +61,13 @@ public class ApplicationSnapshot {
     @Column(name = "cv_storage_key", nullable = false, length = 255)
     private String cvStorageKey;
 
+    /**
+     * LEGACY_COPY keeps the historical application-specific copy. SHARED references the Candidate
+     * library object and requires a live access grant for Company reads.
+     */
+    @Column(name = "cv_storage_mode", nullable = false, length = 20)
+    private String cvStorageMode = "LEGACY_COPY";
+
     @Column(name = "cv_storage_provider", nullable = false, length = 30)
     private String cvStorageProvider = "CLOUDINARY";
 
@@ -72,6 +79,10 @@ public class ApplicationSnapshot {
 
     @Column(name = "cv_file_size", nullable = false)
     private long cvFileSize;
+
+    /** Set when a rejected legacy copy was deleted; snapshot metadata is retained. */
+    @Column(name = "cv_purged_at")
+    private Instant cvPurgedAt;
 
     @Column(name = "snapshot_schema_version", nullable = false)
     private int snapshotSchemaVersion = 1;

@@ -51,6 +51,22 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication, 
 
     Optional<JobApplication> findByIdAndCandidateId(UUID id, UUID candidateId);
 
+    /**
+     * Claims active Applications whose last status transition is at or before the cutoff.
+     * The worker re-checks after locking so a concurrent update is never overwritten.
+     */
+    @Query(value = """
+            SELECT application.id
+            FROM applications application
+            WHERE application.status IN ('SUBMITTED','UNDER_REVIEW','SHORTLISTED','INTERVIEWING')
+              AND application.status_changed_at <= :cutoff
+            ORDER BY application.status_changed_at
+            LIMIT :batchSize
+            FOR UPDATE OF application SKIP LOCKED
+            """, nativeQuery = true)
+    List<UUID> findInactiveApplicationIds(
+            @Param("cutoff") java.time.Instant cutoff, @Param("batchSize") int batchSize);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from JobApplication a where a.id=:id")
     Optional<JobApplication> findByIdForUpdate(@Param("id") UUID id);

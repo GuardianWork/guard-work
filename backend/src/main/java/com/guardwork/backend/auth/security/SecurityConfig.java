@@ -61,6 +61,7 @@ public class SecurityConfig {
             .requestMatchers(new RegexRequestMatcher("/api/jobs/[1-9][0-9]*", "GET"))
             .permitAll()
             .requestMatchers("/api/jobs/search").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/companies/public/**").permitAll()
             .requestMatchers("/health").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/ai/health").permitAll()
             .anyRequest().authenticated())

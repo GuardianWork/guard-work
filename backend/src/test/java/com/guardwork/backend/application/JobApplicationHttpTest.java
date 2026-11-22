@@ -2,6 +2,8 @@ package com.guardwork.backend.application;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.guardwork.backend.application.service.ApplicationCvPurgeService;
+import com.guardwork.backend.application.service.ApplicationInactivityService;
 import com.guardwork.backend.candidate.cvs.CandidateCvStorage;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
@@ -36,6 +38,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -58,6 +61,8 @@ class JobApplicationHttpTest {
     @Autowired FakeCvStorage storage;
     @Autowired PlatformTransactionManager transactions;
     @Autowired NotificationDispatcher notificationDispatcher;
+    @Autowired ApplicationInactivityService inactivity;
+    @Autowired ApplicationCvPurgeService cvPurge;
 
     MockMvc http;
 
@@ -189,17 +194,40 @@ class JobApplicationHttpTest {
         assertThat(snapshot.get("job_title")).isEqualTo("Backend Engineer");
         assertThat(snapshot.get("company_name")).isEqualTo("Công ty Ánh");
         assertThat(snapshot.get("source_cv_id")).isEqualTo(cv);
-        String copiedKey = (String) snapshot.get("cv_storage_key");
-        assertThat(copiedKey).startsWith("applications/" + application + "/cv/");
-        assertThat(storage.has(copiedKey)).isTrue();
+        String libraryKey = "candidates/" + profile + "/cvs/source";
+        assertThat(snapshot.get("cv_storage_key")).isEqualTo(libraryKey);
+        assertThat(snapshot.get("cv_storage_mode")).isEqualTo("SHARED");
+        assertThat(storage.has(libraryKey)).isTrue();
+        assertThat(database.queryForObject("""
+                SELECT count(*) FROM candidate_cv_access_grants
+                WHERE application_id=? AND cv_id=? AND company_id=?
+                  AND expires_at IS NULL AND revoked_at IS NULL
+                """, Long.class, application, cv, company)).isEqualTo(1);
 
-        // The snapshot survives deletion of the candidate's library CV and its Cloudinary object.
-        database.update("DELETE FROM candidate_cvs WHERE id=?", cv);
-        storage.remove("candidates/" + profile + "/cvs/source");
+        // Removing the library CV starts the bounded review window without copying the bytes.
+        http.perform(delete("/api/candidate/cvs/{id}", cv).header("Authorization", candidate))
+                .andExpect(status().isOk());
         assertThat(database.queryForObject(
-                "SELECT count(*) FROM application_snapshots WHERE application_id=?", Long.class, application))
-                .isEqualTo(1);
-        assertThat(storage.has(copiedKey)).isTrue();
+                "SELECT deleted_at IS NOT NULL FROM candidate_cvs WHERE id=?", Boolean.class, cv)).isTrue();
+        assertThat(database.queryForObject("""
+                SELECT g.expires_at > c.deleted_at + interval '29 days'
+                FROM candidate_cv_access_grants g JOIN candidate_cvs c ON c.id = g.cv_id
+                WHERE g.application_id = ?
+                """, Boolean.class, application)).isTrue();
+        assertThat(database.queryForObject(
+                "SELECT count(*) FROM application_snapshots WHERE application_id=?",
+                Long.class, application)).isEqualTo(1);
+        assertThat(storage.has(libraryKey)).isTrue();
+
+        // The Candidate loses access to their own submitted CV immediately.
+        http.perform(get(APPLICATIONS + "/" + application + "/cv/download-url")
+                        .header("Authorization", candidate))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(ErrorCode.CV_NOT_FOUND.getCode()));
+        http.perform(get("/api/candidate/applications/{applicationId}", application)
+                        .header("Authorization", candidate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.canViewCv").value(false));
 
         http.perform(post(APPLICATIONS)
                         .header("Authorization", candidate)
@@ -210,6 +238,245 @@ class JobApplicationHttpTest {
         assertThat(database.queryForObject(
                 "SELECT count(*) FROM applications WHERE candidate_id=? AND job_id=?",
                 Long.class, profile, job.id())).isEqualTo(1);
+    }
+
+    @Test
+    void rejectionRevokesTheSharedCvGrantForTheCompany() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+
+        String candidate = account();
+        UUID profile = profile(userId(candidate));
+        UUID cv = cv(profile);
+        String response = http.perform(post(APPLICATIONS)
+                        .header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(submitBody(job.id(), cv, "Nguyễn Văn An", null)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID application = UUID.fromString(mapper.readTree(response).path("data").path("id").asText());
+        String cvRoute = "/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv";
+
+        http.perform(get(cvRoute, job.id(), application).header("Authorization", owner))
+                .andExpect(status().isOk());
+
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status",
+                        job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"REJECTED\",\"version\":0,\"rejectionReason\":\"POSITION_FILLED\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(database.queryForObject(
+                "SELECT revoked_at IS NOT NULL FROM candidate_cv_access_grants WHERE application_id=?",
+                Boolean.class, application)).isTrue();
+        http.perform(get(cvRoute, job.id(), application).header("Authorization", owner))
+                .andExpect(status().isNotFound());
+        http.perform(get(cvRoute + "/download-url", job.id(), application).header("Authorization", owner))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void inactiveApplicationHidesCompanyCvAndReactivationStartsANewEpochForNewRecruiters()
+            throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+
+        String candidate = account();
+        long candidateUserId = userId(candidate);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", candidateUserId);
+        UUID profile = profile(candidateUserId);
+        UUID cv = cv(profile);
+        String response = http.perform(post(APPLICATIONS)
+                        .header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(submitBody(job.id(), cv, "Nguyễn Văn An", null)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID application = UUID.fromString(mapper.readTree(response).path("data").path("id").asText());
+
+        database.update("UPDATE applications SET status='UNDER_REVIEW' WHERE id=?", application);
+        database.update("""
+                UPDATE applications SET status_changed_at=now() WHERE
+                  status IN ('SUBMITTED','UNDER_REVIEW','SHORTLISTED','INTERVIEWING') AND id<>?
+                """, application);
+        database.update("UPDATE applications SET status_changed_at=now() - interval '31 days' WHERE id=?",
+                application);
+        assertThat(inactivity.expireDue()).isGreaterThanOrEqualTo(1);
+
+        assertThat(database.queryForObject("SELECT status FROM applications WHERE id=?",
+                String.class, application)).isEqualTo("INACTIVE");
+        assertThat(database.queryForObject("""
+                SELECT revoked_reason FROM candidate_cv_access_grants
+                WHERE application_id=? AND revoked_at IS NOT NULL
+                """, String.class, application)).isEqualTo("APPLICATION_INACTIVE");
+
+        String cvRoute = "/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv";
+        http.perform(get(cvRoute, job.id(), application).header("Authorization", owner))
+                .andExpect(status().isNotFound());
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}",
+                        job.id(), application).header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("INACTIVE"))
+                .andExpect(jsonPath("$.data.email").value("an@example.vn"))
+                .andExpect(jsonPath("$.data.canViewCv").value(false))
+                .andExpect(jsonPath("$.data.reviewWindowEndsAt").value(
+                        org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.inactivityDeadline").value(
+                        org.hamcrest.Matchers.nullValue()));
+        http.perform(get(APPLICATIONS).header("Authorization", candidate)
+                        .queryParam("status", "INACTIVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.totalElements").value(1));
+
+        long version = database.queryForObject("SELECT version FROM applications WHERE id=?",
+                Long.class, application);
+        http.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch(
+                        "/api/companies/me/jobs/{jobId}/applications/{applicationId}/status",
+                        job.id(), application)
+                        .header("Authorization", owner).contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of(
+                                "status", "UNDER_REVIEW", "version", version))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("UNDER_REVIEW"));
+
+        assertThat(database.queryForObject(
+                "SELECT count(*) FROM candidate_cv_access_grants WHERE application_id=?",
+                Long.class, application)).isEqualTo(2);
+        assertThat(database.queryForObject("""
+                SELECT count(*) FROM candidate_cv_access_grants
+                WHERE application_id=? AND revoked_at IS NULL
+                """, Long.class, application)).isEqualTo(1);
+
+        String recruiter = account();
+        long recruiterId = userId(recruiter);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", recruiterId);
+        long membership = addRecruiter(company, recruiterId);
+        assign(job, company, membership, ownerId);
+        http.perform(get(cvRoute, job.id(), application).header("Authorization", recruiter))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Type", PDF));
+    }
+
+    @Test
+    void inactivityNotifiesTheCompanyButNeverTheCandidate() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+
+        String recruiter = account();
+        long recruiterId = userId(recruiter);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", recruiterId);
+        long membership = addRecruiter(company, recruiterId);
+        assign(job, company, membership, ownerId);
+
+        String candidate = account();
+        long candidateUserId = userId(candidate);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", candidateUserId);
+        UUID profile = profile(candidateUserId);
+        UUID cv = cv(profile);
+        String response = http.perform(post(APPLICATIONS)
+                        .header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(submitBody(job.id(), cv, "Nguyễn Văn An", null)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID application = UUID.fromString(mapper.readTree(response).path("data").path("id").asText());
+
+        database.update("UPDATE applications SET status='UNDER_REVIEW' WHERE id=?", application);
+        database.update("""
+                UPDATE applications SET status_changed_at=now() WHERE
+                  status IN ('SUBMITTED','UNDER_REVIEW','SHORTLISTED','INTERVIEWING') AND id<>?
+                """, application);
+        database.update("UPDATE applications SET status_changed_at=now() - interval '31 days' WHERE id=?",
+                application);
+
+        inactivity.expireDue();
+
+        assertThat(database.queryForObject("""
+                SELECT count(*) FROM notification_outbox
+                WHERE event_type='APPLICATION_INACTIVE' AND payload->>'applicationId'=?
+                """, Long.class, application.toString())).isEqualTo(2);
+        assertThat(database.queryForObject("""
+                SELECT count(*) FROM notification_outbox
+                WHERE event_type='APPLICATION_INACTIVE' AND recipient_user_id=?
+                """, Long.class, candidateUserId)).isZero();
+    }
+
+    @Test
+    void rejectedLegacyCopyIsDeletedButItsSnapshotMetadataIsRetained() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+
+        String candidate = account();
+        long candidateUserId = userId(candidate);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", candidateUserId);
+        UUID profile = profile(candidateUserId);
+        UUID application = saveApplication(job, profile, "Nguyễn Văn An", "2026-10-31T12:00:00Z");
+        String copyKey = "applications/" + application + "/cv/test.pdf";
+        storage.put(new CandidateCvStorage.StoredCvAsset(copyKey, "pdf", PDF, 4, "image", "private.pdf"));
+        storage.putContent(copyKey, new byte[]{'P', 'D', 'F', '1'});
+        database.update("UPDATE applications SET status='REJECTED' WHERE id=?", application);
+
+        assertThat(cvPurge.purgeDue()).isGreaterThanOrEqualTo(1);
+
+        assertThat(storage.has(copyKey)).isFalse();
+        assertThat(database.queryForObject(
+                "SELECT cv_purged_at IS NOT NULL FROM application_snapshots WHERE application_id=?",
+                Boolean.class, application)).isTrue();
+        assertThat(database.queryForObject(
+                "SELECT cv_file_name FROM application_snapshots WHERE application_id=?",
+                String.class, application)).isEqualTo("private.pdf");
+
+        http.perform(get(APPLICATIONS + "/" + application + "/cv/download-url")
+                        .header("Authorization", candidate))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(ErrorCode.CV_NOT_FOUND.getCode()));
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv",
+                        job.id(), application).header("Authorization", owner))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void candidateCanWithdrawFromAnInactiveApplication() throws Exception {
+        String candidate = account();
+        long candidateUserId = userId(candidate);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", candidateUserId);
+        UUID profile = profile(candidateUserId);
+
+        String owner = account();
+        long ownerId = userId(owner);
+        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        UUID application = saveApplication(job, profile, "Nguyễn Văn An", "2026-10-31T12:00:00Z");
+        database.update("UPDATE applications SET status='INACTIVE' WHERE id=?", application);
+        long version = database.queryForObject("SELECT version FROM applications WHERE id=?",
+                Long.class, application);
+
+        http.perform(post(APPLICATIONS + "/" + application + "/withdraw")
+                        .header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("version", version))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("WITHDRAWN"));
     }
 
     @ParameterizedTest
@@ -303,20 +570,20 @@ class JobApplicationHttpTest {
     }
 
     @Test
-    void copyFailureLeavesNoApplicationOrSnapshot() throws Exception {
+    void missingLibraryObjectLeavesNoApplicationSnapshotOrGrant() throws Exception {
         String candidate = account();
         long userId = userId(candidate);
         UUID profile = profile(userId);
         UUID cv = cv(profile);
         Job job = publishedJob(company(), userId);
-        storage.failCopy();
+        storage.remove("candidates/" + profile + "/cvs/source");
 
         http.perform(post(APPLICATIONS)
                         .header("Authorization", candidate)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(submitBody(job.id(), cv, "Nguyễn Văn An", null)))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.status").value(ErrorCode.APPLICATION_CV_COPY_FAILED.getCode()));
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(ErrorCode.CV_NOT_FOUND.getCode()));
 
         assertThat(database.queryForObject(
                 "SELECT count(*) FROM applications WHERE candidate_id=?", Long.class, profile)).isZero();
@@ -325,6 +592,9 @@ class JobApplicationHttpTest {
                 JOIN applications a ON a.id=s.application_id
                 WHERE a.candidate_id=?
                 """, Long.class, profile)).isZero();
+        assertThat(database.queryForObject(
+                "SELECT count(*) FROM candidate_cv_access_grants WHERE candidate_id=?",
+                Long.class, profile)).isZero();
     }
 
     @Test
@@ -822,13 +1092,22 @@ class JobApplicationHttpTest {
                 .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
                 .andExpect(jsonPath("$.data.version").value(0))
                 .andExpect(jsonPath("$.data.cvFileName").value("private.pdf"))
-                .andExpect(jsonPath("$.data.cvStorageKey").doesNotExist());
+                .andExpect(jsonPath("$.data.cvStorageKey").doesNotExist())
+                .andExpect(jsonPath("$.data.canViewCv").value(true))
+                .andExpect(jsonPath("$.data.reviewWindowEndsAt").value(
+                        org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.inactivityDeadline").isNotEmpty());
 
         http.perform(get("/api/candidate/applications/{applicationId}", application)
                         .header("Authorization", candidate))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.email").value("candidate@example.vn"))
-                .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+                .andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+                .andExpect(jsonPath("$.data.canViewCv").value(true))
+                .andExpect(jsonPath("$.data.reviewWindowEndsAt").value(
+                        org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.data.inactivityDeadline").value(
+                        org.hamcrest.Matchers.nullValue()));
 
         http.perform(get("/api/candidate/applications/{applicationId}", application)
                         .header("Authorization", owner))
@@ -864,6 +1143,24 @@ class JobApplicationHttpTest {
 
         assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE action='APPLICATION_CV_VIEWED' AND target_id=?",
                 Long.class, application.toString())).isEqualTo(1);
+
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url",
+                        job.id(), application)
+                        .header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Type", PDF))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Cache-Control", "no-store"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Disposition", org.hamcrest.Matchers.allOf(
+                                org.hamcrest.Matchers.containsString("attachment"),
+                                org.hamcrest.Matchers.containsString("private.pdf"))))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .bytes(new byte[]{'P', 'D', 'F', '1'}));
+
+        assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE action='APPLICATION_CV_VIEWED' AND target_id=?",
+                Long.class, application.toString())).isEqualTo(2);
     }
 
     @Test
@@ -1772,7 +2069,7 @@ class JobApplicationHttpTest {
     }
 
     @Test
-    void nonPdfApplicationCvReturnsControlledNotAcceptable() throws Exception {
+    void nonPdfApplicationCvIsInlineRestrictedButDownloadable() throws Exception {
         String owner = account();
         long ownerId = userId(owner);
         database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
@@ -1782,10 +2079,27 @@ class JobApplicationHttpTest {
         UUID candidate = profile(userId(account()));
         UUID application = saveApplication(job, candidate, "Applicant", "2026-10-31T12:00:00Z",
                 UUID.randomUUID(), "application/msword");
+        String cvKey = "applications/" + application + "/cv/test.pdf";
+        storage.put(new CandidateCvStorage.StoredCvAsset(
+                cvKey, "doc", "application/msword", 4, "raw", "private.doc"));
+        storage.putContent(cvKey, new byte[]{'D', 'O', 'C', '1'});
 
         http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv", job.id(), application)
                         .header("Authorization", owner))
                 .andExpect(status().isNotAcceptable());
+
+        http.perform(get("/api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url",
+                        job.id(), application)
+                        .header("Authorization", owner))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Type", "application/msword"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Content-Disposition", org.hamcrest.Matchers.allOf(
+                                org.hamcrest.Matchers.containsString("attachment"),
+                                org.hamcrest.Matchers.containsString("private.pdf"))))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
+                        .bytes(new byte[]{'D', 'O', 'C', '1'}));
     }
 
     @Test
@@ -2165,7 +2479,9 @@ class JobApplicationHttpTest {
                 INSERT INTO candidate_cvs(id,candidate_id,file_name,file_size,content_type,public_id,is_default)
                 VALUES (?,?,'CV.pdf',2048,?,?,true)
                 """, id, candidate, PDF, publicId);
-        storage.put(new CandidateCvStorage.StoredCvAsset(publicId, "pdf", PDF, 2_048L, "image", "CV.pdf"));
+        storage.put(new CandidateCvStorage.StoredCvAsset(publicId, "pdf", PDF, 2_048L, "image", "CV.pdf",
+                CandidateCvStorage.AUTHENTICATED_ACCESS_MODE));
+        storage.putContent(publicId, new byte[]{'P', 'D', 'F', '1'});
         return id;
     }
 
@@ -2225,12 +2541,10 @@ class JobApplicationHttpTest {
     static final class FakeCvStorage implements CandidateCvStorage {
         private final Map<String, StoredCvAsset> assets = new ConcurrentHashMap<>();
         private final Map<String, byte[]> contents = new ConcurrentHashMap<>();
-        private volatile boolean failCopy;
 
         void reset() {
             assets.clear();
             contents.clear();
-            failCopy = false;
         }
 
         void put(StoredCvAsset asset) {
@@ -2249,10 +2563,6 @@ class JobApplicationHttpTest {
             return assets.containsKey(publicId);
         }
 
-        void failCopy() {
-            failCopy = true;
-        }
-
         @Override
         public UploadSignature createUploadSignature(String publicId) {
             throw new UnsupportedOperationException();
@@ -2266,21 +2576,6 @@ class JobApplicationHttpTest {
         @Override
         public void delete(String publicId, String resourceType) {
             assets.remove(publicId);
-        }
-
-        @Override
-        public StoredCvAsset copy(String sourcePublicId, String targetPublicId, String resourceType, String format) {
-            if (failCopy) {
-                throw new AppException(ErrorCode.APPLICATION_CV_COPY_FAILED);
-            }
-            StoredCvAsset source = assets.get(sourcePublicId);
-            if (source == null) {
-                throw new AppException(ErrorCode.CV_NOT_FOUND);
-            }
-            StoredCvAsset copy = new StoredCvAsset(
-                    targetPublicId, format, source.contentType(), source.bytes(), resourceType, source.originalFileName());
-            assets.put(targetPublicId, copy);
-            return copy;
         }
 
         @Override

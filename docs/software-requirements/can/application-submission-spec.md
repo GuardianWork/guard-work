@@ -6,13 +6,14 @@
 | **Project** | GuardWork |
 | **Module** | Candidate Applications |
 | **File** | `application-submission-spec.md` |
-| **Version** | 0.1.0 |
+| **Version** | 0.3.0 |
 | **Date** | 2026-10-30 |
-| **Last Updated** | 2026-11-05 |
+| **Last Updated** | 2026-11-18 |
 | **Owner** | GuardWork thesis team |
 | **Named human approver** | chiko |
-| **Status** | Draft — implementation prepared; candidate application-list fields approved 2026-11-05, full approval pending |
+| **Status** | Draft — implementation prepared; candidate application-list fields approved 2026-11-05; CV access-grant amendment approved 2026-11-17; inactivity/reactivation/purge amendment approved 2026-11-18; full approval pending |
 | **Related use case** | UC-CAN-11 — Điền thông tin ứng tuyển |
+| **Related specification** | GW-SR-CV-02 (`candidate-cv-access-retention-spec.md`) |
 
 ## 1. Purpose and scope
 
@@ -22,19 +23,20 @@ one published Job Posting. It covers:
 - loading a prefill form from the Candidate's profile and CV library;
 - accepting editable submitted contact details and an optional cover letter;
 - attaching exactly one CV from the Candidate's own library;
-- storing an immutable snapshot of the submitted application; and
+- storing an immutable snapshot of the submitted application;
+- recording one access grant that authorizes the receiving Company to read that library CV; and
 - rejecting duplicate, unauthorized, unavailable or invalid submissions.
 
-The change is intentionally limited to the `applications` and `application_snapshots` tables.
-It does not add application status history, recruiter pipeline actions, interview/offer records,
-Kafka, or an application outbox. Those remain separate work.
+The change is intentionally limited to the `applications`, `application_snapshots` and
+`candidate_cv_access_grants` tables. It does not add application status history, recruiter pipeline
+actions, interview/offer records, Kafka, or an application outbox. Those remain separate work.
 
 ### 1.1 Decisions confirmed for this specification
 
 | Decision | Value |
 |---|---|
 | CV attachment cardinality | Exactly one `cvId` per application. |
-| Persistence scope | `applications` and `application_snapshots` only. |
+| Persistence scope | `applications` and `application_snapshots`; the submission transaction also writes one `candidate_cv_access_grants` row. |
 | Named human approver | `chiko`. |
 | Duplicate rule | At most one application per Candidate and Job Posting. |
 | Event delivery | [GW128-01](notification-flow-spec.md#11-gw-128-inbox-coverage) covers the Company-side inbox. General application event publication remains deferred under `EC-CAN-APP-03`. |
@@ -59,32 +61,49 @@ Identity fields are immutable after insert.
 ```
 
 Only `SUBMITTED` is produced by this submission specification. The accepted Application status set is
-`SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, `REJECTED`, and `WITHDRAWN`. Lifecycle transitions are
-owned by GW-SR-APPLICATION-REVIEW and do not alter the immutable Application identity or Snapshot rows.
+`SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, `INTERVIEWING`, `HIRED`, `REJECTED`, `WITHDRAWN`, and
+`INACTIVE`. Lifecycle transitions are owned by GW-SR-APPLICATION-REVIEW and do not alter the
+immutable Application identity or Snapshot rows. GW-SR-CV-02 owns the inactivity clock, the
+reversible `INACTIVE` reactivation, and rejected legacy-copy purge.
 
 ### 2.2 Application snapshot
 
-The snapshot is a point-in-time copy of what the Candidate submitted:
+The snapshot is a point-in-time record of what the Candidate submitted:
 
 - submitted full name, email, phone number and cover letter;
 - Job Posting title and Company name at submission time;
 - CV file metadata; and
-- an independent storage key for the copied CV.
+- the storage reference and storage mode of the CV.
 
-The snapshot is immutable at the database boundary. It does not depend on the Candidate's mutable
-profile, the Job Posting's later content changes, or the Candidate's CV library row.
+The snapshot is immutable at the database boundary except for the one-way `cv_purged_at` marker. It
+does not depend on the Candidate's mutable profile, the Job Posting's later content changes, or the
+Candidate's CV library row.
 
-### 2.3 CV snapshot ownership
+### 2.3 CV access ownership
 
-The CV object is copied from the Candidate's library to an application-specific key:
+New Applications share the Candidate's library CV object. The snapshot records
+`cv_storage_mode = 'SHARED'` and `cv_storage_key` equal to the library `public_id`; the key is
+descriptive only and never authorizes a Company read. Submission records one open-ended
+`candidate_cv_access_grants` row for the receiving Company in the same transaction:
 
 ```text
-applications/{applicationId}/cv/{randomUuid}.{pdf|doc|docx}
+candidate_cv_access_grants
+  application_id -> the submitted Application
+  cv_id          -> the shared library CV
+  company_id     -> the receiving Company
+  storage_key    -> the library public_id
 ```
 
-Deleting the source CV from the Candidate's library must not delete or mutate the submitted copy.
-`application_snapshots.source_cv_id` is historical traceability only and deliberately has no
-foreign key to `candidate_cvs`.
+Only a live grant authorizes the Company to read the CV. Deleting the source CV from the
+Candidate's library ends the Candidate's own access immediately and starts a bounded review window
+for the Company when the Application is in an active review stage; a `HIRED` Application loses
+access immediately. GW-SR-CV-02 owns the grant lifecycle, inactivity, revocation, retention window,
+and purge.
+
+Applications submitted before this change keep `cv_storage_mode = 'LEGACY_COPY'` and their
+application-specific copied object. They are not backfilled with grants and remain readable through
+the historical copy. `application_snapshots.source_cv_id` is historical traceability only and
+deliberately has no foreign key to `candidate_cvs`.
 
 ## 3. Functional requirements
 
@@ -110,10 +129,10 @@ foreign key to `candidate_cvs`.
 | APP-013 | The system **shall** validate the email as a non-blank value in standard email format containing `@`, with a maximum length of 255. |
 | APP-014 | The system **shall** require the referenced CV to belong to the authenticated Candidate. |
 | APP-015 | The system **shall** verify the source CV object still exists and has an allowed PDF, DOC or DOCX format and a positive size no greater than 10 MB. |
-| APP-016 | The system **shall** copy the CV to an independent application storage key before committing the application. |
-| APP-017 | The system **shall** persist the Application and its Snapshot in one database transaction. |
+| APP-016 | The system **shall** share the Candidate's library CV object and record one open-ended access grant for the receiving Company in the submission transaction. It **shall not** copy the CV bytes. |
+| APP-017 | The system **shall** persist the Application, its Snapshot, the access grant and the initial status history in one database transaction. |
 | APP-018 | The system **shall** reject a second application for the same Candidate and Job Posting with `40903`, including when two requests race. |
-| APP-019 | The system **shall** remove a copied CV object when the application transaction fails or a duplicate is detected after copying. Cleanup failure **shall not** mask the original error. |
+| APP-019 | The system **shall** leave no Application, Snapshot, or access grant when submission fails. A missing library object **shall** fail with `40405`; storage cleanup of incomplete registrations remains best-effort and **shall not** mask the original error. |
 | APP-020 | The system **shall** return `201 Created` with the new application identity and submitted summary on success. |
 | APP-021 | The system **shall not** accept Candidate identity, Company identity, Job revision identity or status from the request payload. |
 | APP-022 | The system **shall** write an application only when the Job Posting is `PUBLISHED` and the Company is `VERIFIED` and not banned. |
@@ -125,7 +144,7 @@ foreign key to `candidate_cvs`.
 | APP-030 | The database **shall** enforce `UNIQUE(candidate_id, job_id)` on `applications`. |
 | APP-031 | Submission **shall** lock the account, then the Company, then the Job Posting, matching the existing job lifecycle lock order. |
 | APP-032 | Duplicate detection **shall** distinguish the `uk_applications_candidate_job` constraint from other integrity failures. |
-| APP-033 | Application identity fields and Snapshot rows **shall** be protected against update and delete by database triggers. |
+| APP-033 | Application identity fields and Snapshot rows **shall** be protected against update and delete by database triggers, except the one-way `cv_purged_at` marker used by the rejected-legacy-copy purge. |
 | APP-034 | A Candidate profile that has applications **shall not** be deleted silently while those applications exist. |
 
 ## 4. Data model
@@ -139,7 +158,8 @@ foreign key to `candidate_cvs`.
 | `job_id` | BIGINT | NOT NULL, composite FK | Job Posting identity. |
 | `company_id` | BIGINT | NOT NULL, composite FK | Company identity at submission. |
 | `submitted_revision_id` | BIGINT | NOT NULL, composite FK | Approved revision submitted against. |
-| `status` | VARCHAR(30) | NOT NULL, CHECK | `SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, `REJECTED`, `WITHDRAWN`. |
+| `status` | VARCHAR(30) | NOT NULL, CHECK | `SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, `INTERVIEWING`, `HIRED`, `REJECTED`, `WITHDRAWN`, `INACTIVE`. |
+| `status_changed_at` | TIMESTAMPTZ | NOT NULL, default `now()` | Last status transition; backfilled from status history. |
 | `version` | BIGINT | NOT NULL, default 0 | Optimistic version. |
 | `applied_at` | TIMESTAMPTZ | NOT NULL | Submission instant. |
 | `updated_at` | TIMESTAMPTZ | NOT NULL | Last lifecycle update. |
@@ -168,16 +188,23 @@ Indexes: `(candidate_id, applied_at DESC)`, `(job_id, applied_at DESC)`,
 | `work_mode` | VARCHAR(30) | Nullable | Published work arrangement captured at submission time; may be null for older snapshots. |
 | `job_deadline` | TIMESTAMPTZ | Nullable | Published job deadline captured at submission time; may be null for older snapshots. |
 | `source_cv_id` | UUID | Nullable, no FK | Historical source CV identity. |
-| `cv_storage_key` | VARCHAR(255) | NOT NULL | Independent copy key. |
+| `cv_storage_key` | VARCHAR(255) | NOT NULL | `SHARED`: library `public_id`; `LEGACY_COPY`: application copy key. |
+| `cv_storage_mode` | VARCHAR(20) | NOT NULL, default `LEGACY_COPY`, CHECK | `SHARED` or `LEGACY_COPY`. |
 | `cv_storage_provider` | VARCHAR(30) | NOT NULL | `CLOUDINARY`. |
 | `cv_file_name` | VARCHAR(255) | NOT NULL, non-blank | Original file name. |
 | `cv_content_type` | VARCHAR(100) | NOT NULL, CHECK | PDF, DOC or DOCX. |
 | `cv_file_size` | BIGINT | NOT NULL, > 0 | Verified bytes. |
+| `cv_purged_at` | TIMESTAMPTZ | Nullable | Set when a rejected legacy copy's bytes were deleted; metadata is retained. |
 | `snapshot_schema_version` | INTEGER | NOT NULL, default 1 | Future snapshot evolution. |
 | `captured_at` | TIMESTAMPTZ | NOT NULL | Submission instant. |
 
-The snapshot table rejects all updates and deletes. `source_cv_id` intentionally has no foreign
-key so later CV deletion cannot fail or mutate the snapshot.
+The snapshot table rejects all updates and deletes except the one-way `cv_purged_at` marker, which
+records deletion of a rejected legacy copy while retaining the metadata. `source_cv_id`
+intentionally has no foreign key so later CV deletion cannot fail or mutate the snapshot.
+
+`cv_storage_mode` distinguishes the two storage contracts. Existing and pre-amendment rows default
+to `LEGACY_COPY`. New submissions write `SHARED` and must never fall back to `cv_storage_key` for a
+Company read; only a live `candidate_cv_access_grants` row authorizes that read.
 
 GW-103 added the nullable submission context columns `job_location`, `work_mode`, and `job_deadline`
 (migration `V2026.11.04.102`); they remain nullable so pre-GW-103 snapshots stay readable. `work_mode`
@@ -206,7 +233,7 @@ Query parameters:
 | Parameter | Default | Contract |
 |---|---:|---|
 | `search` | None | Optional partial match against submitted Job title or Company name from the immutable Application Snapshot. Matching ignores case and Vietnamese accents. Surrounding whitespace is trimmed; blank input means no filter. Up to 150 Unicode code points are accepted after trimming. `%` and `_` are treated as literal characters. |
-| `status` | None | Optional exact status filter. Accepted values are `SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, `REJECTED`, and `WITHDRAWN`; any other supplied value returns `400`. |
+| `status` | None | Optional exact status filter. Accepted values are `SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, `INTERVIEWING`, `HIRED`, `REJECTED`, `WITHDRAWN`, and `INACTIVE`; any other supplied value returns `400`. |
 | `page` | `0` | Zero-based page number. Must be nonnegative and must not produce a pagination offset above `Integer.MAX_VALUE`. |
 | `size` | `20` | Page size from `1` through `100`. |
 
@@ -249,7 +276,12 @@ Applications attached to suspended Job Postings (`staff_suspended = true`) are e
 
 #### `GET /api/candidate/applications/{applicationId}/cv/download-url`
 
-Returns a short-lived signed download URL for the submitted CV copy owned by the authenticated Candidate.
+Returns a short-lived signed download URL for the submitted CV owned by the authenticated Candidate.
+
+- `SHARED`: the URL is issued only while the source library CV is active. After the Candidate
+  deletes that CV, the endpoint returns `404` (`CV_NOT_FOUND`).
+- `LEGACY_COPY`: the URL points at the historical application copy.
+- URL lifetime is 15 minutes.
 
 **Response `200 OK`**
 
@@ -265,7 +297,19 @@ Returns a short-lived signed download URL for the submitted CV copy owned by the
 }
 ```
 
-### 5.2 `POST /api/candidate/applications`
+### 5.2 Company CV access
+
+Company-side CV reads are scoped to GW-SR-CV-02. The same submitted Application exposes:
+
+- `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv` for the inline PDF view; and
+- `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url` for an
+  authenticated attachment download covering PDF, DOC, and DOCX.
+
+A `SHARED` Application requires a live access grant for the authenticated Company. Expired,
+revoked, or other-Company grants return the concealed `404` (`JOB_NOT_FOUND`). A `LEGACY_COPY`
+Application reads its historical copy under the existing Application access rules.
+
+### 5.3 `POST /api/candidate/applications`
 
 Submits the application.
 
@@ -323,7 +367,7 @@ Submits the application.
 | BR-02 | The authenticated principal is the only source of Candidate identity. |
 | BR-03 | A submitted application is a historical fact; its identity and snapshot do not change when the Candidate edits their profile or CV, or when the Company changes its name. |
 | BR-04 | A CV must be owned by the Candidate and must still exist in storage at submission time. |
-| BR-05 | A CV copy failure must leave no Application or Snapshot row. |
+| BR-05 | A failed submission must leave no Application, Snapshot, or access grant. |
 | BR-06 | An application may reference only an approved revision of a published Job Posting from a verified, non-banned Company. |
 | BR-07 | Application status history, recruiter actions and event delivery are outside this specification. |
 
@@ -337,18 +381,20 @@ Submits the application.
 | `40478` | 404 | `JOB_NOT_FOUND` | Job is missing, unpublished or belongs to a banned Company. |
 | `40903` | 409 | `APPLICATION_ALREADY_SUBMITTED` | Candidate already applied to the Job Posting. |
 | `40904` | 409 | `JOB_NOT_ACCEPTING_APPLICATIONS` | Job is paused, closed or expired. |
-| `50301` | 503 | `APPLICATION_CV_COPY_FAILED` | Storage copy failed. |
+
+`APPLICATION_CV_COPY_FAILED` (`50301`) is no longer triggered because submission does not copy the
+CV. The constant remains in the error enum for client compatibility.
 
 ## 8. Non-functional requirements
 
 | ID | Category | Requirement |
 |---|---|---|
 | NFR-01 | Security | Candidate identity comes from `SecurityContext`, never from the payload. |
-| NFR-02 | Integrity | Application and snapshot writes are atomic; storage cleanup is best-effort. |
-| NFR-03 | Privacy | The snapshot retains only the submitted contact and CV metadata needed by the application workflow. |
-| NFR-04 | Auditability | Application identity and snapshot rows are append-only at the database boundary. |
-| NFR-05 | Compatibility | The migration is additive; no existing table or API is changed. |
-| NFR-06 | Observability | Successful submissions log an event with application, job and Company identities; CV copy failures log a warning without CV contents. |
+| NFR-02 | Integrity | Application, snapshot, access grant and initial status history writes are atomic; storage cleanup is best-effort. |
+| NFR-03 | Privacy | The snapshot retains only the submitted contact and CV metadata needed by the application workflow. Company CV reads are limited to a live grant for that Application and Company. |
+| NFR-04 | Auditability | Application identity, snapshot rows and access-grant identity are append-only at the database boundary. |
+| NFR-05 | Compatibility | The migration is additive except for the default-CV index replacement and the snapshot column default; no existing endpoint path or response field is removed. |
+| NFR-06 | Observability | Successful submissions log an event with application, job and Company identities; a missing or invalid CV logs a warning without CV contents, storage keys, or signed URLs. |
 
 ## 9. Open gaps and deferred work
 
@@ -366,14 +412,24 @@ Submits the application.
 
 Implementation verification uses:
 
-- `JobApplicationServiceTest` for prefill, validation, duplicate, unavailable-job, copy-failure and
-  snapshot-mapping behavior;
+- `JobApplicationServiceTest` for prefill, validation, duplicate, unavailable-job, missing-library
+  object, grant creation, shared and legacy CV resolution, and snapshot-mapping behavior;
 - `JobApplicationControllerTest` for HTTP status, validation and error envelopes;
-- `CandidateCvServiceTest` for ownership, copy, cleanup and missing-asset behavior;
+- `CandidateCvServiceTest` for ownership, shared reference, authenticated-only registration, soft
+  delete, review window, retention and missing-asset behavior;
+- `CandidateCvRetentionServiceTest` for deferred object purge and retry;
 - `JobApplicationHttpTest` for the authenticated end-to-end form/submit flow, duplicate rejection,
-  foreign-CV rejection, suspended account, copy failure and unavailable job; and
-- `JobApplicationMigrationTest` for PostgreSQL uniqueness, immutability, checks and snapshot
-  independence.
+  foreign-CV rejection, suspended account, missing library object, Candidate access loss after CV
+  deletion, Company inline read, Company binary download, rejection revocation, legacy Applications,
+  `INACTIVE` concealment/reactivation, company-only inactivity notifications, rejected-copy purge,
+  and withdrawal from `INACTIVE`;
+- `ApplicationInactivityServiceTest` for the inactivity boundary, revocation, and notification
+  recipients;
+- `ApplicationCvPurgeServiceTest` for rejected legacy-copy deletion and retry;
+- `JobApplicationMigrationTest` for PostgreSQL uniqueness, immutability, grant constraints and
+  triggers, snapshot mode, default-CV tombstone behavior, live-grant and purge queries, and
+  snapshot independence; and
+- `CloudinaryCandidateCvStorageTest` for signed `access_mode` and provider failure mapping.
 
 Local verification uses `-Djava.version=21` because the current environment provides Java 21 while
 the project declares Java 25. The production build remains Java 25.
@@ -386,6 +442,8 @@ the project declares Java 25. The production build remains Java 25.
 | Pending | chiko | Formal approval of this specification. |
 | 2026-11-01 | Requesting human user | Approved section 12 (APP-023–APP-025), including Recruiter, Admin and Owner roles. |
 | 2026-11-05 | Requesting human user | Approved the Candidate application list response fields added by GW-103: `location`, `workMode`, `deadline`, `version`, and `candidateFeedback`. |
+| 2026-11-17 | Requesting human user | Approved the CV access amendment in section 13: no per-application copy, grant-based Company access, one-month review window after Candidate deletion, and deferred purge. |
+| 2026-11-18 | Requesting human user | Approved section 13.1: `INACTIVE` after 30 days without a status update, reversible reactivation with grant epochs, active-stage-only deletion window, and rejection purge of legacy copies with metadata retained. |
 
 ## 12. Scoped amendment: current-company member applications
 
@@ -398,12 +456,61 @@ The approved restriction is scoped to submission eligibility:
 |---|---|
 | APP-023 | Submission shall reject an authenticated User whose current persisted Company Membership is `ACTIVE`, has Company Role `RECRUITER`, `ADMIN`, or `OWNER`, and belongs to the Job Posting's Company. Return HTTP `403` using the existing `40300` (`FORBIDDEN`) error envelope. |
 | APP-024 | An active Company Member may apply to another Company's available Job Posting. A historical `LEFT` or `REMOVED` membership shall not trigger APP-023. Existing eligibility rules still apply. |
-| APP-025 | Check membership within the submission transaction after locking the account and resolving the target Company and Job Posting, before copying a CV or writing an Application or Snapshot. Use persisted membership rather than token or client role claims. |
+| APP-025 | Check membership within the submission transaction after locking the account and resolving the target Company and Job Posting, before locking the CV reference or writing an Application, Snapshot, or access grant. Use persisted membership rather than token or client role claims. |
 
 This amendment does not change existing applications, add a dependency, or require a schema
 migration. Request and success-response shapes remain unchanged. Clients must handle the existing
 forbidden response for this new submission condition.
 
 Verification shall cover rejection for each active Company Role (`RECRUITER`, `ADMIN`, and
-`OWNER`) of the target Company without CV copy or application writes, and successful submission
+`OWNER`) of the target Company without CV or application writes, and successful submission
 for another Company, no active membership, and historical `LEFT`/`REMOVED` membership.
+
+## 13. Scoped amendment: grant-based CV access
+
+Status: Approved by the requesting human user on 2026-11-17 for the snapshot and CV access
+requirements. The approval status of the remainder of this specification is unchanged.
+
+The prior contract copied the Candidate's library CV into an application-specific object before
+committing the application. That copied every CV once per submission and left every application with
+an independent storage object. The approved replacement is:
+
+| ID | Approved requirement |
+|---|---|
+| APP-016 (replacement) | Share the Candidate's library CV object. Record one open-ended access grant for the receiving Company in the submission transaction. No CV bytes are copied. |
+| APP-019 (replacement) | A submission failure leaves no Application, Snapshot, or access grant row. A missing library object fails with `40405`. |
+| APP-017 (clarified) | The submission transaction persists the Application, Snapshot, access grant and initial status history atomically. |
+
+Supporting behavior is normatively defined in GW-SR-CV-02: grant creation, identity immutability,
+revocation on `REJECTED`/`WITHDRAWN`/`INACTIVE`, the one-month Company review window after Candidate
+deletion for active stages, automatic object purge, and the `LEGACY_COPY` compatibility path.
+
+This amendment:
+
+- replaces the copy step with a shared library reference plus an access grant;
+- makes the snapshot `cv_storage_mode = 'SHARED'` for new Applications;
+- preserves every existing Application as `LEGACY_COPY` with no grant backfill;
+- ends the Candidate's own submitted-CV access when they delete the library CV;
+- keeps the Company's access for the configured review window (default 30 days) while the
+  Application is in an active stage, then removes it and purges the bytes automatically;
+- requires new uploads to use authenticated Cloudinary delivery; and
+- leaves no existing endpoint path, response field, dependency, or outbox behavior changed.
+
+### 13.1 Amendment: inactivity, reactivation, and rejection purge (2026-11-18)
+
+Status: Approved by the requesting human user on 2026-11-18. GW-SR-CV-02 remains the normative
+owner of these rules.
+
+| ID | Approved requirement |
+|---|---|
+| APP-026 | An active Application with no status transition for the configured inactivity period (default 30 days) becomes `INACTIVE`. `HIRED`, `REJECTED`, and `WITHDRAWN` are excluded. |
+| APP-027 | `INACTIVE` is reversible only through `UNDER_REVIEW` by an eligible Owner or currently assigned Recruiter. Reactivation starts a new CV access-grant epoch only while the shared library CV still exists. |
+| APP-028 | On `REJECTED`, the application-specific `LEGACY_COPY` object is deleted; the snapshot row and metadata remain. `SHARED` library objects are never deleted by this path. Already-rejected legacy copies are backfilled by the same worker. |
+| APP-029 | `INACTIVE` Applications conceal Company CV access while company detail remains visible. The Candidate can withdraw from `INACTIVE`. |
+| APP-030 | Only the Company owner and currently assigned Recruiters receive the `APPLICATION_INACTIVE` notification. The Candidate sees the status but receives no notification. |
+
+`status_changed_at` is the inactivity clock and is backfilled from append-only status history. A
+grant may have multiple epochs, but at most one non-revoked epoch per Application. The post-deletion
+review window applies only to active stages; `HIRED` ends Company access immediately when the
+Candidate deletes the CV. The legal retention-agreement exception is deferred; rejection purges the
+legacy copy unconditionally in this scope.

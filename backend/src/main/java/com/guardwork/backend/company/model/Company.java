@@ -16,6 +16,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import jakarta.persistence.Convert;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -42,6 +44,11 @@ public class Company {
 
     @Column(name = "registration_certificate_url", nullable = false, columnDefinition = "TEXT")
     private String registrationCertificateUrl;
+
+    @Convert(converter = CompanyContentJsonConverter.class)
+    @org.hibernate.annotations.ColumnTransformer(write = "?::jsonb")
+    @Column(name = "content", columnDefinition = "jsonb", nullable = false)
+    private CompanyContent content = CompanyContent.empty();
 
     @Enumerated(EnumType.STRING)
     @Column(name = "verification_status", nullable = false, length = 30)

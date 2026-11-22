@@ -22,6 +22,7 @@ public enum NotificationEventType {
   APPLICATION_WITHDRAWN,
   APPLICATION_INTERVIEWING,
   APPLICATION_HIRED,
+  APPLICATION_INACTIVE,
   UNKNOWN;
 
   public String wireValue() {
