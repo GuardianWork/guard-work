@@ -89,6 +89,30 @@ public class JdScanService {
     return associated(revision, scanId);
   }
 
+  public View latest(Long actor, Long jobId, Long revisionId, Long expectedRevisionVersion) {
+    var scope = drafts.scope(actor, true);
+    var job = drafts.visible(scope, jobId);
+    return latestForRevision(job.getCompanyId(), revision(jobId, revisionId), expectedRevisionVersion);
+  }
+
+  public View staffLatest(Long actor, Long revisionId, Long expectedRevisionVersion) {
+    var review = reviews.inspect(actor, revisionId);
+    return latestForRevision(review.companyId(), revision(review.jobId(), revisionId), expectedRevisionVersion);
+  }
+
+  private View latestForRevision(Long companyId, JobRevision revision, Long expectedRevisionVersion) {
+    if (expectedRevisionVersion == null || expectedRevisionVersion < 0)
+      throw DraftContent.invalid("expectedRevisionVersion");
+    if (!revision.getVersion().equals(expectedRevisionVersion))
+      throw new ResponseStatusException(HttpStatus.CONFLICT,
+          "40022 CONCURRENT_MODIFICATION: Reload current versions");
+    // A state-only version bump may retain the same content. Removed draft text never matches.
+    return links.latestForContent(companyId, revision.getJobId(), revision.getId(),
+        hash(canonical(revision.getContent())))
+        .map(link -> view(runs.findById(link.getScanRunId()).orElseThrow(JobDraftService::notFound), link, revision))
+        .orElse(null);
+  }
+
   private View associated(JobRevision revision, Long scanId) {
     var link = links.findFirstByRevisionIdAndScanRunIdOrderByIdDesc(revision.getId(), scanId)
         .orElseThrow(JobDraftService::notFound);

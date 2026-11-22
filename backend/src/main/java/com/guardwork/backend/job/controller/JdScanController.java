@@ -3,6 +3,7 @@ package com.guardwork.backend.job.controller;
 import com.guardwork.backend.auth.security.UserPrincipal;
 import com.guardwork.backend.common.ApiResponse;
 import com.guardwork.backend.job.service.JdScanService;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -15,6 +16,22 @@ public class JdScanController {
   public ApiResponse<JdScanService.View> request(@AuthenticationPrincipal UserPrincipal actor,
       @PathVariable Long jobId, @PathVariable Long revisionId, @RequestBody JdScanService.Request request) {
     return ApiResponse.ok(service.request(actor.getId(), jobId, revisionId, request));
+  }
+
+  @GetMapping("/api/companies/me/jobs/{jobId}/revisions/{revisionId}/scans/latest")
+  public ApiResponse<JdScanService.View> latest(@AuthenticationPrincipal UserPrincipal actor,
+      @PathVariable Long jobId, @PathVariable Long revisionId,
+      @RequestParam(required = false) Long expectedRevisionVersion, HttpServletResponse response) {
+    response.setHeader("Cache-Control", "no-store");
+    return ApiResponse.ok(service.latest(actor.getId(), jobId, revisionId, expectedRevisionVersion));
+  }
+
+  @GetMapping("/api/staff/job-revisions/{revisionId}/scans/latest")
+  public ApiResponse<JdScanService.View> staffLatest(@AuthenticationPrincipal UserPrincipal actor,
+      @PathVariable Long revisionId, @RequestParam(required = false) Long expectedRevisionVersion,
+      HttpServletResponse response) {
+    response.setHeader("Cache-Control", "no-store");
+    return ApiResponse.ok(service.staffLatest(actor.getId(), revisionId, expectedRevisionVersion));
   }
 
   @GetMapping("/api/companies/me/jobs/{jobId}/revisions/{revisionId}/scans/{scanId}")
