@@ -11,6 +11,12 @@ Spring Boot 4 REST API for **guard-work**.
 ## Getting Started
 
 For the opt-in local AI workflow, see [JD scanning](../docs/backend/jd-scanning.md).
+Authenticated Candidate, Staff and Recruiter clients can request shared analysis with
+`POST /api/jobs/{jobId}/revisions/{revisionId}/scans` (`expectedRevisionVersion` body)
+and read it with `GET` on the same path plus `/latest?expectedRevisionVersion=...`.
+Both enforce current JD visibility and reuse the same content scan across roles;
+job detail exposes the published `revisionId`/`revisionVersion`. See the linked
+shared API contract for statuses, privacy and version errors.
 For real-mode startup and the authenticated Candidate Copilot, see
 [local legal chat](../docs/backend/legal-chat.md).
 For local, Docker/private-network or hosted AI service configuration in `backend/.env`,
@@ -420,6 +426,12 @@ onboarding. It returns only approved content and Company ID/name. Drafts and
 suspended Companies return 404. Availability becomes false at the approved deadline,
 including when scheduled reconciliation has not yet run; expired approved details
 remain readable. This endpoint does not accept Applications.
+
+Public job detail also includes nullable `aiAnalysis`: the retained completed report
+matching the exact published revision, with analysis date and outdated status.
+Reads never start AI work; private draft analyses stay concealed. Search lists leave
+this field null. See [candidate analysis integration](../docs/backend/jd-scanning.md#candidate-job-detail-integration)
+for the response and client rendering contract. No migration is required.
 
 Expiry reconciles under Company then job locks and records one `JOB_EXPIRED` fact.
 The scheduled worker uses `jobs.expiry.poll-ms=60000` and

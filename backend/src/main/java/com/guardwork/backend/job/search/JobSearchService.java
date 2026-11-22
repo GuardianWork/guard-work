@@ -176,7 +176,10 @@ public class JobSearchService {
               posting.getStatus(),
               posting.getApprovedDeadline(),
               true,
-              null));
+              null,
+              null,
+              revision.getId(),
+              revision.getVersion()));
     }
     return content;
   }

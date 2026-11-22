@@ -35,6 +35,8 @@ public class JobPublicationService {
   private final Clock clock;
   private final JobExpiryService expiry;
   private final JobEligibility eligibility;
+  private final JdScanService scans;
+  private final JobContentVisibility visibility;
 
   private final com.guardwork.backend.staff.service.AccountEnforcementService enforcement;
 
@@ -52,7 +54,10 @@ public class JobPublicationService {
       NotificationDispatcher dispatcher,
       Clock clock,
       JobExpiryService expiry,
-      JobEligibility eligibility, com.guardwork.backend.staff.service.AccountEnforcementService enforcement) {
+      JobEligibility eligibility, com.guardwork.backend.staff.service.AccountEnforcementService enforcement,
+      JdScanService scans, JobContentVisibility visibility) {
+    this.visibility = visibility;
+    this.scans = scans;
     this.enforcement = enforcement;
     this.reviews = reviews;
     this.jobs = jobs;
@@ -90,7 +95,10 @@ public class JobPublicationService {
       String publicationStatus,
       Instant approvedDeadline,
       boolean applicationsAvailable,
-      String applicationAvailabilityReason) {}
+      String applicationAvailabilityReason,
+      JdScanService.PublicView aiAnalysis,
+      Long revisionId,
+      Long revisionVersion) {}
 
   public Receipt decide(Long actor, Long revisionId, Decision request, String ip, String agent) {
     var hint =
@@ -251,25 +259,10 @@ public class JobPublicationService {
   }
 
   public PublicDetail publicDetail(Long id) {
-    if (id == null || id <= 0) throw JobDraftService.notFound();
-    var hint = jobs.findById(id).orElseThrow(JobDraftService::notFound);
-    var company =
-        companies.findByIdForUpdate(hint.getCompanyId()).orElseThrow(JobDraftService::notFound);
-    enforcement.settleCompany(company);
-    if (company.isBanned()) throw JobDraftService.notFound();
-    var job = jobs.lock(id, company.getId()).orElseThrow(JobDraftService::notFound);
-    entities.refresh(job);
-    // Company enforcement and individual Staff hides use independent suspension markers.
-    if (job.getPublishedRevisionId() == null
-        || job.isStaffSuspended()
-        || "SUSPENDED".equals(job.getStatus()))
-      throw JobDraftService.notFound();
-    var revision =
-        revisions
-            .findById(job.getPublishedRevisionId())
-            .filter(r -> "APPROVED".equals(r.getState()))
-            .orElseThrow(JobDraftService::notFound);
-    expiry.reconcile(job);
+    var visible = visibility.lock(id);
+    var company = visible.company();
+    var job = visible.job();
+    var revision = visibility.publishedRevision(visible);
     String reason =
         !"PUBLISHED".equals(job.getStatus())
             ? job.getStatus()
@@ -283,6 +276,9 @@ public class JobPublicationService {
         job.getStatus(),
         job.getApprovedDeadline(),
         reason == null,
-        reason);
+        reason,
+        scans.publishedAnalysis(company.getId(), revision),
+        revision.getId(),
+        revision.getVersion());
   }
 }
