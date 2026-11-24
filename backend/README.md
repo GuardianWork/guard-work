@@ -21,6 +21,11 @@ For real-mode startup and the authenticated Candidate Copilot, see
 [local legal chat](../docs/backend/legal-chat.md).
 For local, Docker/private-network or hosted AI service configuration in `backend/.env`,
 see [configure an AI service](../docs/backend/legal-chat.md#configure-a-local-or-hosted-ai-service).
+From the repository root, `bash ai/run-local.sh` starts the real AI adapter and
+ngrok together, verifies HTTPS readiness and updates ignored `backend/.env`.
+Keep that terminal open; restart a running backend to load the settings. Existing
+Neo4j startup may prompt for sudo. See [one-command startup](../docs/backend/legal-chat.md#one-command-real-adapter-and-ngrok)
+for prerequisites and hosted-backend setup.
 Check adapter readiness publicly in Swagger using `GET /api/ai/health`; no token is required.
 It checks connectivity and matching AI configuration without calling a model;
 see the [readiness response contract](../docs/backend/legal-chat.md#check-ai-readiness-through-backend-swagger).

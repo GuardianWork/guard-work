@@ -32,6 +32,50 @@ marketplace operations do not depend on chat availability.
 
 ## Start and verify
 
+### One command: real adapter and ngrok
+
+From the repository root:
+
+```bash
+bash ai/run-local.sh
+```
+
+The default command (also `service` or `ngrok`) starts the existing local Neo4j
+system service if its configured local Bolt port is unavailable, then starts the real
+adapter and an ngrok HTTPS tunnel. Starting Neo4j may ask for your sudo password.
+It waits for matching local and public `/health` responses before printing
+`AI service READY`. No paid model request is made. The sibling crawler virtualenv,
+provider credentials, imported legal corpus/index and authenticated ngrok installation
+must already exist; the script does not install dependencies or import data.
+
+Settings are read as data, with precedence: process environment, `backend/.env`,
+`ai/.env.ngrok.local`, `ai/.env.local`, then the sibling `crawler/.env` fallback.
+Keep `NGROK_AUTHTOKEN` in ignored `ai/.env.ngrok.local` or use ngrok's existing login
+configuration. Optional `NGROK_URL=https://your-domain.ngrok-free.app` selects a
+reserved endpoint. Otherwise an existing ngrok URL in `GUARDWORK_AI_ADAPTER_URL`
+is reused; without either, ngrok chooses the endpoint. The local agent API must use
+its default loopback port 4040. Ports 8011 and 4040 must be free; existing processes
+are never killed or reused. Request inspection is disabled to avoid capturing JDs,
+chat content and shared-key headers in the local inspector. See the
+[ngrok CLI](https://ngrok.com/docs/gateway/agent/cli) and
+[local agent API](https://ngrok.com/docs/gateway/agent/api).
+
+After readiness, the script updates only the six `GUARDWORK_AI_*` connection/identity
+settings in ignored `backend/.env`, preserving unrelated configuration. This includes
+the matching caller key, which is never printed. Restart a running local backend
+to load changes. For Render, copy the printed URL and matching AI settings into its
+Environment configuration and redeploy; the script does not modify remote hosting.
+
+Keep the terminal open. Ctrl+C stops only the adapter and tunnel started by this
+invocation. A failed child also stops its sibling and exits with an error; startup
+logs are kept in the printed private temporary directory. Neo4j is left running as
+a shared service. Do not share logs or local environment files.
+
+The existing explicit `adapter`, `backend` and `check` commands below retain their
+previous behavior; only the no-argument default now starts adapter plus ngrok.
+
+### Separate processes and model verification
+
 For a separately hosted adapter, use the environment setup below instead of
 starting a second local adapter. Local startup remains supported.
 
