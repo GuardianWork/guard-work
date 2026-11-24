@@ -19,9 +19,10 @@ public class JobReviewQueueController {
   public ApiResponse<PageResponse<JobReviewQueueService.Review>> queue(
       @AuthenticationPrincipal UserPrincipal actor,
       @RequestParam(defaultValue = "PENDING_REVIEW") String status,
+      @RequestParam(required = false) String q,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return ApiResponse.ok(service.queue(actor.getId(), status, page, size));
+    return ApiResponse.ok(service.queue(actor.getId(), status, q, page, size));
   }
 
   @GetMapping("/job-revisions/{id}")
