@@ -86,3 +86,14 @@ owner of the CV lifecycle; this section extends the status workflow above.
 The state model, AR-008, AR-012, and the earlier "no automatic deletion or reopening" statement are
 read together with this amendment. Inactivity is measured from `applications.status_changed_at`,
 backfilled from append-only history. The legal retention-agreement exception is deferred.
+
+## Amendment 2026-11-24: Candidate access during individual JD suspension (GW-130)
+
+The requesting maintainer explicitly approved [GW-SR-CAN-JOB-130](../can/job-suspension-candidate-spec.md).
+When the individual posting status is `SUSPENDED`, Candidates receive only minimal owned
+Application summaries/receipts and may otherwise withdraw if eligible. Submitted details,
+history/feedback and CV metadata are concealed, and Application CV downloads return 404.
+Responses add `jobSuspended` independently of Application status. This records the
+maintainer's later explicit withdrawal-only revision in the GW-130 conversation. This supersedes Candidate-side
+suspension concealment only; Company-side Application access remains concealed, and the
+independent Company-ban flag, account eligibility and CV deletion/retention rules remain.

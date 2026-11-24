@@ -85,3 +85,14 @@ Status: approved by the requesting human user on 2026-11-20. This amendment supe
 | AD-017 | The Company **shall** have `GET /api/companies/me/jobs/{jobId}/applications/{applicationId}/cv/download-url`, returning the authorized CV bytes as an attachment for PDF, DOC, or DOCX. The route **shall** pass the same grant, application-access, terminal-status, and `INACTIVE` checks as the inline view. A successful read **shall** record `APPLICATION_CV_VIEWED`. Response headers **shall** use the stored media type, `Content-Disposition: attachment` with the submitted file name, `Cache-Control: no-store`, and `X-Content-Type-Options: nosniff`; no storage key or provider URL **shall** be exposed. The inline route remains PDF-only. |
 
 The route path is retained for client compatibility; it no longer returns a signed URL.
+
+## Amendment 2026-11-24: Candidate access during individual JD suspension (GW-130)
+
+The requesting maintainer explicitly approved [GW-SR-CAN-JOB-130](../can/job-suspension-candidate-spec.md).
+When the individual posting status is `SUSPENDED`, Candidates receive only minimal owned
+Application summaries/receipts and may otherwise withdraw if eligible. Submitted details,
+history/feedback and CV metadata are concealed, and Application CV downloads return 404.
+Responses add `jobSuspended` independently of Application status. This records the
+maintainer's later explicit withdrawal-only revision in the GW-130 conversation. This supersedes Candidate-side
+suspension concealment only; Company-side Application access remains concealed, and the
+independent Company-ban flag, account eligibility and CV deletion/retention rules remain.

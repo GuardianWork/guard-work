@@ -23,5 +23,6 @@ public record ApplicationDetailResponse(
         String candidateFeedback,
         boolean canViewCv,
         Instant reviewWindowEndsAt,
-        Instant inactivityDeadline) {
+        Instant inactivityDeadline,
+        boolean jobSuspended) {
 }

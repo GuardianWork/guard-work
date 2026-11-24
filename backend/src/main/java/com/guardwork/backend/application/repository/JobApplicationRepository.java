@@ -77,10 +77,24 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication, 
 
     List<JobApplication> findByCandidateIdOrderByAppliedAtDesc(UUID candidateId);
 
+    // One Application per Candidate/job is enforced by uk_applications_candidate_job.
+    // Do not filter Application status: even terminal applicants retain their own history.
+    @Query(value = """
+            SELECT DISTINCT u.id AS "userId", a.id AS "applicationId"
+            FROM applications a
+            JOIN candidate_profiles cp ON cp.id = a.candidate_id
+            JOIN users u ON u.id = cp.user_id
+            WHERE a.job_id = :jobId AND a.company_id = :companyId
+              AND u.status = 'ACTIVE' AND u.self_service_state = 'ACTIVE'
+            """, nativeQuery = true)
+    List<ApplicationNotificationRecipient> findCandidateNotificationRecipients(
+            @Param("jobId") Long jobId, @Param("companyId") Long companyId);
+
     @Query(value = """
             SELECT a.id AS id, a.job_id AS "jobId", a.version AS version, s.job_title AS "jobTitle", s.company_name AS "companyName",
                    s.job_location AS "jobLocation", s.work_mode AS "workMode", s.job_deadline AS "jobDeadline",
-                   a.status AS status, a.applied_at AS "appliedAt", s.cv_file_name AS "cvFileName"
+                   a.status AS status, a.applied_at AS "appliedAt", s.cv_file_name AS "cvFileName",
+                   (jp.status = 'SUSPENDED') AS "jobSuspended"
             FROM applications a
             JOIN application_snapshots s ON s.application_id = a.id
             JOIN job_postings jp ON jp.id = a.job_id AND jp.company_id = a.company_id

@@ -41,6 +41,7 @@ import static org.springframework.security.test.web.servlet.setup.SecurityMockMv
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -2300,66 +2301,257 @@ class JobApplicationHttpTest {
     }
 
     @Test
-    void candidateListExcludesSuspendedJobs() throws Exception {
+    void staffSuspensionRetainsOnlyWithdrawalAccessWhilePublicJobStaysHidden() throws Exception {
+        String owner = account();
+        long ownerId = userId(owner);
+        long company = company();
+        addOwner(company, ownerId);
+        database.update("UPDATE companies SET name=? WHERE id=?", "gw130-company-" + company, company);
+        Job job = publishedJob(company, ownerId);
         String candidate = account();
-        long candidateUserId = userId(candidate);
-        UUID profile = profile(candidateUserId);
-        UUID cvId = cv(profile);
-        Job job = publishedJob(company(), candidateUserId);
-
-        String response = http.perform(post(APPLICATIONS)
-                        .header("Authorization", candidate)
+        UUID cvId = cv(profile(userId(candidate)));
+        String response = http.perform(post(APPLICATIONS).header("Authorization", candidate)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(submitBody(job.id(), cvId, "Nguyễn Văn An", "Em quan tâm")))
-                .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
-        UUID applicationId = UUID.fromString(mapper.readTree(response).path("data").path("id").asText());
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID application = UUID.fromString(mapper.readTree(response).path("data").path("id").asText());
+        http.perform(get("/api/jobs/search").param("keyword", "gw130-company-" + company))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1));
+        String staff = staffAccount();
+        jobSanction(staff, job, "hide").andExpect(status().isOk());
+        assertThat(database.queryForObject("SELECT staff_suspended FROM job_postings WHERE id=?",
+                Boolean.class, job.id())).isFalse();
 
-        database.update("UPDATE job_postings SET status='SUSPENDED',staff_suspended=true WHERE id=?", job.id());
-
-        http.perform(get(APPLICATIONS).header("Authorization", candidate))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.totalElements").value(0))
+        http.perform(get(APPLICATIONS).header("Authorization", candidate)
+                        .param("search", "backend").param("status", "SUBMITTED").param("size", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+                .andExpect(jsonPath("$.data.content[0].id").value(application.toString()))
+                .andExpect(jsonPath("$.data.content[0].status").value("SUBMITTED"))
+                .andExpect(jsonPath("$.data.content[0].jobSuspended").value(true))
+                .andExpect(jsonPath("$.data.content[0].cvFileName").isEmpty())
+                .andExpect(jsonPath("$.data.content[0].candidateFeedback").isEmpty());
+        http.perform(get(APPLICATIONS).header("Authorization", candidate).param("page", "1").param("size", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
                 .andExpect(jsonPath("$.data.content").isEmpty());
+        http.perform(get(APPLICATIONS).header("Authorization", candidate).param("status", "WITHDRAWN"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.jobSuspended").value(true))
+                .andExpect(jsonPath("$.data.coverLetter").isEmpty())
+                .andExpect(jsonPath("$.data.email").isEmpty())
+                .andExpect(jsonPath("$.data.phoneNumber").isEmpty())
+                .andExpect(jsonPath("$.data.cvFileName").isEmpty())
+                .andExpect(jsonPath("$.data.canViewCv").value(false))
+                .andExpect(jsonPath("$.data.history").isEmpty());
+        http.perform(get(APPLICATIONS + "/" + application + "/cv/download-url").header("Authorization", candidate))
+                .andExpect(status().isNotFound());
+        http.perform(get("/api/jobs/" + job.id())).andExpect(status().isNotFound());
+        http.perform(get("/api/jobs/search").param("keyword", "gw130-company-" + company))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        http.perform(post(APPLICATIONS).header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON)
+                        .content(submitBody(job.id(), cvId, "Nguyễn Văn An", "retry")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(ErrorCode.JOB_NOT_ACCEPTING_APPLICATIONS.getCode()));
+        String outsider = account();
+        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", outsider))
+                .andExpect(status().isNotFound());
+        http.perform(get(APPLICATIONS + "/" + application + "/cv/download-url").header("Authorization", outsider))
+                .andExpect(status().isNotFound());
+        http.perform(post(APPLICATIONS + "/" + application + "/withdraw").header("Authorization", outsider)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\":0}"))
+                .andExpect(status().isNotFound());
 
-        database.update("UPDATE job_postings SET staff_suspended=false WHERE id=?", job.id());
-        http.perform(get(APPLICATIONS + "/" + applicationId + "/cv/download-url")
-                        .header("Authorization", candidate))
-                .andExpect(status().isOk());
+        jobSanction(staff, job, "restore").andExpect(status().isOk());
+        http.perform(get(APPLICATIONS).header("Authorization", candidate))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[0].jobSuspended").value(false))
+                .andExpect(jsonPath("$.data.content[0].status").value("SUBMITTED"));
+        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.jobSuspended").value(false))
+                .andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+        jobSanction(staff, job, "hide").andExpect(status().isOk());
+        database.update("UPDATE candidate_cvs SET deleted_at=now() WHERE id=?", cvId);
+        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.canViewCv").value(false));
+        http.perform(get(APPLICATIONS + "/" + application + "/cv/download-url").header("Authorization", candidate))
+                .andExpect(status().isNotFound());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"SUBMITTED,true", "UNDER_REVIEW,true", "SHORTLISTED,true", "INTERVIEWING,true",
+            "INACTIVE,true", "WITHDRAWN,true", "REJECTED,false", "HIRED,false"})
+    void suspendedJobPreservesCandidateWithdrawalRules(String applicationStatus, boolean allowed) throws Exception {
+        long ownerId = userId(account());
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        String candidate = account();
+        UUID application = saveApplication(job, profile(userId(candidate)), "Applicant", "2026-10-31T12:00:00Z");
+        database.update("UPDATE applications SET status=? WHERE id=?", applicationStatus, application);
+        database.update("UPDATE job_postings SET status='SUSPENDED' WHERE id=?", job.id());
+        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.jobSuspended").value(true))
+                .andExpect(jsonPath("$.data.canViewCv").value(false))
+                .andExpect(jsonPath("$.data.coverLetter").isEmpty())
+                .andExpect(jsonPath("$.data.history").isEmpty());
+        http.perform(get(APPLICATIONS + "/" + application + "/cv/download-url").header("Authorization", candidate))
+                .andExpect(status().isNotFound());
+        var result = http.perform(post(APPLICATIONS + "/" + application + "/withdraw")
+                .header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON).content("{\"version\":0}"));
+        if (allowed) {
+            result.andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("WITHDRAWN"))
+                    .andExpect(jsonPath("$.data.jobSuspended").value(true))
+                    .andExpect(jsonPath("$.data.canViewCv").value(false))
+                    .andExpect(jsonPath("$.data.coverLetter").isEmpty());
+            long version = database.queryForObject("SELECT version FROM applications WHERE id=?", Long.class, application);
+            http.perform(post(APPLICATIONS + "/" + application + "/withdraw").header("Authorization", candidate)
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"version\":" + version + "}"))
+                    .andExpect(status().isOk());
+            assertThat(database.queryForObject("SELECT count(*) FROM application_status_history WHERE application_id=? AND to_status='WITHDRAWN'",
+                    Long.class, application)).isEqualTo("WITHDRAWN".equals(applicationStatus) ? 0L : 1L);
+        } else {
+            result.andExpect(status().isBadRequest());
+            assertThat(database.queryForObject("SELECT status FROM applications WHERE id=?", String.class, application))
+                    .isEqualTo(applicationStatus);
+        }
     }
 
     @Test
-    void suspendedJobConcealsCandidateDetailAndWithdrawal() throws Exception {
+    void independentCompanySuspensionStillConcealsCandidateApplicationAccess() throws Exception {
+        long ownerId = userId(account());
+        long company = company();
+        Job job = publishedJob(company, ownerId);
+        String candidate = account();
+        UUID application = saveApplication(job, profile(userId(candidate)), "Applicant", "2026-10-31T12:00:00Z");
+        database.update("UPDATE job_postings SET status='SUSPENDED',staff_suspended=true WHERE id=?", job.id());
+        http.perform(get(APPLICATIONS).header("Authorization", candidate))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
+                .andExpect(status().isNotFound());
+        http.perform(post(APPLICATIONS + "/" + application + "/withdraw").header("Authorization", candidate)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"version\":0}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void suspensionAndRestorationNotifyAllApplicantStatusesInTheCandidateAudience() throws Exception {
         String owner = account();
         long ownerId = userId(owner);
-        database.update("UPDATE users SET email_verified=true WHERE id=?", ownerId);
         long company = company();
         addOwner(company, ownerId);
-        String candidate = account();
-        long candidateUserId = userId(candidate);
         Job job = publishedJob(company, ownerId);
-        UUID application = saveApplication(job, profile(candidateUserId), "Applicant", "2026-10-31T12:00:00Z");
+        var recipients = new java.util.LinkedHashMap<Long, UUID>();
+        // A former applicant may later own the Company; their two audiences remain separate.
+        recipients.put(ownerId, saveApplication(job, profile(ownerId), "Owner applicant", "2026-10-31T12:00:00Z"));
+        for (String state : List.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING",
+                "REJECTED", "WITHDRAWN", "HIRED", "INACTIVE")) {
+            long candidate = userId(account());
+            UUID application = saveApplication(job, profile(candidate), "Private Candidate", "2026-10-31T12:00:00Z");
+            database.update("UPDATE applications SET status=? WHERE id=?", state, application);
+            recipients.put(candidate, application);
+        }
+        for (String restriction : List.of("status='SUSPENDED'", "self_service_state='DEACTIVATED'")) {
+            long candidate = userId(account());
+            saveApplication(job, profile(candidate), "Restricted Candidate", "2026-10-31T12:00:00Z");
+            database.update("UPDATE users SET " + restriction + " WHERE id=?", candidate);
+        }
+        Job otherJob = publishedJob(company, ownerId);
+        saveApplication(otherJob, profile(userId(account())), "Unrelated Candidate", "2026-10-31T12:00:00Z");
+        String staff = staffAccount();
+        for (int cycle = 1; cycle <= 2; cycle++) {
+            for (String action : List.of("hide", "restore")) {
+                String type = action.equals("hide") ? "JOB_SUSPENDED" : "JOB_RESTORED";
+                jobSanction(staff, job, action).andExpect(status().isOk());
+                jobSanction(staff, job, action).andExpect(status().isConflict());
+                var notices = database.queryForList("""
+                        SELECT recipient_user_id, application_id, body, action_href
+                        FROM notification_inbox WHERE job_id=? AND event_type=? AND audience='CANDIDATE'
+                        """, job.id(), type);
+                assertThat(notices).hasSize(recipients.size() * cycle);
+                assertThat(notices).allSatisfy(item -> {
+                    Long recipient = (Long) item.get("recipient_user_id");
+                    assertThat(item.get("application_id")).isEqualTo(recipients.get(recipient));
+                    assertThat(item.get("action_href")).isEqualTo("/applications/" + recipients.get(recipient));
+                    assertThat((String) item.get("body"))
+                            .doesNotContain("Internal", "Private Candidate", "private note", "candidate@example.vn");
+                });
+                assertThat(database.queryForObject("""
+                        SELECT count(*) FROM notification_outbox WHERE payload->>'jobId'=? AND event_type=?
+                          AND audience='CANDIDATE'
+                        """, Long.class, Long.toString(job.id()), type)).isEqualTo((long) recipients.size() * cycle);
+                assertThat(database.queryForObject("""
+                        SELECT count(*) FROM notification_outbox WHERE payload->>'jobId'=? AND audience='CANDIDATE'
+                          AND (payload - 'companyId' - 'companyName' - 'jobId' - 'applicationId') <> '{}'::jsonb
+                        """, Long.class, Long.toString(job.id()))).isZero();
+                assertThat(database.queryForObject("""
+                        SELECT count(*) FROM notification_inbox WHERE job_id=? AND event_type=?
+                          AND audience='RECRUITER' AND recipient_user_id=? AND action_href=?
+                        """, Long.class, job.id(), type, ownerId, "/companies/me/jobs/" + job.id())).isEqualTo((long) cycle);
+            }
+        }
+        UUID event = database.queryForObject("""
+                SELECT event_id FROM notification_outbox WHERE payload->>'applicationId'=?
+                  AND event_type='JOB_SUSPENDED' ORDER BY created_at LIMIT 1
+                """, UUID.class, recipients.get(ownerId).toString());
+        notificationDispatcher.dispatch(event);
+        notificationDispatcher.dispatch(event);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE source_event_id=?",
+                Long.class, event)).isEqualTo(1);
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_inbox WHERE job_id=? AND audience='CANDIDATE'",
+                Long.class, otherJob.id())).isZero();
+    }
 
-        database.update("UPDATE job_postings SET status='SUSPENDED',staff_suspended=true WHERE id=?", job.id());
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"hide", "restore"})
+    void candidateNotificationFailureRollsBackTheEntireStaffSanction(String action) throws Exception {
+        long ownerId = userId(account());
+        long company = company();
+        addOwner(company, ownerId);
+        Job job = publishedJob(company, ownerId);
+        saveApplication(job, profile(userId(account())), "Applicant", "2026-10-31T12:00:00Z");
+        String staff = staffAccount();
+        if (action.equals("restore")) jobSanction(staff, job, "hide").andExpect(status().isOk());
+        long version = database.queryForObject("SELECT version FROM job_postings WHERE id=?", Long.class, job.id());
+        String type = action.equals("hide") ? "JOB_SUSPENDED" : "JOB_RESTORED";
+        database.execute("""
+                CREATE FUNCTION gw130_fail_candidate_intent() RETURNS trigger LANGUAGE plpgsql AS $$
+                BEGIN RAISE EXCEPTION 'controlled Candidate intent failure' USING ERRCODE='23514'; END $$
+                """);
+        database.execute("CREATE TRIGGER gw130_fail_candidate_intent BEFORE INSERT ON notification_outbox "
+                + "FOR EACH ROW WHEN (NEW.audience='CANDIDATE' AND NEW.payload->>'jobId'='" + job.id()
+                + "') EXECUTE FUNCTION gw130_fail_candidate_intent()");
+        try {
+            jobSanction(staff, job, action).andExpect(status().is5xxServerError());
+        } finally {
+            database.execute("DROP TRIGGER gw130_fail_candidate_intent ON notification_outbox");
+            database.execute("DROP FUNCTION gw130_fail_candidate_intent()");
+        }
+        assertThat(database.queryForObject("SELECT status FROM job_postings WHERE id=?", String.class, job.id()))
+                .isEqualTo(action.equals("hide") ? "PUBLISHED" : "SUSPENDED");
+        assertThat(database.queryForObject("SELECT version FROM job_postings WHERE id=?", Long.class, job.id())).isEqualTo(version);
+        assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type=?",
+                Long.class, job.id(), type)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM audit_logs WHERE target_type='JOB' AND target_id=? AND action=?",
+                Long.class, Long.toString(job.id()), type)).isZero();
+        assertThat(database.queryForObject("SELECT count(*) FROM notification_outbox WHERE payload->>'jobId'=? AND event_type=?",
+                Long.class, Long.toString(job.id()), type)).isZero();
+        jobSanction(staff, job, action).andExpect(status().isOk());
+    }
 
-        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
-                .andExpect(status().isNotFound());
-        http.perform(post("/api/candidate/applications/{applicationId}/withdraw", application)
-                        .header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":0}"))
-                .andExpect(status().isNotFound());
-        assertThat(database.queryForObject("SELECT status FROM applications WHERE id=?",
-                String.class, application)).isEqualTo("SUBMITTED");
+    String staffAccount() throws Exception {
+        String token = account();
+        long id = userId(token);
+        database.update("UPDATE users SET role='STAFF' WHERE id=?", id);
+        String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email(id), "password", "Password123"))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        return "Bearer " + mapper.readTree(response).path("data").path("accessToken").asText();
+    }
 
-        database.update("UPDATE job_postings SET status='PUBLISHED',staff_suspended=false WHERE id=?", job.id());
-
-        http.perform(get(APPLICATIONS + "/" + application).header("Authorization", candidate))
-                .andExpect(status().isOk());
-        http.perform(post("/api/candidate/applications/{applicationId}/withdraw", application)
-                        .header("Authorization", candidate).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":0}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("WITHDRAWN"));
+    org.springframework.test.web.servlet.ResultActions jobSanction(String staff, Job job, String action) throws Exception {
+        long version = database.queryForObject("SELECT version FROM job_postings WHERE id=?", Long.class, job.id());
+        return http.perform(put("/api/staff/jobs/" + job.id() + "/" + action).header("Authorization", staff)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsString(Map.of("expectedJobVersion", version, "reason", "Internal moderation reason"))));
     }
 
     @Test

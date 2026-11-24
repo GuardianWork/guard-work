@@ -250,6 +250,7 @@ public class JobApplicationService {
         var applicationsPage = applications.findCandidateList(candidateId, normalizedSearch, status,
                 PageRequest.of(page, size, Sort.unsorted()));
         var applicationIds = applicationsPage.getContent().stream()
+                .filter(application -> !application.getJobSuspended())
                 .map(application -> application.getId()).toList();
         var statusHistoryByApplication = applicationIds.isEmpty()
                 ? java.util.Map.<UUID, List<ApplicationStatusHistory>>of()
@@ -262,29 +263,34 @@ public class JobApplicationService {
                         application.getJobId(),
                         application.getJobTitle(),
                         application.getCompanyName(),
-                        application.getJobLocation(),
-                        application.getWorkMode(),
-                        application.getJobDeadline(),
+                        application.getJobSuspended() ? null : application.getJobLocation(),
+                        application.getJobSuspended() ? null : application.getWorkMode(),
+                        application.getJobSuspended() ? null : application.getJobDeadline(),
                         application.getStatus(),
                         application.getAppliedAt(),
-                        application.getCvFileName(),
+                        application.getJobSuspended() ? null : application.getCvFileName(),
                         application.getVersion() == null ? 0L : application.getVersion(),
-                        statusHistoryByApplication.getOrDefault(application.getId(), java.util.List.of())
+                        application.getJobSuspended() ? null : statusHistoryByApplication.getOrDefault(application.getId(), java.util.List.of())
                                 .stream()
                                 .map(ApplicationStatusHistory::getCandidateFeedback)
                                 .filter(java.util.Objects::nonNull)
-                                .reduce((first, second) -> second).orElse(null)))
+                                .reduce((first, second) -> second).orElse(null),
+                        application.getJobSuspended()))
                 .toList();
         return PageResponse.of(applicationsPage, content);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ApplicationCvDownloadResponse downloadSubmittedCv(Long userId, UUID applicationId) {
         requireActiveUser(userId, false);
         CandidateProfile profile = profiles.getOrCreateProfile(userId);
         UUID candidateId = profile.getId();
         JobApplication application = applications.findByIdAndCandidateId(applicationId, candidateId)
                 .orElseThrow(() -> new AppException(ErrorCode.JOB_NOT_FOUND));
+        // Serialize URL issuance with Staff hiding; previously issued URLs keep their TTL.
+        jobPostings.lock(application.getJobId(), application.getCompanyId())
+                .filter(job -> !"SUSPENDED".equals(job.getStatus()))
+                .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
         ApplicationSnapshot snapshot = snapshots.findById(application.getId()).orElseThrow(
                 () -> new IllegalStateException("Missing application snapshot"));
 
@@ -453,7 +459,8 @@ public class JobApplicationService {
                         .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null),
                 cvAccess.canView(),
                 cvAccess.reviewWindowEndsAt(),
-                inactivityDeadline(application));
+                inactivityDeadline(application),
+                false);
     }
 
     @Transactional
@@ -466,12 +473,20 @@ public class JobApplicationService {
         JobApplication application = applications.findById(applicationId)
                 .filter(value -> value.getCandidateId().equals(candidateId))
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
-        // AD-003: a suspended Job Posting conceals its Applications, mirroring the Candidate list.
-        jobPostings.lock(application.getJobId(), application.getCompanyId())
-                .filter(job -> !job.isStaffSuspended() && !"SUSPENDED".equals(job.getStatus()))
+        // GW-130 exposes only the receipt needed to withdraw during individual JD suspension.
+        // The independent Company-ban restriction still conceals Application details.
+        JobPosting job = jobPostings.lock(application.getJobId(), application.getCompanyId())
+                .filter(value -> !value.isStaffSuspended())
                 .orElseThrow(() -> new AppException(ErrorCode.RESOURCE_NOT_FOUND));
         ApplicationSnapshot snapshot = snapshots.findById(applicationId).orElseThrow(
                 () -> new IllegalStateException("Missing application snapshot"));
+        if ("SUSPENDED".equals(job.getStatus())) {
+            return new ApplicationDetailResponse(
+                    application.getId(), application.getJobId(), null, null, null, null,
+                    snapshot.getJobTitle(), snapshot.getCompanyName(), application.getStatus(),
+                    application.getVersion(), application.getAppliedAt(), null, null, 0,
+                    List.of(), null, false, null, null, true);
+        }
         var history = statusHistory.findByApplicationIdOrderById(applicationId);
         return new ApplicationDetailResponse(
                 application.getId(), application.getJobId(), snapshot.getFullName(), snapshot.getEmail(),
@@ -485,7 +500,8 @@ public class JobApplicationService {
                         .filter(java.util.Objects::nonNull).reduce((first, second) -> second).orElse(null),
                 candidateCanViewCv(snapshot),
                 null,
-                null);
+                null,
+                "SUSPENDED".equals(job.getStatus()));
     }
 
     /**
