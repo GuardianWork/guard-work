@@ -243,6 +243,142 @@ class JobSubmissionHttpTest {
         }
         assertThat(database.queryForObject("SELECT count(*) FROM job_audit_events WHERE job_id=? AND event_type='JOB_REVISION_SUBMITTED'",Long.class,job)).isEqualTo(1);
     }
+    @Test void staffQueueSearchesRevisionTitlesAndCompanyNamesBeforePagination() throws Exception {
+        String owner = account();
+        long actor = userId(owner);
+        long company = createdCompany(owner);
+        String marker = UUID.randomUUID().toString();
+        String companyName = "Công ty Ánh Dương " + marker;
+        database.update("UPDATE companies SET name=? WHERE id=?", companyName, company);
+        String otherOwner = account();
+        long otherActor = userId(otherOwner);
+        long otherCompany = createdCompany(otherOwner);
+        Instant submitted = Instant.parse("2026-11-01T00:00:00Z");
+        var first = queueFixture(company, actor, "Kế toán " + marker + " first", "PENDING_REVIEW", submitted);
+        var second = queueFixture(otherCompany, otherActor, "KẾ TOÁN " + marker + " second", "PENDING_REVIEW", submitted);
+        var approved = queueFixture(company, actor, "Kế toán " + marker, "APPROVED", submitted.minusSeconds(1));
+        var rejected = queueFixture(company, actor, "Kế toán " + marker, "REJECTED", submitted.plusSeconds(2));
+        var withdrawn = queueFixture(company, actor, "Kế toán " + marker, "WITHDRAWN", submitted.plusSeconds(3));
+        queueFixture(company, actor, "Kế toán " + marker, "DRAFT", submitted);
+        String staff = queueStaff(owner);
+        String route = "/api/staff/job-revisions";
+        http.perform(get(route).header("Authorization", staff).param("q", "  ke TOAN " + marker + "  ").param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2))
+            .andExpect(jsonPath("$.data.totalPages").value(2))
+            .andExpect(jsonPath("$.data.content[0].id").value(first.revisionId()))
+            .andExpect(jsonPath("$.data.content[0].companyId").value(company))
+            .andExpect(jsonPath("$.data.content[0].companyName").value(companyName));
+        http.perform(get(route).header("Authorization", staff).param("q", "ke toan " + marker).param("size", "1").param("page", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2))
+            .andExpect(jsonPath("$.data.content[0].id").value(second.revisionId()));
+        // The second match is outside page zero, yet a narrower search must find it on page zero.
+        http.perform(get(route).header("Authorization", staff).param("q", marker + " second").param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+            .andExpect(jsonPath("$.data.totalPages").value(1))
+            .andExpect(jsonPath("$.data.content[0].id").value(second.revisionId()));
+        http.perform(get(route).header("Authorization", staff).param("q", "anh DUONG " + marker).param("status", "ALL"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(4))
+            .andExpect(jsonPath("$.data.content[*].id").value(Matchers.contains(
+                (int) approved.revisionId(), (int) first.revisionId(), (int) rejected.revisionId(), (int) withdrawn.revisionId())))
+            .andExpect(jsonPath("$.data.content[?(@.state == 'DRAFT')]").isEmpty());
+        http.perform(get(route).header("Authorization", staff).param("q", "anh duong " + marker).param("status", "APPROVED"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+            .andExpect(jsonPath("$.data.content[0].id").value(approved.revisionId()));
+        http.perform(get(route).header("Authorization", staff).param("q", "ke toan " + marker).param("page", "10").param("size", "1"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(2))
+            .andExpect(jsonPath("$.data.content").isEmpty());
+        http.perform(get(route + "/" + first.revisionId()).header("Authorization", staff))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.companyName").value(companyName));
+        http.perform(get("/api/staff/jobs/" + first.jobId() + "/revisions").header("Authorization", staff))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.content[0].companyName").value(companyName));
+    }
+
+    @Test void staffQueueSearchUsesEachRevisionsOwnTitle() throws Exception {
+        String owner = account();
+        long actor = userId(owner);
+        long company = createdCompany(owner);
+        String marker = UUID.randomUUID().toString();
+        var previous = queueFixture(company, actor, "Old title " + marker, "APPROVED", clock.instant());
+        long pending = database.queryForObject("""
+            INSERT INTO job_posting_revisions(job_id,revision_number,content,state,creator_user_id,created_at,
+                submitter_user_id,submitted_at)
+            VALUES (?,2,?::jsonb,'PENDING_REVIEW',?,now(),?,now()) RETURNING id
+            """, Long.class, previous.jobId(), mapper.writeValueAsString(Map.of("title", "New title " + marker)), actor, actor);
+        String staff = queueStaff(owner);
+        http.perform(get("/api/staff/job-revisions").header("Authorization", staff).param("q", "Old title " + marker))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(0));
+        http.perform(get("/api/staff/job-revisions").header("Authorization", staff).param("q", "New title " + marker))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+            .andExpect(jsonPath("$.data.content[0].id").value(pending));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"%", "_", "\\", "'"})
+    void staffQueueSearchTreatsSqlPatternCharactersLiterally(String literal) throws Exception {
+        String owner = account();
+        long actor = userId(owner);
+        long company = createdCompany(owner);
+        String marker = UUID.randomUUID().toString();
+        var exact = queueFixture(company, actor, marker + literal, "PENDING_REVIEW", clock.instant());
+        queueFixture(company, actor, marker + "x", "PENDING_REVIEW", clock.instant());
+        http.perform(get("/api/staff/job-revisions").header("Authorization", queueStaff(owner)).param("q", marker + literal))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.data.totalElements").value(1))
+            .andExpect(jsonPath("$.data.content[0].id").value(exact.revisionId()));
+    }
+
+    @Test void staffQueueValidatesTrimmedUnicodeSearchWithoutChangingBlankQueriesOrAuthority() throws Exception {
+        String owner = account();
+        http.perform(get("/api/staff/job-revisions").param("q", "ke toan")).andExpect(status().isUnauthorized());
+        http.perform(get("/api/staff/job-revisions").header("Authorization", owner).param("q", "ke toan"))
+            .andExpect(status().isForbidden());
+        String staff = queueStaff(owner);
+        String route = "/api/staff/job-revisions";
+        String before = http.perform(get(route).header("Authorization", staff)).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString();
+        String blank = http.perform(get(route).header("Authorization", staff).param("q", " \t\n\u2003 "))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(mapper.readTree(blank).path("data")).isEqualTo(mapper.readTree(before).path("data"));
+        for (String q : List.of("x".repeat(200), "  " + "x".repeat(200) + "  ", "🙂".repeat(200))) {
+            http.perform(get(route).header("Authorization", staff).param("q", q)).andExpect(status().isOk());
+        }
+        for (String q : List.of("x".repeat(201), "🙂".repeat(201))) {
+            http.perform(get(route).header("Authorization", staff).param("q", q)).andExpect(status().isBadRequest());
+        }
+        database.update("UPDATE users SET status='SUSPENDED' WHERE id=?", userId(staff));
+        http.perform(get(route).header("Authorization", staff).param("q", "ke toan")).andExpect(status().isUnauthorized());
+    }
+
+    record QueueFixture(long jobId, long revisionId) {}
+
+    QueueFixture queueFixture(long company, long actor, String title, String state, Instant submitted) throws Exception {
+        long job = database.queryForObject("""
+            INSERT INTO job_postings(company_id,creator_user_id,status,owner_responsible,created_at,updated_at)
+            VALUES (?,?,'DRAFT',true,now(),now()) RETURNING id
+            """, Long.class, company, actor);
+        boolean draft = "DRAFT".equals(state);
+        boolean decided = "APPROVED".equals(state) || "REJECTED".equals(state);
+        boolean withdrawn = "WITHDRAWN".equals(state);
+        long revision = database.queryForObject("""
+            INSERT INTO job_posting_revisions(job_id,revision_number,content,state,creator_user_id,created_at,
+                submitter_user_id,submitted_at,reviewer_user_id,decided_at,rejection_reason,withdrawer_user_id,withdrawn_at)
+            VALUES (?,1,?::jsonb,?,?,now(),?,?::timestamptz,?,?::timestamptz,?,?,?::timestamptz) RETURNING id
+            """, Long.class, job, mapper.writeValueAsString(Map.of("title", title)), state, actor,
+            draft ? null : actor, draft ? null : submitted.toString(), decided ? actor : null,
+            decided ? submitted.toString() : null, "REJECTED".equals(state) ? "Fixture rejection reason" : null,
+            withdrawn ? actor : null, withdrawn ? submitted.toString() : null);
+        return new QueueFixture(job, revision);
+    }
+
+    String queueStaff(String account) throws Exception {
+        long actor = userId(account);
+        database.update("UPDATE users SET role='STAFF' WHERE id=?", actor);
+        String email = database.queryForObject("SELECT email FROM users WHERE id=?", String.class, actor);
+        String response = http.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+            .content(mapper.writeValueAsString(Map.of("usernameOrEmail", email, "password", "Password123"))))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        return "Bearer " + mapper.readTree(response).path("data").path("accessToken").asText();
+    }
+
     @TestConfiguration static class TimeConfig {
         @Bean @Primary MutableClock jobTestClock(){return new MutableClock();}
     }

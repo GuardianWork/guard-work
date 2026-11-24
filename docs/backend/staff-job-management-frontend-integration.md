@@ -12,7 +12,7 @@ Existing navigation can start from:
 
 | Endpoint | Integration use |
 |---|---|
-| `GET /api/staff/job-revisions?status=ALL&page=0&size=20` | Existing submitted-revision queue. Each record has `jobId`, `id` (revision ID), and current `jobVersion`. The default status is `PENDING_REVIEW`, so use an appropriate filter to reach approved jobs. |
+| `GET /api/staff/job-revisions?status=ALL&q=ke%20toan&page=0&size=20` | Submitted-revision queue with optional database search by revision title or Company name (case/accent insensitive; literal `%`, `_`, `\`; trim, maximum 200 Unicode code points). Search and status combine before paging/counting. Order stays `submittedAt ASC, id ASC`; ALL excludes DRAFT. Each record has `companyId`, `companyName`, `jobId`, `id` (revision ID), and current `jobVersion`. The default status is `PENDING_REVIEW`, so use an appropriate filter to reach approved jobs. |
 | `GET /api/staff/job-revisions/{revisionId}` | Reload submitted revision content and current `jobVersion` before a hide. Its `state` is the revision state, not the Job Posting publication status. |
 | `GET /api/staff/jobs/{jobId}/revisions?page=0&size=20` | Existing submitted-revision history, ordered by revision number ascending. Each record includes current `jobVersion`; editable drafts are excluded. |
 | `GET /api/jobs/{jobId}` | Public approved-content view: `publicationStatus`, `approvedDeadline`, `applicationsAvailable`. There is no version token here. Suspended jobs return a content-free 404. |
@@ -203,3 +203,8 @@ A public `GET /api/jobs/{jobId}` for a suspended job returns 404 with no content
 - History supports loading, empty, error/retry and pagination; same-time events retain deterministic order and null fields render safely.
 - `SUSPENDED` is supported by Company/public clients, and retained pending-review decisions never suggest that the job was restored.
 - Times use Vietnamese formatting in the Vietnam time zone; backend technical reasons are mapped to Vietnamese UI messages.
+
+Staff Review responses consistently include the current Company's `companyName` in queue,
+revision detail and job revision history. No migration or dependency is needed for this
+additive contract. Blank/omitted `q` preserves the existing queue behavior; invalid length
+returns the existing 400 envelope. Existing active-Staff authorization remains unchanged.

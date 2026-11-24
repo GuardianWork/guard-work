@@ -4,6 +4,7 @@ import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.job.model.*;
 import com.guardwork.backend.job.repository.*;
 import com.guardwork.backend.company.repository.CompanyRepository;
+import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.user.repository.UserRepository;
 import java.time.*;
 import java.util.*;
@@ -28,7 +29,7 @@ public class JobReviewQueueService {
     this.users=users; this.companies=companies; this.jobs=jobs; this.revisions=revisions;
     this.eligibility=eligibility; this.content=content;
   }
-  public record Review(Long id, Long jobId, Long companyId, int revisionNumber, String state,
+  public record Review(Long id, Long jobId, Long companyId, String companyName, int revisionNumber, String state,
       Long jobVersion, Long revisionVersion, Map<String,Object> content, Long submitterUserId, Instant submittedAt,
       Long reviewerUserId, Instant decidedAt, String rejectionReason, Long withdrawerUserId, Instant withdrawnAt,
       boolean companyVerified, boolean companySuspended, boolean needsReassignment,
@@ -38,10 +39,12 @@ public class JobReviewQueueService {
     if (!"ACTIVE".equals(user.getStatus())) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40304 ACCOUNT_SUSPENDED");
     if (!"STAFF".equals(user.getRole())) throw new ResponseStatusException(HttpStatus.FORBIDDEN,"40300 FORBIDDEN: Platform Staff required");
   }
-  public PageResponse<Review> queue(Long actor, String status, int page, int size) {
+  public PageResponse<Review> queue(Long actor, String status, String q, int page, int size) {
     requireStaff(actor); paging(page,size);
     if (!Set.of("PENDING_REVIEW","APPROVED","REJECTED","WITHDRAWN","ALL").contains(status)) throw DraftContent.invalid("status");
-    Specification<JobRevision> filter=(r,q,c)-> status.equals("ALL") ? c.notEqual(r.get("state"),"DRAFT") : c.equal(r.get("state"),status);
+    Specification<JobRevision> filter=(r,query,c)-> status.equals("ALL") ? c.notEqual(r.get("state"),"DRAFT") : c.equal(r.get("state"),status);
+    String keyword = normalizeKeyword(q);
+    if (keyword != null) filter = filter.and(matchingKeyword(keyword));
     var result=revisions.findAll(filter,PageRequest.of(page,size,Sort.by("submittedAt","id")));
     return PageResponse.of(result.stream().map(this::review).toList(),page,size,result.getTotalElements());
   }
@@ -60,11 +63,38 @@ public class JobReviewQueueService {
     var job=jobs.findById(r.getJobId()).orElseThrow(JobDraftService::notFound);
     var company=companies.findById(job.getCompanyId()).orElseThrow(JobDraftService::notFound);
     var evaluation=eligibility.evaluate(company,job,r);
-    return new Review(r.getId(),job.getId(),job.getCompanyId(),r.getRevisionNumber(),r.getState(),job.getVersion(),r.getVersion(),
+    return new Review(r.getId(),job.getId(),job.getCompanyId(),company.getName(),r.getRevisionNumber(),r.getState(),job.getVersion(),r.getVersion(),
       content.decode(r.getContent()),r.getSubmitterUserId(),r.getSubmittedAt(),r.getReviewerUserId(),r.getDecidedAt(),r.getRejectionReason(),
       r.getWithdrawerUserId(),r.getWithdrawnAt(),evaluation.companyVerified(),evaluation.companySuspended(),evaluation.needsReassignment(),
       "PENDING_REVIEW".equals(r.getState())&&evaluation.eligible(),evaluation.issues());
   }
+  private static String normalizeKeyword(String value) {
+    if (value == null) return null;
+    String keyword = value.strip();
+    if (keyword.isEmpty()) return null;
+    if (keyword.codePointCount(0, keyword.length()) > 200) throw DraftContent.invalid("q");
+    return "%" + keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+  }
+
+  private static Specification<JobRevision> matchingKeyword(String pattern) {
+    return (revision, query, cb) -> {
+      var keyword = cb.function("unaccent", String.class, cb.lower(cb.literal(pattern)));
+      var title = cb.function("jsonb_extract_path_text", String.class,
+          revision.get("content"), cb.literal("title"));
+      var companyMatch = query.subquery(Long.class);
+      var job = companyMatch.from(JobPosting.class);
+      var company = companyMatch.from(Company.class);
+      companyMatch.select(job.get("id")).where(
+          cb.equal(job.get("id"), revision.get("jobId")),
+          cb.equal(company.get("id"), job.get("companyId")),
+          cb.like(cb.function("unaccent", String.class, cb.lower(company.get("name"))), keyword, '\\'));
+      // Search this revision's title, never a different working/published revision's content.
+      return cb.or(
+          cb.like(cb.function("unaccent", String.class, cb.lower(title)), keyword, '\\'),
+          cb.exists(companyMatch));
+    };
+  }
+
   private void paging(int page,int size) {
     if(page<0 || size<1 || size>100 || (long)page*size>Integer.MAX_VALUE) throw DraftContent.invalid("pagination");
   }
