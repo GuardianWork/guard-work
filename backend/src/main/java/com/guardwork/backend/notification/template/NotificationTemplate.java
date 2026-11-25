@@ -1,6 +1,7 @@
 package com.guardwork.backend.notification.template;
 
 import com.guardwork.backend.notification.model.NotificationCategory;
+import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.model.NotificationEventType;
 import com.guardwork.backend.notification.model.NotificationOutbox;
 import com.guardwork.backend.notification.model.NotificationPayload;
@@ -80,18 +81,33 @@ public enum NotificationTemplate {
     @Override public String actionHref(NotificationOutbox e) { return withJobHref(e); }
   },
   JOB_SUSPENDED(NotificationEventType.JOB_SUSPENDED, NotificationCategory.JOB) {
-    @Override public String title(NotificationOutbox e) { return "Tin tuyển dụng đã bị ẩn"; }
+    @Override public String title(NotificationOutbox e) {
+      return e.getAudience() == NotificationAudience.CANDIDATE
+          ? "Tin tuyển dụng đang bị tạm ngưng" : "Tin tuyển dụng đã bị ẩn";
+    }
     @Override public String body(NotificationOutbox e) {
+      if (e.getAudience() == NotificationAudience.CANDIDATE)
+        return "Tin tuyển dụng bạn đã ứng tuyển tại " + companyName(e)
+            + " đang bị tạm ngưng. Bạn chỉ có thể rút hồ sơ ứng tuyển nếu trạng thái hồ sơ cho phép.";
       return "Ban quản trị đã ẩn tin tuyển dụng #" + jobId(e) + " của " + companyName(e) + ".";
     }
-    @Override public String actionHref(NotificationOutbox e) { return withCompanyJobHref(e); }
+    @Override public String actionHref(NotificationOutbox e) {
+      return e.getAudience() == NotificationAudience.CANDIDATE
+          ? withApplicationHref(e) : withCompanyJobHref(e);
+    }
   },
   JOB_RESTORED(NotificationEventType.JOB_RESTORED, NotificationCategory.JOB) {
     @Override public String title(NotificationOutbox e) { return "Tin tuyển dụng đã được khôi phục"; }
     @Override public String body(NotificationOutbox e) {
+      if (e.getAudience() == NotificationAudience.CANDIDATE)
+        return "Tin tuyển dụng bạn đã ứng tuyển tại " + companyName(e)
+            + " đã được khôi phục. Trạng thái hồ sơ ứng tuyển của bạn không thay đổi.";
       return "Ban quản trị đã khôi phục hiển thị tin tuyển dụng #" + jobId(e) + " của " + companyName(e) + ".";
     }
-    @Override public String actionHref(NotificationOutbox e) { return withCompanyJobHref(e); }
+    @Override public String actionHref(NotificationOutbox e) {
+      return e.getAudience() == NotificationAudience.CANDIDATE
+          ? withApplicationHref(e) : withCompanyJobHref(e);
+    }
   },
   APPLICATION_SUBMITTED(NotificationEventType.APPLICATION_SUBMITTED, NotificationCategory.APPLICATION) {
     @Override public String title(NotificationOutbox e) { return "Có hồ sơ ứng tuyển mới"; }

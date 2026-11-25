@@ -1,6 +1,7 @@
 package com.guardwork.backend.job.service;
 
 import com.guardwork.backend.audit.service.AuditService;
+import com.guardwork.backend.application.repository.JobApplicationRepository;
 import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.model.VerificationStatus;
@@ -38,6 +39,7 @@ public class StaffJobManagementService {
   private final JobDraftService drafts;
   private final AuditService audit;
   private final JobAssignmentRepository assignments;
+  private final JobApplicationRepository applications;
   private final NotificationIntentService notifications;
   private final NotificationDispatcher dispatcher;
   private final Clock clock;
@@ -52,6 +54,7 @@ public class StaffJobManagementService {
       JobDraftService drafts,
       AuditService audit,
       JobAssignmentRepository assignments,
+      JobApplicationRepository applications,
       NotificationIntentService notifications,
       NotificationDispatcher dispatcher,
       Clock clock) {
@@ -63,6 +66,7 @@ public class StaffJobManagementService {
     this.drafts = drafts;
     this.audit = audit;
     this.assignments = assignments;
+    this.applications = applications;
     this.notifications = notifications;
     this.dispatcher = dispatcher;
     this.clock = clock;
@@ -112,6 +116,7 @@ public class StaffJobManagementService {
     audit.recordLog(actor, "JOB_SUSPENDED", "JOB", jobId.toString(),
         "{\"status\":\"PUBLISHED\"}", "{\"status\":\"SUSPENDED\"}", reason, ip, agent);
     notifyCompany(company, job, NotificationEventType.JOB_SUSPENDED, now);
+    notifyCandidates(company, job, NotificationEventType.JOB_SUSPENDED, now);
     return new HideReceipt(jobId, job.getStatus(), job.getVersion(), actor, now, reason);
   }
 
@@ -147,6 +152,7 @@ public class StaffJobManagementService {
     audit.recordLog(actor, "JOB_RESTORED", "JOB", jobId.toString(),
         "{\"status\":\"SUSPENDED\"}", "{\"status\":\"PUBLISHED\"}", reason, ip, agent);
     notifyCompany(company, job, NotificationEventType.JOB_RESTORED, now);
+    notifyCandidates(company, job, NotificationEventType.JOB_RESTORED, now);
     return new RestoreReceipt(jobId, job.getStatus(), job.getVersion(), actor, now, reason);
   }
 
@@ -156,6 +162,14 @@ public class StaffJobManagementService {
     for (Long recipient : recipients) {
       var event = notifications.recordJob(recipient, type, NotificationAudience.RECRUITER,
           company, job.getId(), null, eventTime);
+      dispatcher.dispatchAfterCommit(event);
+    }
+  }
+
+  private void notifyCandidates(Company company, JobPosting job, NotificationEventType type, Instant eventTime) {
+    for (var recipient : applications.findCandidateNotificationRecipients(job.getId(), company.getId())) {
+      var event = notifications.recordCandidateJobAvailability(recipient.getUserId(), type, company,
+          job.getId(), recipient.getApplicationId(), eventTime);
       dispatcher.dispatchAfterCommit(event);
     }
   }

@@ -460,9 +460,9 @@ The broader notification flow specification retains its draft status.
 |---|---|---|
 | GW128-01 | Candidate submits an Application. `APPLICATION_SUBMITTED`. | Every active Recruiter assigned through their current active Company Membership. When there are none, notify the current Company Owner only if Owner Responsibility is enabled. With no responsible person, create no notification and retain the existing submission rules. |
 | GW128-02 | Platform Staff approve or reject Company verification. `COMPANY_VERIFICATION_APPROVED` or `COMPANY_VERIFICATION_REJECTED`. | Current Company Owner. An unowned legacy Company has no inbox recipient. Retained dossiers continue to use the existing decision email workflow. |
-| GW128-03 | Platform Staff hide or restore a Job Posting. `JOB_SUSPENDED` or `JOB_RESTORED`. | Current Company Owner and active Recruiters assigned through their current active Company Membership. Candidates with existing Applications receive no notice from these actions. |
+| GW128-03 | Platform Staff hide or restore a Job Posting. `JOB_SUSPENDED` or `JOB_RESTORED`. | Current Company Owner and active Recruiters assigned through their current active Company Membership. Amended by [GW-130](job-suspension-candidate-spec.md): all eligible existing applicants also receive Candidate-audience notices, including terminal and INACTIVE Applications. |
 
-All five event types use the `RECRUITER` audience. Platform Staff continue to receive incoming
+The original Company notices use the `RECRUITER` audience. GW-130 adds separate `CANDIDATE` JOB_SUSPENDED/JOB_RESTORED notices linking to `/applications/{applicationId}`, without changing Company recipients or destinations. Platform Staff continue to receive incoming
 work through the review queues. Application withdrawal keeps its existing recipient rule.
 Evaluate recipients in the business transaction, deduplicate by User, and record one intent per
 recipient. Failed or stale mutations and duplicate submissions create no intent. Inbox delivery

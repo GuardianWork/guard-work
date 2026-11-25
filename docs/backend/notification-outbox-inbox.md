@@ -225,7 +225,7 @@ matches the signed-in User's current Owner membership.
 | ---------------------------------------------------------------- | ------------- | --------------------------------------------------------- |
 | `APPLICATION_SUBMITTED`                                          | `application` | `/companies/me/jobs/{jobId}/applications/{applicationId}` |
 | `COMPANY_VERIFICATION_APPROVED`, `COMPANY_VERIFICATION_REJECTED` | `company`     | `/companies/me/verification`                              |
-| `JOB_SUSPENDED`, `JOB_RESTORED`                                  | `job`         | `/companies/me/jobs/{jobId}`                              |
+| `JOB_SUSPENDED`, `JOB_RESTORED` | `job` | RECRUITER: `/companies/me/jobs/{jobId}`; CANDIDATE: `/applications/{applicationId}` |
 
 Migration `V2026.11.20.128__extend_notification_coverage.sql` adds these values to both
 event-type checks. Stop older dispatchers before enabling new producers because older
@@ -364,3 +364,18 @@ migration is needed because the column accepts arbitrary keys. Follow these rule
 - `backend/src/main/resources/db/migration/V2026.11.03.101__application_review_history_and_notifications.sql`
 - `backend/src/main/resources/db/migration/V2026.11.11.106__notification_outbox_payload.sql`
 - `docs/architecture/decisions/0013-notification-outbox-payload.md`
+
+### GW-130 Candidate job availability notices
+
+Successful individual Staff suspension/restoration also records one `CANDIDATE` intent per
+eligible existing applicant (all Application statuses), inside the same transaction. Payloads
+contain only `companyId`, `companyName`, `jobId` and `applicationId`; Vietnamese generic copy
+contains no moderation reason or submitted personal information. Company notices keep their
+`RECRUITER` audience and destination. A User in both audiences may receive both notices.
+Recipients require current ACTIVE account and self-service states. No historical backfill;
+new successful cycles create new events, and dispatch retries retain inbox deduplication.
+See [the GW-130 requirement](../software-requirements/can/job-suspension-candidate-spec.md).
+
+GW-130 requires `V2026.11.24.130__candidate_job_suspension_notifications.sql` before
+new writers run. It changes only the two context checks to admit Candidate
+JOB_SUSPENDED/JOB_RESTORED Application references; other event shapes remain enforced.

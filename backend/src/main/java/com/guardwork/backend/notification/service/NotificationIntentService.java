@@ -66,7 +66,7 @@ public class NotificationIntentService {
         eventTime);
   }
 
-  /** Job events are employer-facing. */
+  /** Assignment events are employer-facing. */
   @Transactional(propagation = Propagation.MANDATORY)
   public UUID recordJobAssignment(
       Long recipient, Company company, Long jobId, Long revisionId, Instant eventTime) {
@@ -124,6 +124,20 @@ public class NotificationIntentService {
         eventType,
         audience,
         NotificationPayload.job(company.getId(), company.getName(), jobId, revisionId),
+        eventTime);
+  }
+
+  /** Individual JD sanctions notify existing applicants without moderation or submitted data. */
+  @Transactional(propagation = Propagation.MANDATORY)
+  public UUID recordCandidateJobAvailability(
+      Long recipient, NotificationEventType eventType, Company company,
+      Long jobId, UUID applicationId, Instant eventTime) {
+    if (eventType != NotificationEventType.JOB_SUSPENDED
+        && eventType != NotificationEventType.JOB_RESTORED)
+      throw new IllegalArgumentException("Unsupported Candidate job availability notification");
+    return persist(recipient, eventType, NotificationAudience.CANDIDATE,
+        NotificationPayload.application(
+            company.getId(), company.getName(), jobId, null, applicationId, null),
         eventTime);
   }
 

@@ -272,7 +272,13 @@ Query parameters:
 
 An empty result or a page beyond the last result returns `200` with an empty `content` array and the accurate matching total.
 
-Applications attached to suspended Job Postings (`staff_suspended = true`) are excluded from both `content` and `totalElements`.
+GW-130 amendment (2026-11-24): Applications on individually Staff-suspended Job Postings
+(`status = SUSPENDED`) remain in `content` and `totalElements`, with additive
+`jobSuspended: true` in Candidate summaries/details. Application status is unchanged.
+The independent Company-ban flag (`staff_suspended = true`) still excludes rows and totals.
+Candidate-owned minimal summaries/receipts, eligible withdrawal and suspended Application
+CV-download denial follow
+[GW-SR-CAN-JOB-130](job-suspension-candidate-spec.md); existing CV deletion/retention rules remain.
 
 #### `GET /api/candidate/applications/{applicationId}/cv/download-url`
 

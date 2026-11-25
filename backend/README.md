@@ -622,3 +622,19 @@ Counts are aggregated once for the authorized page and company, with no per-job
 application requests. Existing Owner/Recruiter assignment visibility is preserved.
 This additive display field requires no migration. Frontends may display a link
 without a count while an older backend is deployed.
+
+### Candidate access during Staff JD suspension (GW-130)
+
+Candidate application summaries/details add `jobSuspended` while retaining application
+summaries and eligible withdrawal during individual JD suspension. Submitted details/history,
+CV metadata and Application CV downloads are concealed until restoration.
+Public JD discovery/detail and new applications remain unavailable. Candidate applicants in
+all statuses receive separate Candidate-audience suspension/restoration inbox notices linking
+to their own applications. Company Application concealment and independent Company-ban/CV
+restrictions remain. See [the Candidate integration guide](../docs/backend/candidate-job-suspension.md).
+
+Apply `V2026.11.24.130__candidate_job_suspension_notifications.sql` through Flyway
+before producing Candidate JD notices. It extends notification context constraints
+without rewriting existing rows. Flyway runs at context startup; a DevTools restart
+requires the SQL resource to have reached `target/classes` first. Saving source SQL
+alone does not apply a migration.
