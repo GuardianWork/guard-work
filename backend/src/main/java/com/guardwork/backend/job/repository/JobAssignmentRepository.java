@@ -12,12 +12,16 @@ public interface JobAssignmentRepository extends JpaRepository<JobAssignment, Lo
   List<JobAssignment> findByJobIdAndMembershipIdAndEndedAtIsNull(Long jobId, Long membershipId);
   List<JobAssignment> findByJobIdAndEndedAtIsNullOrderById(Long jobId);
 
-  @Query("""
-      select a from JobAssignment a, CompanyMembership m, User u
+  String CURRENT_ASSIGNMENTS = """
+      from JobAssignment a, CompanyMembership m, User u
       where a.jobId=:job and a.endedAt is null and a.membershipId=m.id
       and m.companyId=a.companyId and m.joinedAt=a.membershipJoinedAt
       and m.status='ACTIVE' and m.role='RECRUITER' and u.id=m.userId and u.status='ACTIVE'
-      order by a.id
-      """)
+      """;
+
+  @Query("select a " + CURRENT_ASSIGNMENTS + " order by a.id")
   List<JobAssignment> current(@Param("job") Long job);
+
+  @Query("select distinct m.userId " + CURRENT_ASSIGNMENTS + " order by m.userId")
+  List<Long> currentRecruiterUserIds(@Param("job") Long job);
 }

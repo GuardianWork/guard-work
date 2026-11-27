@@ -39,6 +39,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ApplicationWorkflowService {
     private static final Set<String> ACTIVE = Set.of("SUBMITTED", "UNDER_REVIEW", "SHORTLISTED", "INTERVIEWING");
+    private static final String INACTIVE = "INACTIVE";
     private static final Set<String> REASONS = Set.of(
             "QUALIFICATIONS_MISMATCH", "EXPERIENCE_MISMATCH", "POSITION_FILLED", "OTHER");
 
@@ -49,6 +50,8 @@ public class ApplicationWorkflowService {
     private final CompanyMembershipRepository memberships;
     private final JobApplicationRepository applications;
     private final ApplicationSnapshotRepository snapshots;
+    private final com.guardwork.backend.candidate.cvs.CandidateCvRepository cvs;
+    private final com.guardwork.backend.candidate.cvs.CandidateCvAccessGrantRepository cvGrants;
     private final JobApplicationService applicationDetails;
     private final ApplicationStatusHistoryRepository history;
     private final CandidateProfileRepository profiles;
@@ -65,6 +68,8 @@ public class ApplicationWorkflowService {
             CompanyMembershipRepository memberships,
             JobApplicationRepository applications,
             ApplicationSnapshotRepository snapshots,
+            com.guardwork.backend.candidate.cvs.CandidateCvRepository cvs,
+            com.guardwork.backend.candidate.cvs.CandidateCvAccessGrantRepository cvGrants,
             JobApplicationService applicationDetails,
             ApplicationStatusHistoryRepository history,
             CandidateProfileRepository profiles,
@@ -79,6 +84,8 @@ public class ApplicationWorkflowService {
         this.memberships = memberships;
         this.applications = applications;
         this.snapshots = snapshots;
+        this.cvs = cvs;
+        this.cvGrants = cvGrants;
         this.applicationDetails = applicationDetails;
         this.history = history;
         this.profiles = profiles;
@@ -137,8 +144,14 @@ public class ApplicationWorkflowService {
             return applicationDetails.companyDetail(actorId, jobId, applicationId);
         }
         String from = application.getStatus();
-        if (!ACTIVE.contains(from)) throw invalid("Application is terminal");
-        if (!"REJECTED".equals(target)
+        boolean reactivation = INACTIVE.equals(from);
+        if (!ACTIVE.contains(from) && !reactivation) throw invalid("Application is terminal");
+        if (reactivation) {
+            // Reactivation must pass through UNDER_REVIEW; normal pipeline rules apply afterwards.
+            if (!"UNDER_REVIEW".equals(target) && !"REJECTED".equals(target)) {
+                throw invalid("Unsupported Application status transition");
+            }
+        } else if (!"REJECTED".equals(target)
                 && !("UNDER_REVIEW".equals(target) && "SUBMITTED".equals(from))
                 && !("SHORTLISTED".equals(target) && ("SUBMITTED".equals(from) || "UNDER_REVIEW".equals(from)))
                 && !("INTERVIEWING".equals(target) && ("UNDER_REVIEW".equals(from) || "SHORTLISTED".equals(from)))
@@ -156,6 +169,7 @@ public class ApplicationWorkflowService {
         }
         var now = clock.instant();
         application.setStatus(target);
+        application.setStatusChangedAt(now);
         applications.flush();
         ApplicationStatusHistory event = new ApplicationStatusHistory();
         event.setApplicationId(applicationId);
@@ -167,6 +181,15 @@ public class ApplicationWorkflowService {
         event.setInternalExplanation(explanation);
         event.setCandidateFeedback(feedback);
         history.saveAndFlush(event);
+        if ("REJECTED".equals(target)) {
+            // Terminal rejection ends Company CV access immediately; a live grant would otherwise
+            // keep authorizing reads until the Candidate deletes the CV.
+            cvGrants.revoke(applicationId, now,
+                    com.guardwork.backend.candidate.cvs.CandidateCvAccessGrant.REASON_APPLICATION_CLOSED);
+        }
+        if (reactivation && "UNDER_REVIEW".equals(target)) {
+            reactivateCvGrant(application, now);
+        }
         Long candidateUserId = profiles.findById(application.getCandidateId())
                 .orElseThrow(ApplicationWorkflowService::notFound).getUserId();
         String jobTitle = snapshots.findById(applicationId)
@@ -186,6 +209,44 @@ public class ApplicationWorkflowService {
         return applicationDetails.companyDetail(actorId, jobId, applicationId);
     }
 
+    /**
+     * Reactivation starts a new grant epoch only while the shared library CV still exists.
+     * The snapshot key is reused; the grant remains company-scoped and the normal assignment
+     * checks still apply at read time.
+     */
+    private void reactivateCvGrant(JobApplication application, java.time.Instant now) {
+        ApplicationSnapshot snapshot = snapshots.findById(application.getId()).orElse(null);
+        if (snapshot == null || !"SHARED".equals(snapshot.getCvStorageMode())) return;
+
+        UUID sourceCvId = snapshot.getSourceCvId();
+        var source = sourceCvId == null ? null : cvs.findById(sourceCvId).orElse(null);
+        if (source == null || source.isDeleted()) return;
+
+        com.guardwork.backend.candidate.cvs.CandidateCvAccessGrant current =
+                cvGrants.findFirstByApplicationIdOrderByEpochDesc(application.getId()).orElse(null);
+        if (current != null && current.getRevokedAt() == null) {
+            // An expired-but-not-revoked epoch still occupies the live slot; never bypass it.
+            return;
+        }
+        String resourceType = com.guardwork.backend.candidate.cvs.CandidateCvService
+                .resourceTypeForContentType(snapshot.getCvContentType());
+        if (resourceType == null) return;
+
+        var grant = new com.guardwork.backend.candidate.cvs.CandidateCvAccessGrant();
+        grant.setApplicationId(application.getId());
+        grant.setEpoch(current == null ? 1 : current.getEpoch() + 1);
+        grant.setCvId(sourceCvId);
+        grant.setCandidateId(application.getCandidateId());
+        grant.setCompanyId(application.getCompanyId());
+        grant.setStorageKey(snapshot.getCvStorageKey());
+        grant.setResourceType(resourceType);
+        grant.setFileName(snapshot.getCvFileName());
+        grant.setContentType(snapshot.getCvContentType());
+        grant.setFileSize(snapshot.getCvFileSize());
+        grant.setGrantedAt(now);
+        cvGrants.saveAndFlush(grant);
+    }
+
     @Transactional
     public ApplicationDetailResponse withdraw(Long candidateUserId, UUID applicationId,
             ApplicationWithdrawalRequest request) {
@@ -200,8 +261,8 @@ public class ApplicationWorkflowService {
                 .orElseThrow(ApplicationWorkflowService::notFound);
         var job = jobs.lock(observed.getJobId(), observed.getCompanyId())
                 .orElseThrow(ApplicationWorkflowService::notFound);
-        // AD-003/AR-001: a suspended Job Posting conceals its Applications; withdrawal is denied.
-        if (job.isStaffSuspended() || "SUSPENDED".equals(job.getStatus())) throw notFound();
+        // GW-130 permits Candidate withdrawal during individual JD suspension only.
+        if (job.isStaffSuspended()) throw notFound();
         JobApplication application = applications.findByIdForUpdate(applicationId)
                 .filter(item -> item.getCandidateId().equals(profile.getId())
                         && item.getCompanyId().equals(company.getId())
@@ -212,17 +273,21 @@ public class ApplicationWorkflowService {
         if ("WITHDRAWN".equals(application.getStatus())) {
             return applicationDetails.candidateDetail(candidateUserId, applicationId);
         }
-        if (!ACTIVE.contains(application.getStatus())) throw invalid("Application is terminal");
         String from = application.getStatus();
+        if (!ACTIVE.contains(from) && !INACTIVE.equals(from)) throw invalid("Application is terminal");
+        var now = clock.instant();
         application.setStatus("WITHDRAWN");
+        application.setStatusChangedAt(now);
         applications.flush();
         ApplicationStatusHistory event = new ApplicationStatusHistory();
         event.setApplicationId(applicationId);
         event.setFromStatus(from);
         event.setToStatus("WITHDRAWN");
         event.setActorUserId(candidateUserId);
-        event.setOccurredAt(clock.instant());
+        event.setOccurredAt(now);
         history.saveAndFlush(event);
+        cvGrants.revoke(applicationId, now,
+                com.guardwork.backend.candidate.cvs.CandidateCvAccessGrant.REASON_APPLICATION_CLOSED);
 
         var recipients = new java.util.LinkedHashSet<Long>();
         recipients.add(company.getOwnerUserId());

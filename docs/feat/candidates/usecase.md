@@ -11,8 +11,8 @@
 | **UC-CAN-11** Điền thông tin ứng tuyển | Ứng tuyển | Cao | Đã bao gồm tự động điền từ hồ sơ cá nhân và chọn / đính kèm hồ sơ xin việc |
 | **UC-CAN-13** Xem danh sách tin tuyển dụng đã ứng tuyển | Ứng tuyển | Cao | Có lọc theo trạng thái và tìm theo tên công việc / công ty |
 | **UC-CAN-14** Nhận thông báo về trạng thái ứng tuyển | Ứng tuyển | Cao | |
-| **UC-CAN-08** Tìm kiếm thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc Ứng viên. Use case mới, thay cho "Lọc kết quả tìm kiếm" (đã gộp vào UC-CAN-07) |
-| **UC-CAN-10** Xem chi tiết thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc Ứng viên |
+| **UC-CAN-08** Tìm kiếm thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc người dùng đã đăng nhập. Use case mới, thay cho "Lọc kết quả tìm kiếm" (đã gộp vào UC-CAN-07). Phạm vi đã phê duyệt: tìm bằng một từ khóa trên tên công ty/tiêu đề tin/địa điểm/lĩnh vực; không có bộ lọc riêng lĩnh vực, quy mô hay địa điểm và không trả logo |
+| **UC-CAN-10** Xem chi tiết thông tin công ty tuyển dụng | Tìm kiếm | Trung bình | Tác nhân: Khách hoặc người dùng đã đăng nhập. Phạm vi đã phê duyệt: chỉ thông tin công khai suy ra từ tin đang hoạt động và danh sách tin đang mở; chưa có logo, quy mô, địa chỉ, website, mô tả doanh nghiệp hay đánh giá |
 | **UC-CAN-15** Lưu lại tin tuyển dụng | Ứng tuyển | Trung bình | Tách từ "Lưu / Bỏ lưu công việc" |
 | **UC-CAN-19** Bỏ lưu tin tuyển dụng | Ứng tuyển | Trung bình | Tách từ "Lưu / Bỏ lưu công việc" |
 | **UC-CAN-24** Rút hồ sơ ứng tuyển | Ứng tuyển | Trung bình | Ứng viên rút đơn đang còn hiệu lực; trạng thái kết thúc không thể hoàn tác |
@@ -33,11 +33,12 @@
 - Gộp **UC-CAN-12** "Chọn / Đính kèm CV" vào UC-CAN-11.
 - Tách **UC-CAN-15** thành "Lưu lại" (UC-CAN-15) và "Bỏ lưu" (UC-CAN-19).
 - Thêm mới UC-CAN-20, 21, 22, 23; ưu tiên của các use case mới là đề xuất, cần xác nhận lại.
-- Hồ sơ đã nộp được sao chép thành bản lưu riêng gắn với đơn ứng tuyển (cập nhật UC-CAN-11, UC-CAN-05 và EC-CAN-CV-04).
+- Hồ sơ đã nộp được chia sẻ qua cơ chế quyền truy cập (access grant) giới hạn cho công ty nhận đơn thay vì sao chép thành bản riêng (cập nhật UC-CAN-11, UC-CAN-05 và EC-CAN-CV-04).
 - Bổ sung edge case EC-CAN-LAW-01 đến 03 cho UC-CAN-22.
 - Thêm mới **UC-CAN-24** "Rút hồ sơ ứng tuyển" cho luồng ứng viên rút đơn đang còn hiệu lực (Đã nộp / Đang xem xét / Được chọn sơ bộ), kèm thông báo cho chủ công ty và nhà tuyển dụng được phân công; trạng thái kết thúc không thể hoàn tác.
 - Bổ sung các edge case EC-CAN-APP-06 đến EC-CAN-APP-11 cho luồng rút hồ sơ.
 - Cập nhật UC-CAN-01: email chỉ đọc từ tài khoản (không cập nhật qua hồ sơ); họ tên được phép có khoảng trắng; số điện thoại lưu dạng +84 và hiển thị dạng 0xxxxxxxxx; bổ sung ảnh đại diện và trạng thái công khai vào phạm vi cập nhật; ngày kết thúc/mô tả của kinh nghiệm và học vấn là tùy chọn.
+- Cập nhật UC-CAN-08 và UC-CAN-10 theo hợp đồng công khai đã phê duyệt của GW-123: tìm kiếm công ty bằng một từ khóa trên tên công ty/tiêu đề tin/địa điểm/lĩnh vực; danh sách trả tên công ty và tóm tắt suy ra từ tin công khai (không có logo hay bộ lọc riêng); trang chi tiết trả thông tin công ty và danh sách tin đang mở có phân trang, không có logo/quy mô/địa chỉ/website/mô tả/đánh giá; công ty không còn tin công khai được xem là không khả dụng. Bổ sung EC-CAN-COMPANY-01 và 02.
 
 ---
 ## Tìm kiếm tin tuyển dụng
@@ -73,37 +74,36 @@
 
 ## Tìm kiếm thông tin công ty tuyển dụng
 
-- **Tác nhân:** Khách hoặc ứng viên
-- **Mô tả:** Cho phép tác nhân tìm kiếm các công ty tuyển dụng trên hệ thống theo tên, ngành nghề hoạt động hoặc địa điểm.
+- **Tác nhân:** Khách hoặc người dùng đã đăng nhập
+- **Mô tả:** Cho phép tác nhân tìm kiếm các công ty tuyển dụng đang có tin tuyển dụng công khai theo từ khóa (không phân biệt chữ hoa/thường và dấu với tên công ty, tiêu đề tin tuyển dụng, địa điểm và lĩnh vực của tin tuyển dụng)
 - **Pre-condition:** Tác nhân truy cập vào trang Danh sách công ty trên hệ thống.
-- **Post-condition:** Hệ thống hiển thị danh sách các công ty phù hợp với từ khóa hoặc điều kiện lọc.
+- **Post-condition:** Hệ thống hiển thị danh sách công ty phù hợp với từ khóa, được phân trang.
 - **Luồng sự kiện:**
   - **Luồng chính:**
-    1. Tác nhân nhập tên công ty vào ô tìm kiếm và/hoặc chọn các bộ lọc (lĩnh vực hoạt động, quy mô, địa điểm).
+    1. Tác nhân nhập từ khóa vào ô tìm kiếm (có thể là tên công ty, ngành nghề hoặc địa điểm).
     2. Tác nhân nhấn nút "Tìm kiếm".
-    3. Hệ thống kiểm tra điều kiện tìm kiếm và truy vấn danh sách doanh nghiệp từ cơ sở dữ liệu.
-    4. Hệ thống hiển thị danh sách các công ty đáp ứng điều kiện, bao gồm: Logo, Tên công ty, Lĩnh vực, Địa điểm và số lượng tin tuyển dụng đang mở.
+    3. Hệ thống xác định phạm vi truy vấn: tin tuyển dụng đang ở trạng thái công bố, không bị nhân viên nền tảng tạm dừng, còn hạn nộp hoặc không đặt hạn, thuộc công ty đã xác thực và không bị khóa.
+    4. Hệ thống truy vấn các công ty có ít nhất một tin tuyển dụng công khai thỏa từ khóa, sắp xếp theo số tin tuyển dụng giảm dần.
+    5. Hệ thống hiển thị danh sách công ty, mỗi mục gồm: tên gọi, phần giới thiệu, các vị trí công việc đang mở và phần đánh giá công ty
   - **Luồng thay thế:**
-    - *3a.* Không có công ty nào khớp với điều kiện tìm kiếm. Hệ thống hiển thị thông báo "Không tìm thấy công ty phù hợp" và gợi ý thử lại với từ khóa khác.
-
+    - *4a.* Không có công ty nào khớp với từ khóa. Hệ thống trả về danh sách rỗng; giao diện hiển thị thông báo "Không tìm thấy công ty phù hợp" và gợi ý thử lại với từ khóa khác.
+    - *4b.* Trang yêu cầu vượt quá số trang hiện có. Hệ thống trả về trang rỗng hợp lệ thay vì báo lỗi.
 ## Xem chi tiết thông tin công ty tuyển dụng
 
-- **Tác nhân:** Khách hoặc ứng viên
-- **Mô tả:** Cho phép tác nhân xem trang thông tin chi tiết của doanh nghiệp bao gồm giới thiệu, quy mô, địa điểm, văn hóa doanh nghiệp, các tin tuyển dụng đang mở và đánh giá từ cộng đồng.
+- **Tác nhân:** Khách hoặc người dùng đã đăng nhập
+- **Mô tả:** Cho phép tác nhân xem thông tin công khai của một doanh nghiệp tuyển dụng: tên công ty, tóm tắt nhu cầu tuyển dụng và danh sách các tin tuyển dụng đang mở.
 - **Pre-condition:** Tác nhân chọn một công ty từ danh sách tìm kiếm hoặc nhấp vào tên công ty từ bài đăng tuyển dụng.
-- **Post-condition:** Màn hình chi tiết thông tin công ty được hiển thị đầy đủ.
+- **Post-condition:** Thông tin công ty và danh sách tin tuyển dụng đang mở được hiển thị.
 - **Luồng sự kiện:**
   - **Luồng chính:**
-    1. Tác nhân nhấn vào tên hoặc logo của công ty muốn xem.
-    2. Hệ thống kiểm tra sự tồn tại của hồ sơ doanh nghiệp.
-    3. Hệ thống truy xuất dữ liệu và hiển thị đầy đủ trang cá nhân của công ty, bao gồm:
-      - Thông tin chung: Tên, Logo, Ảnh bìa, Lĩnh vực, Quy mô, Địa chỉ, Website.
-      - Mô tả chi tiết giới thiệu doanh nghiệp và môi trường làm việc.
-      - Danh sách các tin tuyển dụng đang hoạt động của công ty.
-      - Danh sách bài nhận xét/đánh giá từ người dùng.
+    1. Tác nhân nhấn vào tên công ty muốn xem.
+    2. Hệ thống kiểm tra công ty tồn tại với điều kiện công ty đã xác thực và không bị khóa.
+    3. Hệ thống truy xuất thông tin công khai của công ty, gồm: mã công ty, tên công ty và tóm tắt suy ra từ toàn bộ tin tuyển dụng công khai.
+    4. Hệ thống truy xuất danh sách tin tuyển dụng đang mở của công ty, sắp xếp theo hạn nộp tăng dần. Mỗi tin gồm: tiêu đề, địa điểm, lĩnh vực, hình thức làm việc, cách thức làm việc, lương nếu công bố, số lượng tuyển, hạn nộp, mô tả và số lượng ứng tuyển.
+    5. Hệ thống hiển thị thông tin công ty và danh sách tin tuyển dụng đang mở trên trang chi tiết.
   - **Luồng thay thế:**
-    - *2a.* Thông tin công ty không tồn tại hoặc đã bị khóa. Hệ thống hiển thị thông báo "Thông tin công ty hiện không khả dụng".
-
+    - *2a.* Công ty không tồn tại, đã bị khóa. Hệ thống hiển thị thông báo "Thông tin công ty hiện không khả dụng".
+    - *4a.* Trang tin tuyển dụng yêu cầu vượt quá số trang hiện có. Hệ thống trả về trang rỗng hợp lệ.
 ## Cập nhật hồ sơ cá nhân
 
 - **Tác nhân:** Ứng viên
@@ -152,20 +152,19 @@
 ## Xóa hồ sơ xin việc
 
 - **Tác nhân:** Ứng viên
-- **Mô tả:** Cho phép ứng viên xóa một tệp hồ sơ xin việc đã tải lên khỏi danh sách hồ sơ xin việc và hệ thống lưu trữ Cloudinary.
+- **Mô tả:** Cho phép ứng viên xóa một tệp hồ sơ xin việc đã tải lên khỏi danh sách hồ sơ xin việc. Thao tác xóa không hoàn tác.
 - **Pre-condition:** Ứng viên đã đăng nhập và đang ở trang Quản lý hồ sơ xin việc, danh sách hồ sơ có ít nhất một tệp.
-- **Post-condition:** Tệp hồ sơ được xóa khỏi cơ sở dữ liệu và hệ thống lưu trữ Cloudinary, không còn hiển thị trong danh sách hồ sơ của ứng viên. Các đơn ứng tuyển đã nộp không bị ảnh hưởng.
+- **Post-condition:** Tệp hồ sơ được đánh dấu đã xóa trong cơ sở dữ liệu và không còn hiển thị trong danh sách hồ sơ của ứng viên, không còn mặc định và không tải xuống được cho ứng viên. Ứng viên không còn quyền truy cập tệp đã xóa. Nếu tệp đã được dùng để ứng tuyển, công ty nhận đơn (công ty duy nhất được cấp quyền) vẫn truy cập được tệp trong thời hạn còn lại (mặc định 30 ngày kể từ thời điểm xóa, cấu hình bằng `candidate.cv.access-grant-ttl`) **khi đơn còn ở giai đoạn đánh giá đang hoạt động**; đơn đã tuyển (`HIRED`) mất quyền ngay. Sau thời hạn đó quyền truy cập bị thu hồi và tệp bị xóa tự động khỏi hệ thống lưu trữ. Nếu không còn quyền truy cập nào còn hiệu lực, tệp được xóa khỏi Cloudinary ngay; nếu xóa thất bại, hệ thống tự động thử lại. Các đơn ứng tuyển đã nộp không bị thay đổi về dữ liệu khác.
 - **Luồng sự kiện:**
   - **Luồng chính:**
     1. Ứng viên chọn "Xóa" tại tệp hồ sơ xin việc muốn xóa trong danh sách.
-    2. Hệ thống hiển thị hộp thoại xác nhận việc xóa hồ sơ kèm cảnh báo hành động này không thể hoàn tác và nêu rõ các đơn ứng tuyển đã nộp trước đó vẫn giữ bản hồ sơ đã gửi.
+    2. Hệ thống hiển thị hộp thoại xác nhận việc xóa hồ sơ kèm cảnh báo hành động này không thể hoàn tác và nêu rõ: công ty nhận đơn (nếu tệp đã được dùng để ứng tuyển) vẫn truy cập được tệp trong tối đa 30 ngày kể từ khi xóa, bao gồm đơn đã nộp, và ứng viên không còn truy cập được tệp.
     3. Ứng viên chọn "Xác nhận xóa".
-    4. Hệ thống gửi yêu cầu xóa tệp tương ứng với publicId trên Cloudinary.
-    5. Hệ thống nhận phản hồi thành công từ Cloudinary và cập nhật cơ sở dữ liệu để xóa bản ghi thông tin hồ sơ.
-    6. Hệ thống thông báo xóa hồ sơ thành công và cập nhật lại danh sách hồ sơ hiển thị.
+    4. Hệ thống đánh dấu tệp là đã xóa trong cơ sở dữ liệu, bỏ cờ mặc định, và cấp phát thời hạn truy cập còn lại cho tất cả quyền truy cập còn hiệu lực của tệp. Nếu không còn quyền truy cập nào còn hiệu lực, hệ thống xóa tệp tương ứng trên Cloudinary ngay và ghi nhận kết quả.
+    5. Hệ thống thông báo xóa hồ sơ thành công và cập nhật lại danh sách hồ sơ hiển thị.
   - **Luồng thay thế:**
     - *3a.* Ứng viên chọn "Hủy bỏ". Hệ thống đóng hộp thoại xác nhận và giữ nguyên trạng thái danh sách hồ sơ.
-    - *4a.* Lỗi kết nối hoặc xóa tệp trên Cloudinary thất bại. Hệ thống báo lỗi "Không thể xóa tệp, vui lòng thử lại sau" và giữ nguyên bản ghi trong cơ sở dữ liệu.
+    - *4a.* Xóa tệp trên Cloudinary thất bại. Hệ thống vẫn ghi nhận việc tệp đã được gỡ khỏi danh sách và thông báo thành công; hệ thống tự động thử xóa lại đối tượng lưu trữ sau.
 
 ## Đặt hồ sơ xin việc làm mặc định
 
@@ -188,7 +187,7 @@
 - **Tác nhân:** Ứng viên
 - **Mô tả:** Cho phép ứng viên điền các thông tin cần thiết, tự động trích xuất thông tin từ hồ sơ cá nhân và đính kèm hồ sơ xin việc để nộp đơn ứng tuyển cho một tin tuyển dụng cụ thể.
 - **Pre-condition:** Ứng viên đã đăng nhập, đang xem thông tin chi tiết của tin tuyển dụng và tin tuyển dụng đang còn hạn nộp.
-- **Post-condition:** Đơn ứng tuyển kèm bản sao tệp hồ sơ đã nộp được ghi nhận vào cơ sở dữ liệu với trạng thái "Đã nộp", thông tin hiển thị danh sách đã ứng tuyển được cập nhật.
+- **Post-condition:** Đơn ứng tuyển kèm quyền truy cập tệp hồ sơ đính kèm được ghi nhận vào cơ sở dữ liệu với trạng thái "Đã nộp", thông tin hiển thị danh sách đã ứng tuyển được cập nhật.
 - **Luồng sự kiện:**
   - **Luồng chính:**
     1. Ứng viên nhấn nút "Ứng tuyển" tại tin tuyển dụng.
@@ -203,13 +202,13 @@
       - *Số điện thoại*: kiểu chuỗi, chấp nhận 0xxxxxxxxx hoặc +84xxxxxxxxx, tối đa 10 ký tự.
       - *Thư giới thiệu*: kiểu chuỗi, tùy chọn, tối đa 1000 ký tự.
       - *Hồ sơ đính kèm*: phải có ít nhất 1 tệp hồ sơ xin việc hợp lệ được chọn.
-    8. Hệ thống tạo bản ghi đơn ứng tuyển mới với trạng thái "Đã nộp", sao chép tệp hồ sơ đính kèm thành bản lưu riêng gắn với đơn ứng tuyển (không phụ thuộc vào tệp trong danh sách hồ sơ của ứng viên) và thông báo ứng tuyển thành công.
+    8. Hệ thống tạo bản ghi đơn ứng tuyển mới với trạng thái "Đã nộp", ghi nhận quyền truy cập tệp hồ sơ đính kèm cho công ty nhận đơn (không sao chép tệp; tệp vẫn thuộc danh sách hồ sơ của ứng viên) và thông báo ứng tuyển thành công.
   - **Luồng thay thế:**
     - *3a.* Ứng viên muốn nhập mới hoàn toàn. Ứng viên chọn "Nhập thủ công", hệ thống xóa thông tin đã điền sẵn để ứng viên tự điền lại từ đầu.
     - *4a.* Hồ sơ cá nhân chưa có thông tin hoặc thông tin chưa đầy đủ. Hệ thống chỉ điền các trường hiện có, đưa ra gợi ý "Cập nhật hồ sơ cá nhân" hoặc yêu cầu ứng viên nhập bổ sung trực tiếp các trường còn thiếu.
     - *7a.* Thông tin điền chưa hợp lệ hoặc thiếu hồ sơ đính kèm. Hệ thống báo lỗi chi tiết tại các trường vi phạm và yêu cầu ứng viên hoàn thiện.
     - *8a.* Ứng viên đã ứng tuyển vào tin tuyển dụng này trước đó. Hệ thống đưa ra thông báo "Bạn đã nộp hồ sơ cho vị trí này" và ngăn việc gửi lại đơn.
-    - *8b.* Sao chép tệp hồ sơ đính kèm thất bại. Hệ thống không tạo đơn ứng tuyển, thông báo lỗi và yêu cầu ứng viên gửi lại.
+    - *8b.* Không thể ghi nhận tệp hồ sơ hoặc tạo đơn ứng tuyển (ví dụ tệp hồ sơ đã bị xóa khỏi thư viện). Hệ thống không tạo đơn ứng tuyển, thông báo lỗi và yêu cầu ứng viên gửi lại.
 
 ## Xem danh sách tin tuyển dụng đã ứng tuyển
 
@@ -428,7 +427,7 @@
 | **EC-CAN-CV-01** | **Giả mạo định dạng file CV** | Ứng viên đổi tên file thực thi (`.exe`, `.bat`, `.sh`) thành `.pdf`, `.doc` hoặc `.docx` rồi tải lên.<br>$\rightarrow$ **Xử lý:** Hệ thống không chỉ kiểm tra phần mở rộng file mà còn kiểm tra kiểu MIME thực tế phải tương ứng với định dạng PDF, DOC hoặc DOCX (dung lượng tối đa 10 MB). Nếu sai, từ chối tải lên, báo lỗi `INVALID_CV_FILE_FORMAT` (HTTP 400) và yêu cầu ứng viên chọn tệp khác (luồng thay thế 4a). |
 | **EC-CAN-CV-02** | **Gián đoạn kết nối Cloudinary** | Dịch vụ lưu trữ Cloudinary gặp sự cố hoặc timeout khi đang tải tệp hồ sơ lên.<br>$\rightarrow$ **Xử lý:** Hệ thống không ghi nhận thông tin tệp vào cơ sở dữ liệu, thông báo nguyên nhân lỗi thân thiện và gợi ý ứng viên thử lại (luồng thay thế 6a). |
 | **EC-CAN-CV-03** | **Vượt quá số lượng CV cho phép** | Ứng viên tải lên vượt quá số lượng CV tối đa cho phép (ví dụ: tối đa 5 CV/ứng viên).<br>$\rightarrow$ **Xử lý:** Hệ thống kiểm tra số lượng CV hiện tại trước khi nhận file. Nếu đã đạt giới hạn, chặn thao tác và yêu cầu ứng viên xóa bớt CV cũ trước khi tải CV mới. |
-| **EC-CAN-CV-04** | **Xóa CV đã dùng để ứng tuyển** | Ứng viên xóa một tệp hồ sơ xin việc đã được dùng để gửi đơn ứng tuyển trước đó.<br>$\rightarrow$ **Xử lý:** Khi nộp đơn, tệp hồ sơ được sao chép thành bản lưu riêng gắn với đơn ứng tuyển (Immutable Snapshot). Hộp thoại xác nhận xóa nêu rõ các đơn đã nộp vẫn giữ bản hồ sơ đã gửi. Thao tác xóa chỉ xóa tệp theo `publicId` trên Cloudinary và bản ghi trong danh sách hồ sơ của ứng viên, không ảnh hưởng đến dữ liệu hiển thị của nhà tuyển dụng. Nếu xóa trên Cloudinary thất bại, hệ thống giữ nguyên bản ghi và báo lỗi "Không thể xóa tệp, vui lòng thử lại sau" (luồng thay thế 4a). |
+| **EC-CAN-CV-04** | **Xóa CV đã dùng để ứng tuyển** | Ứng viên xóa một tệp hồ sơ xin việc đã được dùng để gửi đơn ứng tuyển trước đó.<br>$\rightarrow$ **Xử lý:** Khi nộp đơn, hệ thống cấp quyền truy cập tệp cho công ty nhận đơn (access grant, không sao chép tệp). Hộp thoại xác nhận xóa nêu rõ ứng viên không còn truy cập được tệp; công ty nhận đơn vẫn truy cập được tệp trong tối đa 30 ngày kể từ khi xóa **nếu đơn còn ở giai đoạn đánh giá đang hoạt động**, còn đơn đã tuyển (`HIRED`) mất quyền ngay; sau đó quyền truy cập bị thu hồi và tệp bị xóa tự động. Thao tác xóa đánh dấu bản ghi là đã xóa (tombstone) và bỏ cờ mặc định, không làm thay đổi dữ liệu khác của đơn ứng tuyển; đơn đã nộp không bị ảnh hưởng. Nếu xóa trên Cloudinary thất bại, hệ thống vẫn ghi nhận xóa phía ứng viên và tự động thử xóa lại đối tượng lưu trữ (luồng thay thế 4a). |
 | **EC-CAN-CV-05** | **Gửi request upload trùng lặp (Double Click)** | Ứng viên nhấn nút "Tải lên" nhiều lần liên tiếp do mạng chậm.<br>$\rightarrow$ **Xử lý:** Client disable nút bấm ngay khi submit; backend sử dụng token idempotency / rate limiter để loại bỏ các request trùng lặp trong thời gian ngắn. |
 
 ---
@@ -441,6 +440,8 @@
 | **EC-CAN-JOB-02** | **Ký tự đặc biệt & SQL/RSQL Injection** | Tác nhân nhập các chuỗi ký tự tấn công (như `' OR '1'='1`, `<script>`) vào ô tìm kiếm từ khóa.<br>$\rightarrow$ **Xử lý:** Hệ thống kiểm tra tính hợp lệ của tiêu chí tìm kiếm (bước 3), sanitize toàn bộ input, sử dụng Prepared Statements / Parameterized Queries khi truy vấn cơ sở dữ liệu và escape các ký tự đặc biệt. |
 | **EC-CAN-JOB-03** | **Phân trang với offset quá lớn** | Client truyền tham số phân trang bất thường như `page=999999`.<br>$\rightarrow$ **Xử lý:** Hệ thống chuẩn hóa phân trang theo triển khai hiện tại: `page < 0` trở về `0`; `size` mặc định `5`, tối đa `20` (giá trị `<= 0` trở thành `5`, lớn hơn `20` trở thành `20`); `page * size` được bảo vệ khỏi tràn số nguyên. Nếu vượt quá số trang hiện có, trả về trang rỗng hợp lệ thay vì lỗi. |
 | **EC-CAN-JOB-04** | **Bộ lọc giá trị vô lý** | Ứng viên chọn mức lương tối thiểu cao hơn mức lương tối đa (`salary_min = 5000` > `salary_max = 2000`).<br>$\rightarrow$ **Xử lý:** Frontend tự động điều chỉnh khoảng slider hợp lệ; backend tự chuẩn hóaswap 2 giá trị hoặc phản hồi lỗi `400 Invalid Filter Criteria`. |
+| **EC-CAN-COMPANY-01** | **Công ty mất toàn bộ tin công khai khi đang xem** | Công ty xuất hiện trong danh sách nhưng toàn bộ tin bị tạm dừng, hết hạn hoặc ẩn trước khi tác nhân mở trang chi tiết.<br>$\rightarrow$ **Xử lý:** Hệ thống trả `40400 COMPANY_NOT_FOUND`, không tiết lộ dữ liệu còn lại; giao diện hiển thị "Thông tin công ty hiện không khả dụng" (luồng thay thế 2a của UC-CAN-10). |
+| **EC-CAN-COMPANY-02** | **Từ khóa chứa ký tự đại diện hoặc chuỗi tấn công** | Tác nhân nhập `%`, `_`, `' OR '1'='1` hoặc `<script>` vào ô tìm kiếm công ty.<br>$\rightarrow$ **Xử lý:** Hệ thống cắt khoảng trắng, escape `%` và `_`, dùng truy vấn tham số hóa (không nối chuỗi SQL) và đối chiếu từ khóa theo nghĩa thông thường; ký tự đặc biệt không làm mở rộng phạm vi công khai (bước 3 của UC-CAN-08). |
 
 ---
 
@@ -459,6 +460,7 @@
 | **EC-CAN-APP-09** | **Rút hồ sơ ở trạng thái kết thúc** | Đơn đã ở trạng thái "Từ chối" hoặc trạng thái kết thúc khác.<br>$\rightarrow$ **Xử lý:** Hệ thống báo không thể rút và giữ nguyên trạng thái hiện tại. |
 | **EC-CAN-APP-10** | **Phiên bản đơn ứng tuyển không khớp (Stale Version)** | Client gửi phiên bản cũ khi rút hồ sơ.<br>$\rightarrow$ **Xử lý:** Trả về xung đột phiên bản `409`, không thay đổi trạng thái; client tải lại thông tin và thử lại. |
 | **EC-CAN-APP-11** | **Thông báo rút hồ sơ tới nhiều người nhận** | Nhiều nhà tuyển dụng được phân công cho tin tuyển dụng hoặc chủ công ty trùng với người được phân công.<br>$\rightarrow$ **Xử lý:** Mỗi người nhận chỉ nhận một thông báo; khử trùng (dedup) theo recipient trước khi ghi nhận outbox. |
+| **EC-CAN-APP-12** | **Đơn ứng tuyển không hoạt động** | Nhà tuyển dụng không cập nhật trạng thái đơn trong 30 ngày (mặc định).<br>$\rightarrow$ **Xử lý:** Hệ thống chuyển đơn sang `INACTIVE`, thu hồi quyền truy cập CV hiện tại và chỉ thông báo cho chủ công ty/nhà tuyển dụng đang được phân công. Ứng viên vẫn thấy trạng thái trong danh sách và có thể rút đơn. Công ty có thể mở lại đơn qua `UNDER_REVIEW`; quyền truy cập CV chỉ được cấp lại nếu CV thư viện vẫn còn. |
 
 ---
 

@@ -1,6 +1,7 @@
 package com.guardwork.backend.notification.template;
 
 import com.guardwork.backend.notification.model.NotificationCategory;
+import com.guardwork.backend.notification.model.NotificationAudience;
 import com.guardwork.backend.notification.model.NotificationEventType;
 import com.guardwork.backend.notification.model.NotificationOutbox;
 import com.guardwork.backend.notification.model.NotificationPayload;
@@ -28,6 +29,20 @@ public enum NotificationTemplate {
           + " đã bị thu hồi. Liên hệ quản trị viên của công ty nếu bạn tin rằng điều này xảy ra nhầm lẫn.";
     }
     @Override public String actionHref(NotificationOutbox e) { return null; }
+  },
+  COMPANY_VERIFICATION_APPROVED(NotificationEventType.COMPANY_VERIFICATION_APPROVED, NotificationCategory.COMPANY) {
+    @Override public String title(NotificationOutbox e) { return "Công ty đã được xác minh"; }
+    @Override public String body(NotificationOutbox e) {
+      return "Hồ sơ xác minh của " + companyName(e) + " đã được phê duyệt.";
+    }
+    @Override public String actionHref(NotificationOutbox e) { return "/companies/me/verification"; }
+  },
+  COMPANY_VERIFICATION_REJECTED(NotificationEventType.COMPANY_VERIFICATION_REJECTED, NotificationCategory.COMPANY) {
+    @Override public String title(NotificationOutbox e) { return "Hồ sơ xác minh chưa được duyệt"; }
+    @Override public String body(NotificationOutbox e) {
+      return "Hồ sơ xác minh của " + companyName(e) + " chưa được phê duyệt. Vui lòng xem phản hồi.";
+    }
+    @Override public String actionHref(NotificationOutbox e) { return "/companies/me/verification"; }
   },
   JOB_ASSIGNED(NotificationEventType.JOB_ASSIGNED, NotificationCategory.JOB) {
     @Override public String title(NotificationOutbox e) { return "Bạn được giao một tin tuyển dụng"; }
@@ -64,6 +79,49 @@ public enum NotificationTemplate {
           + ". Vui lòng xem xét và chỉnh sửa.";
     }
     @Override public String actionHref(NotificationOutbox e) { return withJobHref(e); }
+  },
+  JOB_SUSPENDED(NotificationEventType.JOB_SUSPENDED, NotificationCategory.JOB) {
+    @Override public String title(NotificationOutbox e) {
+      return e.getAudience() == NotificationAudience.CANDIDATE
+          ? "Tin tuyển dụng đang bị tạm ngưng" : "Tin tuyển dụng đã bị ẩn";
+    }
+    @Override public String body(NotificationOutbox e) {
+      if (e.getAudience() == NotificationAudience.CANDIDATE)
+        return "Tin tuyển dụng bạn đã ứng tuyển tại " + companyName(e)
+            + " đang bị tạm ngưng. Bạn chỉ có thể rút hồ sơ ứng tuyển nếu trạng thái hồ sơ cho phép.";
+      return "Ban quản trị đã ẩn tin tuyển dụng #" + jobId(e) + " của " + companyName(e) + ".";
+    }
+    @Override public String actionHref(NotificationOutbox e) {
+      return e.getAudience() == NotificationAudience.CANDIDATE
+          ? withApplicationHref(e) : withCompanyJobHref(e);
+    }
+  },
+  JOB_RESTORED(NotificationEventType.JOB_RESTORED, NotificationCategory.JOB) {
+    @Override public String title(NotificationOutbox e) { return "Tin tuyển dụng đã được khôi phục"; }
+    @Override public String body(NotificationOutbox e) {
+      if (e.getAudience() == NotificationAudience.CANDIDATE)
+        return "Tin tuyển dụng bạn đã ứng tuyển tại " + companyName(e)
+            + " đã được khôi phục. Trạng thái hồ sơ ứng tuyển của bạn không thay đổi.";
+      return "Ban quản trị đã khôi phục hiển thị tin tuyển dụng #" + jobId(e) + " của " + companyName(e) + ".";
+    }
+    @Override public String actionHref(NotificationOutbox e) {
+      return e.getAudience() == NotificationAudience.CANDIDATE
+          ? withApplicationHref(e) : withCompanyJobHref(e);
+    }
+  },
+  APPLICATION_SUBMITTED(NotificationEventType.APPLICATION_SUBMITTED, NotificationCategory.APPLICATION) {
+    @Override public String title(NotificationOutbox e) { return "Có hồ sơ ứng tuyển mới"; }
+    @Override public String body(NotificationOutbox e) {
+      String jobTitle = e.payloadView().jobTitle();
+      return jobTitle == null || jobTitle.isBlank()
+          ? "Bạn có một hồ sơ ứng tuyển mới."
+          : "Bạn có một hồ sơ ứng tuyển mới cho vị trí " + jobTitle + ".";
+    }
+    @Override public String actionHref(NotificationOutbox e) {
+      String jobHref = withCompanyJobHref(e);
+      var applicationId = payload(e).applicationId();
+      return jobHref == null || applicationId == null ? null : jobHref + "/applications/" + applicationId;
+    }
   },
   APPLICATION_STATUS_CHANGED(NotificationEventType.APPLICATION_STATUS_CHANGED, NotificationCategory.APPLICATION) {
     @Override public String title(NotificationOutbox e) { return "Trạng thái hồ sơ đã thay đổi"; }
@@ -105,6 +163,17 @@ public enum NotificationTemplate {
     }
     @Override public String actionHref(NotificationOutbox e) { return withApplicationHref(e); }
   },
+  APPLICATION_INACTIVE(NotificationEventType.APPLICATION_INACTIVE, NotificationCategory.APPLICATION) {
+    @Override public String title(NotificationOutbox e) { return "Hồ sơ ứng tuyển đã không hoạt động"; }
+    @Override public String body(NotificationOutbox e) {
+      String jobTitle = e.payloadView().jobTitle();
+      String position = jobTitle == null || jobTitle.isBlank() ? "" : " cho vị trí " + jobTitle;
+      return "Hồ sơ ứng tuyển" + position + " tại " + companyName(e)
+          + " đã không hoạt động sau một thời gian không cập nhật trạng thái. Quyền truy cập CV đã bị thu hồi;"
+          + " mở lại hồ sơ để tiếp tục xem xét.";
+    }
+    @Override public String actionHref(NotificationOutbox e) { return withApplicationHref(e); }
+  },
   /** Fallback for unknown keys; keeps the raw backend key as its title. */
   UNKNOWN(NotificationEventType.UNKNOWN, NotificationCategory.SYSTEM) {
     @Override public String title(NotificationOutbox e) {
@@ -140,6 +209,11 @@ public enum NotificationTemplate {
   private static String withJobHref(NotificationOutbox e) {
     Long jobId = jobId(e);
     return jobId == null ? null : "/jobs/" + jobId;
+  }
+
+  private static String withCompanyJobHref(NotificationOutbox e) {
+    Long jobId = jobId(e);
+    return jobId == null ? null : "/companies/me/jobs/" + jobId;
   }
 
   private static String withApplicationHref(NotificationOutbox e) {

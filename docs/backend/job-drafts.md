@@ -156,7 +156,16 @@ existing PostgreSQL triggers; no new migration is introduced by ticket 03.
 
 Platform Staff members use `GET /api/staff/job-revisions`, with `status` defaulting to
 PENDING_REVIEW or APPROVED/REJECTED/WITHDRAWN/ALL, `page=0`, and `size=20` (1–100).
-Ordering is `submittedAt ASC, id ASC`. `GET /api/staff/job-revisions/{revisionId}` exposes
+Optional `q` searches the reviewed revision's own `content.title` or current Company name
+by substring, ignoring case and Vietnamese accents. Surrounding whitespace is stripped;
+blank behaves like omission. The limit is 200 Unicode code points after stripping (400
+on overflow). `%`, `_` and `\` are literal characters. Search and status are ANDed in
+the database before paging, and totals/pages count the filtered results. `ALL` still
+excludes `DRAFT`.
+Ordering remains `submittedAt ASC, id ASC`; clients that reverse this order must keep
+their existing handling. Each shared Staff Review includes `companyId` and additive
+`companyName` on queue, detail and history responses.
+`GET /api/staff/job-revisions/{revisionId}` exposes
 exact submitted content, versions, attribution and current approval eligibility.
 `GET /api/staff/jobs/{jobId}/revisions` returns submitted history ordered by revision
 number. Editable drafts are excluded from every moderation response. All services recheck

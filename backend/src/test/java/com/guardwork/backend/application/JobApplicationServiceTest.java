@@ -8,16 +8,20 @@ import com.guardwork.backend.application.model.JobApplication;
 import com.guardwork.backend.application.repository.ApplicationSnapshotRepository;
 import com.guardwork.backend.application.repository.ApplicationStatusHistoryRepository;
 import com.guardwork.backend.application.repository.JobApplicationRepository;
+import com.guardwork.backend.application.service.ApplicationInactivityService;
 import com.guardwork.backend.application.service.JobApplicationService;
 import com.guardwork.backend.candidate.CandidateProfile;
 import com.guardwork.backend.candidate.CandidateProfileService;
 import com.guardwork.backend.candidate.cvs.CandidateCv;
+import com.guardwork.backend.candidate.cvs.CandidateCvAccessGrant;
+import com.guardwork.backend.candidate.cvs.CandidateCvAccessGrantRepository;
 import com.guardwork.backend.candidate.cvs.CandidateCvRepository;
 import com.guardwork.backend.candidate.cvs.CandidateCvService;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
 import com.guardwork.backend.job.service.JobPublicationService;
 import com.guardwork.backend.company.model.Company;
+import com.guardwork.backend.job.repository.JobAssignmentRepository;
 import com.guardwork.backend.membership.model.CompanyMembership;
 import com.guardwork.backend.membership.model.CompanyRole;
 import com.guardwork.backend.membership.service.CompanyAccessService;
@@ -71,9 +75,12 @@ class JobApplicationServiceTest {
     @Mock JobPublicationService jobs;
     @Mock CompanyMembershipRepository memberships;
     @Mock CompanyAccessService companyAccess;
+    @Mock JobAssignmentRepository assignments;
     @Mock JobApplicationRepository applications;
     @Mock ApplicationSnapshotRepository snapshots;
     @Mock ApplicationStatusHistoryRepository statusHistory;
+    @Mock CandidateCvAccessGrantRepository cvGrants;
+    @Mock ApplicationInactivityService inactivity;
     @Mock Clock clock;
 
     @InjectMocks JobApplicationService service;
@@ -120,8 +127,15 @@ class JobApplicationServiceTest {
 
     private JobPublicationService.ApplicationContext availableJob() {
         return new JobPublicationService.ApplicationContext(
-                JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
+                JOB_ID, company(), false, REVISION_ID, "Backend Engineer",
                 "Ha Noi", "HYBRID", Instant.parse("2026-11-30T17:00:00Z"), true, null);
+    }
+
+    private Company company() {
+        Company company = new Company();
+        company.setId(COMPANY_ID);
+        company.setName("Acme");
+        return company;
     }
 
     private CandidateCv cv(boolean isDefault) {
@@ -140,9 +154,9 @@ class JobApplicationServiceTest {
                 JOB_ID, fullName, " an@example.com ", " 0901234567 ", coverLetter, cvId);
     }
 
-    private CandidateCvService.CandidateCvSnapshot snapshot() {
-        return new CandidateCvService.CandidateCvSnapshot(
-                cvId, "applications/abc/cv/snapshot.pdf", "CLOUDINARY", "CV.pdf", PDF, 2048L, "image");
+    private CandidateCvService.ApplicationCvReference cvReference() {
+        return new CandidateCvService.ApplicationCvReference(
+                cvId, "candidates/abc/cvs/source.pdf", "CV.pdf", PDF, 2048L, "image", "pdf");
     }
 
     @Nested
@@ -156,8 +170,8 @@ class JobApplicationServiceTest {
             when(jobs.applicationContext(JOB_ID)).thenReturn(availableJob());
             when(applications.existsByCandidateIdAndJobId(candidateId, JOB_ID)).thenReturn(false);
             when(clock.instant()).thenReturn(APPLIED_AT);
-            when(cvService.copyForApplication(eq(candidateId), eq(cvId), any(UUID.class)))
-                    .thenReturn(snapshot());
+            when(cvService.lockForApplication(eq(candidateId), eq(cvId)))
+                    .thenReturn(cvReference());
             when(applications.saveAndFlush(any(JobApplication.class)))
                     .thenAnswer(invocation -> invocation.getArgument(0));
             when(snapshots.saveAndFlush(any(ApplicationSnapshot.class)))
@@ -188,7 +202,20 @@ class JobApplicationServiceTest {
             assertEquals("Backend Engineer", snapshot.getValue().getJobTitle());
             assertEquals("Acme", snapshot.getValue().getCompanyName());
             assertEquals(cvId, snapshot.getValue().getSourceCvId());
-            assertEquals("applications/abc/cv/snapshot.pdf", snapshot.getValue().getCvStorageKey());
+            assertEquals("candidates/abc/cvs/source.pdf", snapshot.getValue().getCvStorageKey());
+            assertEquals("SHARED", snapshot.getValue().getCvStorageMode());
+
+            ArgumentCaptor<CandidateCvAccessGrant> grant = ArgumentCaptor.forClass(CandidateCvAccessGrant.class);
+            verify(cvGrants).saveAndFlush(grant.capture());
+            assertEquals(application.getValue().getId(), grant.getValue().getApplicationId());
+            assertEquals(cvId, grant.getValue().getCvId());
+            assertEquals(candidateId, grant.getValue().getCandidateId());
+            assertEquals(COMPANY_ID, grant.getValue().getCompanyId());
+            assertEquals("candidates/abc/cvs/source.pdf", grant.getValue().getStorageKey());
+            assertEquals("image", grant.getValue().getResourceType());
+            assertEquals(PDF, grant.getValue().getContentType());
+            assertEquals(APPLIED_AT, grant.getValue().getGrantedAt());
+            assertNull(grant.getValue().getExpiresAt());
 
             ArgumentCaptor<ApplicationStatusHistory> history = ArgumentCaptor.forClass(ApplicationStatusHistory.class);
             verify(statusHistory).saveAndFlush(history.capture());
@@ -209,11 +236,11 @@ class JobApplicationServiceTest {
                     () -> service.submit(USER_ID, request("Nguyễn Văn An", null)));
 
             assertEquals(ErrorCode.FORBIDDEN, failure.getErrorCode());
-            verifyNoInteractions(cvService, applications, snapshots);
+            verifyNoInteractions(cvService, cvGrants, applications, snapshots);
         }
 
         @Test
-        void rejectsDuplicateBeforeCopyingCv() {
+        void rejectsDuplicateBeforeSharingCv() {
             when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
             when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
             when(jobs.applicationContext(JOB_ID)).thenReturn(availableJob());
@@ -227,15 +254,13 @@ class JobApplicationServiceTest {
         }
 
         @Test
-        void duplicateRaceDiscardsTheCopiedSnapshot() {
+        void duplicateRaceLeavesNoSnapshotOrGrant() {
             when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
             when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
             when(jobs.applicationContext(JOB_ID)).thenReturn(availableJob());
             when(applications.existsByCandidateIdAndJobId(candidateId, JOB_ID)).thenReturn(false);
             when(clock.instant()).thenReturn(APPLIED_AT);
-            CandidateCvService.CandidateCvSnapshot snapshot = snapshot();
-            when(cvService.copyForApplication(eq(candidateId), eq(cvId), any(UUID.class)))
-                    .thenReturn(snapshot);
+            when(cvService.lockForApplication(eq(candidateId), eq(cvId))).thenReturn(cvReference());
             when(applications.saveAndFlush(any(JobApplication.class))).thenThrow(
                     new DataIntegrityViolationException("duplicate",
                             new RuntimeException("ERROR: duplicate key value violates unique constraint \"uk_applications_candidate_job\"")));
@@ -244,24 +269,25 @@ class JobApplicationServiceTest {
                     () -> service.submit(USER_ID, request("Nguyễn Văn An", null)));
 
             assertEquals(ErrorCode.APPLICATION_ALREADY_SUBMITTED, failure.getErrorCode());
-            verify(cvService).discardSnapshot(snapshot);
             verify(snapshots, never()).saveAndFlush(any());
+            verify(cvGrants, never()).saveAndFlush(any());
         }
 
         @Test
-        void copyFailureLeavesNoApplication() {
+        void missingCvLeavesNoApplication() {
             when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
             when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
             when(jobs.applicationContext(JOB_ID)).thenReturn(availableJob());
             when(applications.existsByCandidateIdAndJobId(candidateId, JOB_ID)).thenReturn(false);
-            when(cvService.copyForApplication(eq(candidateId), eq(cvId), any(UUID.class)))
-                    .thenThrow(new AppException(ErrorCode.APPLICATION_CV_COPY_FAILED));
+            when(cvService.lockForApplication(eq(candidateId), eq(cvId)))
+                    .thenThrow(new AppException(ErrorCode.CV_NOT_FOUND));
 
             AppException failure = assertThrows(AppException.class,
                     () -> service.submit(USER_ID, request("Nguyễn Văn An", null)));
 
-            assertEquals(ErrorCode.APPLICATION_CV_COPY_FAILED, failure.getErrorCode());
+            assertEquals(ErrorCode.CV_NOT_FOUND, failure.getErrorCode());
             verify(applications, never()).saveAndFlush(any());
+            verifyNoInteractions(cvGrants);
         }
 
         @Test
@@ -269,7 +295,7 @@ class JobApplicationServiceTest {
             when(users.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user("ACTIVE")));
             when(profiles.getOrCreateProfile(USER_ID)).thenReturn(profile);
             when(jobs.applicationContext(JOB_ID)).thenReturn(new JobPublicationService.ApplicationContext(
-                    JOB_ID, COMPANY_ID, "Acme", REVISION_ID, "Backend Engineer",
+                    JOB_ID, company(), false, REVISION_ID, "Backend Engineer",
                     "Ha Noi", "HYBRID", Instant.parse("2026-11-30T17:00:00Z"), false, "EXPIRED"));
 
             AppException failure = assertThrows(AppException.class,

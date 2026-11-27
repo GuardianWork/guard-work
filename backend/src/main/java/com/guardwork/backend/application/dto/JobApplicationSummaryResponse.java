@@ -15,5 +15,6 @@ public record JobApplicationSummaryResponse(
         Instant appliedAt,
         String cvFileName,
         long version,
-        String candidateFeedback
+        String candidateFeedback,
+        boolean jobSuspended
 ) {}

@@ -20,5 +20,9 @@ public record ApplicationDetailResponse(
         String cvContentType,
         long cvFileSize,
         List<ApplicationStatusHistoryResponse> history,
-        String candidateFeedback) {
+        String candidateFeedback,
+        boolean canViewCv,
+        Instant reviewWindowEndsAt,
+        Instant inactivityDeadline,
+        boolean jobSuspended) {
 }

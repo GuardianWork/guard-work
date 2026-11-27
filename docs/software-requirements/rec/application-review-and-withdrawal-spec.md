@@ -1,6 +1,8 @@
 # Application Review and Withdrawal — Software Requirements Specification
 
 > Plan update (2026-11-10): [GW-117 Application Lifecycle Completion](application-lifecycle-completion-spec.md) records the human-confirmed replacement scope: INTERVIEWING tracks externally arranged interviews; Company-confirmed HIRED requires no Offer. Interview scheduling and Offer management are excluded from the current plan. Older descriptions below are historical where they conflict with GW-117. Typst is unchanged.
+>
+> Amendment (2026-11-18): adds reversible `INACTIVE`, the inactivity clock, grant-epoch reactivation, and rejected legacy-copy purge. See the amendment at the end; GW-SR-CV-02 remains the CV lifecycle authority.
 
 | Field | Value |
 |---|---|
@@ -26,10 +28,12 @@ This extends [Application Listing](application-listing-spec.md) and coordinates 
 ```text
 SUBMITTED -> UNDER_REVIEW -> SHORTLISTED
      +-----------------------> SHORTLISTED
-Each active status -> REJECTED or WITHDRAWN
+Each active status -> INACTIVE
+Each active or INACTIVE status -> REJECTED or WITHDRAWN
+INACTIVE -> UNDER_REVIEW (reactivation)
 ```
 
-REJECTED and WITHDRAWN are terminal. Company actors cannot withdraw on behalf of Candidates. Opening details does not change status. Job closure or expiry does not change application status or block otherwise authorized processing.
+REJECTED and WITHDRAWN are terminal. INACTIVE is reversible. Company actors cannot withdraw on behalf of Candidates. Opening details does not change status. Job closure or expiry does not change application status or block otherwise authorized processing.
 
 ## Functional requirements
 
@@ -46,7 +50,7 @@ REJECTED and WITHDRAWN are terminal. Company actors cannot withdraw on behalf of
 | AR-009 | Extend the existing outbox/inbox and retry dispatcher. Delivery failure shall not reverse a committed action; retry shall not duplicate delivery. Old notification links shall recheck current resource authorization. No email, real-time channel or frontend is included. |
 | AR-010 | Notifications shall contain no CV, contact data, internal rejection reason or internal explanation. |
 | AR-011 | Recruiter listing shall accept all five statuses; an omitted filter returns all statuses. Preserve existing fields, name search, ordering and pagination. Candidate listing retains its existing shape, extended additively with current version and Candidate-safe workflow information as needed. |
-| AR-012 | Terminal access shall follow the details specification: Company contact, cover-letter and CV access stops after rejection or withdrawal. No automatic deletion or reopening is introduced. |
+| AR-012 | Terminal access shall follow the details specification: Company contact, cover-letter and CV access stops after rejection or withdrawal. **Amended 2026-11-18:** `INACTIVE` also stops CV access; inactivity, reactivation and rejected-copy purge are defined in the amendment below. |
 
 ## Persistence and compatibility
 
@@ -65,3 +69,31 @@ The existing optimistic version supports mutation concurrency. History and notif
 ## Verification
 
 Use existing PostgreSQL HTTP integration infrastructure to prove the transition matrix, skip-forward behavior, terminal guards, Candidate ownership, role/assignment isolation, stale concurrency, no-op retries, atomic history/outbox writes, notification retries and recipient deduplication, Candidate redaction, terminal privacy, migration/backfill and updated list filters. Run documented backend checks and replace only coverage superseded by this approved workflow.
+
+## Amendment 2026-11-18: INACTIVE, inactivity, and rejected-copy purge
+
+Status: approved by the requesting human user on 2026-11-18. GW-SR-CV-02 remains the normative
+owner of the CV lifecycle; this section extends the status workflow above.
+
+| ID | Amended requirement |
+|---|---|
+| AR-013 | An Application in `SUBMITTED`, `UNDER_REVIEW`, `SHORTLISTED`, or `INTERVIEWING` becomes `INACTIVE` after the configured period without a status transition (default 30 days). `HIRED`, `REJECTED`, and `WITHDRAWN` are excluded. |
+| AR-014 | The transition to `INACTIVE` appends history with a null actor, revokes the current CV grant epoch (`APPLICATION_INACTIVE`), and notifies only the Company owner and currently assigned Recruiters. |
+| AR-015 | `INACTIVE` is reversible only through `UNDER_REVIEW` by an eligible Owner or currently assigned Recruiter. Reactivation starts a new CV grant epoch only while the shared library CV still exists. A manual request targeting `INACTIVE` is rejected. |
+| AR-016 | A Candidate may withdraw from `INACTIVE`. `INACTIVE` appears in list filters and responses; it conceals Company CV access but not Company detail visibility. |
+| AR-017 | On `REJECTED`, the application-specific legacy CV copy is deleted by a bounded retryable worker; snapshot metadata is retained and `cv_purged_at` is recorded. Already-rejected copies are backfilled; `SHARED` library objects are never deleted by this path. `WITHDRAWN` copies are retained. |
+
+The state model, AR-008, AR-012, and the earlier "no automatic deletion or reopening" statement are
+read together with this amendment. Inactivity is measured from `applications.status_changed_at`,
+backfilled from append-only history. The legal retention-agreement exception is deferred.
+
+## Amendment 2026-11-24: Candidate access during individual JD suspension (GW-130)
+
+The requesting maintainer explicitly approved [GW-SR-CAN-JOB-130](../can/job-suspension-candidate-spec.md).
+When the individual posting status is `SUSPENDED`, Candidates receive only minimal owned
+Application summaries/receipts and may otherwise withdraw if eligible. Submitted details,
+history/feedback and CV metadata are concealed, and Application CV downloads return 404.
+Responses add `jobSuspended` independently of Application status. This records the
+maintainer's later explicit withdrawal-only revision in the GW-130 conversation. This supersedes Candidate-side
+suspension concealment only; Company-side Application access remains concealed, and the
+independent Company-ban flag, account eligibility and CV deletion/retention rules remain.

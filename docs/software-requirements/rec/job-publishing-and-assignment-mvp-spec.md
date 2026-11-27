@@ -6,8 +6,8 @@
 | Project | GuardWork |
 | Module | Job Publishing and Assignments |
 | File | `job-publishing-and-assignment-mvp-spec.md` |
-| Version | 0.3.0 |
-| Date / Last Updated | 2026-10-31 |
+| Version | 0.4.0 |
+| Date / Last Updated | 2026-11-24 |
 | Owner | Thinh |
 | Named human approver | Thinh (retained from baseline) |
 | Status | Approved |
@@ -108,3 +108,22 @@ Use existing feature-first controllers/services/Spring Data JPA, Flyway, Postgre
 The backend provides Company job APIs, Platform Staff moderation, public approved detail, and expiry reconciliation. Platform moderation uses current persisted `STAFF` authority and `/api/staff/...` routes; Company `ADMIN` membership grants no moderation authority. The [implementation contract](job-publishing-and-assignment-implementation-contract.md) and [workflow guide](../../backend/job-drafts.md) describe HTTP, service, and PostgreSQL verification boundaries.
 
 Private job operations require verified account email for all Users under [GW-SR-AUTH-03](../auth/unified-registration-and-recruiting-access-spec.md). Phone proof and historical employer profiles do not determine eligibility. Active User/membership, Company suspension, role/assignment authorization, and VERIFIED Company publication gates remain enforced. Candidate access, public detail, and own historical notifications retain their separate access rules.
+
+## Amendment 2026-11-24: Staff revision queue search and Company name
+
+The requesting maintainer explicitly supplied and authorized the following additive
+backend contract for the existing frontend in this conversation. This focused amendment
+preserves the baseline approval metadata and all moderation authorization/lifecycle rules.
+
+| ID | Requirement |
+|---|---|
+| JP78-QUEUE-01 | `GET /api/staff/job-revisions` accepts optional `q`. Strip surrounding whitespace; null/blank retains existing behavior. Reject more than 200 Unicode code points after stripping with the existing HTTP 400 validation envelope. |
+| JP78-QUEUE-02 | Search the selected revision's own `content.title` OR the corresponding current Company's `name` by substring, ignoring case and Vietnamese accents. Escape `%`, `_` and `\` as literal characters. Search is ANDed with the existing status predicate. |
+| JP78-QUEUE-03 | Apply search in the database before pagination, using the same predicate for rows/counts. Preserve `submittedAt ASC, id ASC`, current page/size limits and the rule that ALL excludes DRAFT. |
+| JP78-QUEUE-04 | Add `companyName` from the corresponding Company to the shared Staff Review DTO, consistently across queue, revision detail and job revision history. Preserve all other fields and response/page envelopes. |
+| JP78-QUEUE-05 | Preserve current active persisted Staff checks and every existing authorization boundary. No schema, dependency, public/Candidate/Company API or notification change is included. |
+
+Verification: PostgreSQL HTTP coverage for title/Company matches without accents, case,
+status intersection, literal wildcard characters, matches beyond the first unfiltered page,
+filtered totals/pages, ascending timestamp/ID ties, ALL excluding drafts, blank/default
+compatibility, trimmed/Unicode length boundaries and shared DTO Company-name consistency.

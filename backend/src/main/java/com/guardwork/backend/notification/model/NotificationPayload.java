@@ -13,8 +13,8 @@ import java.util.UUID;
  * rest of the event identity so the dispatcher can render copy without joining business tables.
  *
  * <p><strong>Extensible by design.</strong> The database column is plain {@code jsonb}, so a new
- * event or a new context field is an additive code change: add a record component and a factory
- * argument, and no migration is needed. Payloads are append-only snapshots and are never
+   * context field is an additive code change: add a record component and a factory
+   * argument, and no payload migration is needed. Payloads are append-only snapshots and are never
  * rewritten, so:
  * <ul>
  *   <li>older rows simply have the new key missing and deserialize it as {@code null};
@@ -42,8 +42,8 @@ public record NotificationPayload(
   private static final NotificationPayload EMPTY =
       new NotificationPayload(null, null, null, null, null, null, null, null, null);
 
-  /** Membership events only need the owning Company. */
-  public static NotificationPayload membership(Long companyId, String companyName) {
+  /** Company and membership events only need the Company. */
+  public static NotificationPayload company(Long companyId, String companyName) {
     return new NotificationPayload(companyId, companyName, null, null, null, null, null, null, null);
   }
 

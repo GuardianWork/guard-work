@@ -20,6 +20,9 @@ import com.guardwork.backend.common.PageResponse;
 import com.guardwork.backend.company.model.Company;
 import com.guardwork.backend.company.model.VerificationStatus;
 import com.guardwork.backend.company.repository.CompanyRepository;
+import com.guardwork.backend.notification.service.NotificationDispatcher;
+import com.guardwork.backend.notification.service.NotificationIntentService;
+import com.guardwork.backend.onboarding.service.LegalDossierService;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -37,6 +40,9 @@ class StaffCompanyVerificationServiceTest {
 
     @Mock
     private AuditService auditService;
+    @Mock private LegalDossierService dossiers;
+    @Mock private NotificationIntentService notifications;
+    @Mock private NotificationDispatcher dispatcher;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -44,7 +50,8 @@ class StaffCompanyVerificationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new StaffCompanyVerificationService(companyRepository, auditService, objectMapper);
+        service = new StaffCompanyVerificationService(companyRepository, auditService, objectMapper,
+                dossiers, notifications, dispatcher);
     }
 
     private Company createSampleCompany(Long id, VerificationStatus status, Long version) {

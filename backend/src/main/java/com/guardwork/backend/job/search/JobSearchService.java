@@ -17,6 +17,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +54,8 @@ public class JobSearchService {
     this.draftContent = draftContent;
     this.clock = clock;
   }
+
+  public record CompanyGroup(Long id, String name, long roleCount) {}
 
   public PageResponse<JobPublicationService.PublicDetail> search(JobSearchRequest request) {
     return search(request, org.springframework.data.domain.Pageable.unpaged());
@@ -97,13 +101,48 @@ public class JobSearchService {
             callerUserId,
             pageable);
 
-    List<JobPublicationService.PublicDetail> content = new ArrayList<>();
     List<Long> jobIds = ids.getContent();
-    if (jobIds.isEmpty()) {
-      return PaginationUtils.toPageResponse(
-          new PageImpl<>(content, pageable, ids.getTotalElements()),
-          item -> item);
-    }
+    List<JobPublicationService.PublicDetail> content = loadDetails(jobIds);
+
+    Page<JobPublicationService.PublicDetail> resultPage =
+        new PageImpl<>(content, pageable, ids.getTotalElements());
+    return PaginationUtils.toPageResponse(resultPage, item -> item);
+  }
+
+  /** Company search groups the same public postings that job search exposes. */
+  public PageResponse<CompanyGroup> searchCompanies(String keyword, Pageable pageable) {
+    pageable = PaginationUtils.validateAndBound(pageable);
+    var page =
+        jobs.searchPublicCompanyIds(escapeLike(blankToNull(keyword)), clock.instant(), pageable);
+    return PaginationUtils.toPageResponse(
+        page, row -> new CompanyGroup(row.getCompanyId(), row.getCompanyName(), row.getRoleCount()));
+  }
+
+  /** Every visible posting for the requested companies, in stable company/created order. */
+  public List<JobPublicationService.PublicDetail> publicDetailsForCompanies(
+      Collection<Long> companyIds) {
+    if (companyIds == null || companyIds.isEmpty()) return List.of();
+    List<Long> jobIds =
+        jobs.searchPublicJobIdsForCompanies(List.copyOf(companyIds), clock.instant());
+    return loadDetails(jobIds);
+  }
+
+  /**
+   * Application totals for the given public postings, keyed by job id. Callers pass only ids from a
+   * public projection, so applicants' counts never widen beyond what those postings expose. Postings
+   * with no applications are absent from the result.
+   */
+  public Map<Long, Long> publicApplicationCounts(Collection<Long> jobIds) {
+    if (jobIds == null || jobIds.isEmpty()) return Map.of();
+    Map<Long, Long> counts = new HashMap<>();
+    jobs.countApplicationsForJobs(List.copyOf(jobIds))
+        .forEach(count -> counts.put(count.getJobId(), count.getTotal()));
+    return counts;
+  }
+
+  private List<JobPublicationService.PublicDetail> loadDetails(List<Long> jobIds) {
+    List<JobPublicationService.PublicDetail> content = new ArrayList<>();
+    if (jobIds.isEmpty()) return content;
 
     Map<Long, JobPosting> postings = new TreeMap<>();
     for (JobPosting posting : jobs.findAllById(jobIds)) postings.put(posting.getId(), posting);
@@ -137,12 +176,12 @@ public class JobSearchService {
               posting.getStatus(),
               posting.getApprovedDeadline(),
               true,
-              null));
+              null,
+              null,
+              revision.getId(),
+              revision.getVersion()));
     }
-
-    Page<JobPublicationService.PublicDetail> resultPage =
-        new PageImpl<>(content, pageable, ids.getTotalElements());
-    return PaginationUtils.toPageResponse(resultPage, item -> item);
+    return content;
   }
 
   private static String validateEnum(String value, Set<String> allowed, String field) {

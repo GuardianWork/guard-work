@@ -54,6 +54,9 @@ class OnboardingAccessPolicyTest {
         assertFalse(policy.permits(1L, "/api/me/notifications", "GET"));
         assertFalse(policy.permits(1L, "/api/auth/me", "GET"));
         assertTrue(policy.permits(1L, "/api/jobs/3", "GET"));
+        assertTrue(policy.permits(1L, "/api/companies/public", "GET"));
+        assertTrue(policy.permits(1L, "/api/companies/public/3", "GET"));
+        assertTrue(policy.permits(1L, "/api/companies/public/3/roles", "GET"));
         assertTrue(policy.permits(1L, "/api/auth/forgot-password", "POST"));
     }
 }

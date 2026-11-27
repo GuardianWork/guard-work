@@ -26,4 +26,6 @@ public interface CandidateApplicationProjection {
     Instant getAppliedAt();
 
     String getCvFileName();
+
+    boolean getJobSuspended();
 }

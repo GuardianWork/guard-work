@@ -10,13 +10,13 @@ import com.guardwork.backend.candidate.cvs.dto.UploadUrlResponse;
 import com.guardwork.backend.common.exception.AppException;
 import com.guardwork.backend.common.exception.ErrorCode;
 import jakarta.transaction.Transactional;
-import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
-import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -25,8 +25,6 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
-@FieldDefaults(makeFinal = true, level = AccessLevel.PRIVATE)
 public class CandidateCvService {
 
     static final long MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -49,20 +47,43 @@ public class CandidateCvService {
             "docx", "raw"
     );
 
-    CandidateCvRepository cvRepository;
-    CandidateProfileRepository profileRepository;
-    CandidateProfileService profileService;
-    CandidateCvStorage storage;
+    private final CandidateCvRepository cvRepository;
+    private final CandidateProfileRepository profileRepository;
+    private final CandidateProfileService profileService;
+    private final CandidateCvStorage storage;
+    private final CandidateCvAccessGrantRepository grants;
+    private final Clock clock;
+    private final Duration accessGrantTtl;
+
+    public CandidateCvService(
+            CandidateCvRepository cvRepository,
+            CandidateProfileRepository profileRepository,
+            CandidateProfileService profileService,
+            CandidateCvStorage storage,
+            CandidateCvAccessGrantRepository grants,
+            Clock clock,
+            @Value("${candidate.cv.access-grant-ttl:30d}") Duration accessGrantTtl) {
+        this.cvRepository = cvRepository;
+        this.profileRepository = profileRepository;
+        this.profileService = profileService;
+        this.storage = storage;
+        this.grants = grants;
+        this.clock = clock;
+        this.accessGrantTtl = accessGrantTtl;
+    }
 
     /**
      * Issues a signed upload target inside the authenticated candidate's own folder.
      * Client-supplied folder and public id values are deliberately ignored.
+     *
+     * <p>{@code access_mode} is part of the signed parameters, so a client cannot downgrade
+     * the uploaded object to public delivery.</p>
      */
     @Transactional
     public UploadUrlResponse generateUploadUrl(Long userId, UploadUrlRequest request) {
         CandidateProfile profile = profileService.getOrCreateProfile(userId);
         UUID candidateId = profile.getId();
-        if (cvRepository.countByCandidateId(candidateId) >= MAX_CVS_PER_CANDIDATE) {
+        if (cvRepository.countByCandidateIdAndDeletedAtIsNull(candidateId) >= MAX_CVS_PER_CANDIDATE) {
             throw new AppException(ErrorCode.CV_QUOTA_EXCEEDED);
         }
 
@@ -73,13 +94,15 @@ public class CandidateCvService {
                 signature.apiKey(),
                 signature.timestamp(),
                 signature.signature(),
-                signature.publicId()
+                signature.publicId(),
+                signature.accessMode()
         );
     }
 
     /**
      * Registers a CV after Cloudinary confirms the upload. File metadata is read back from the
-     * stored object, so a caller cannot bypass type or size validation with request fields.
+     * stored object, so a caller cannot bypass type, size or access-mode validation with request
+     * fields.
      */
     @Transactional
     public CandidateCvResponse registerCv(Long userId, CreateCandidateCvRequest request) {
@@ -103,6 +126,10 @@ public class CandidateCvService {
 
         try {
             validateAsset(asset);
+            if (!CandidateCvStorage.AUTHENTICATED_ACCESS_MODE.equals(asset.accessMode())) {
+                // The signed upload requires authenticated access; anything else is not our file.
+                throw new AppException(ErrorCode.CV_ASSET_NOT_VERIFIED);
+            }
             String fileName = validateFileName(request.fileName(), asset.format());
 
             // Serialize quota/default decisions for this candidate without a schema change.
@@ -113,7 +140,7 @@ public class CandidateCvService {
             if (cvRepository.existsByPublicId(storedPublicId)) {
                 throw new AppException(ErrorCode.DUPLICATE_CV);
             }
-            long existingCount = cvRepository.countByCandidateId(candidateId);
+            long existingCount = cvRepository.countByCandidateIdAndDeletedAtIsNull(candidateId);
             if (existingCount >= MAX_CVS_PER_CANDIDATE) {
                 throw new AppException(ErrorCode.CV_QUOTA_EXCEEDED);
             }
@@ -139,79 +166,95 @@ public class CandidateCvService {
     }
 
     /**
-     * Copies an owned CV into an application-specific immutable object. The source CV row is not
-     * changed; the returned snapshot is stored by the application workflow.
+     * Locks one owned, active CV for application submission and returns the storage reference the
+     * application will share. The library file is <em>not</em> copied; the access grant created by
+     * the application workflow is what authorizes the receiving Company.
      */
     @Transactional
-    public CandidateCvSnapshot copyForApplication(UUID candidateId, UUID cvId, UUID applicationId) {
-        CandidateCv cv = cvRepository.findByIdAndCandidateId(cvId, candidateId)
+    public ApplicationCvReference lockForApplication(UUID candidateId, UUID cvId) {
+        CandidateCv cv = cvRepository.findActiveForUpdate(cvId, candidateId)
                 .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
 
-        String format = CONTENT_TYPE_TO_FORMAT.get(cv.getContentType());
+        String format = formatForContentType(cv.getContentType());
         if (format == null) {
             throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
         }
-        String resourceType = FORMAT_TO_RESOURCE_TYPE.get(format);
+        String resourceType = resourceTypeForFormat(format);
+        if (resourceType == null) {
+            throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
+        }
 
-        // Re-read the object so a CV deleted between prefill and submit cannot be attached.
+        // Re-read the object so a CV deleted out of band cannot be attached.
         CandidateCvStorage.StoredCvAsset source = storage.find(cv.getPublicId())
                 .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
         validateAsset(source);
-
-        String targetPublicId = applicationFolder(applicationId) + UUID.randomUUID() + "." + format;
-        CandidateCvStorage.StoredCvAsset copy = storage.copy(
-                cv.getPublicId(), targetPublicId, resourceType, format);
-        String copiedResourceType = copy.resourceType() == null ? resourceType : copy.resourceType();
-        try {
-            validateAsset(copy);
-        } catch (RuntimeException failure) {
-            discardSnapshot(new CandidateCvSnapshot(
-                    cv.getId(), copy.publicId(), "CLOUDINARY", cv.getFileName(),
-                    copy.contentType(), copy.bytes(), copiedResourceType));
-            throw failure;
+        if (!CandidateCvStorage.AUTHENTICATED_ACCESS_MODE.equals(source.accessMode())) {
+            // Pre-change library objects keep public delivery. The grant still controls issuance,
+            // but the residual storage-level exposure is documented in the ADR.
+            log.warn("event=cv_access_mode outcome=legacy_unauthenticated cv_id={}", cvId);
         }
-        return new CandidateCvSnapshot(
+
+        return new ApplicationCvReference(
                 cv.getId(),
-                copy.publicId(),
-                "CLOUDINARY",
+                cv.getPublicId(),
                 cv.getFileName(),
-                copy.contentType(),
-                copy.bytes(),
-                copiedResourceType
+                source.contentType(),
+                source.bytes(),
+                resourceType,
+                format
         );
     }
 
     /**
-     * Best-effort removal of a snapshot object when the application transaction did not commit.
+     * Removes a CV from the candidate's library.
+     *
+     * <p>The row becomes a tombstone. If the CV was already shared with Companies, the review
+     * window starts now and the bytes are retained until the last live grant ends. Otherwise the
+     * object is removed immediately; a storage failure is deferred to the retention worker instead
+     * of failing this request.</p>
      */
-    public void discardSnapshot(CandidateCvSnapshot snapshot) {
-        if (snapshot == null || snapshot.storageKey() == null) {
+    @Transactional
+    public void deleteCv(Long userId, UUID cvId) {
+        UUID candidateId = currentCandidateId(userId);
+        profileRepository.findByIdForUpdate(candidateId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        CandidateCv cv = cvRepository.findByIdAndCandidateIdAndDeletedAtIsNull(cvId, candidateId)
+                .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
+
+        Instant now = clock.instant();
+        cv.setDeletedAt(now);
+        cv.setDefault(false);
+        cvRepository.save(cv);
+
+        int retained = grants.startReviewWindow(cvId, now.plus(accessGrantTtl));
+        int revokedForHired = grants.revokeHiredForDeletedCv(
+                cvId, now, CandidateCvAccessGrant.REASON_CANDIDATE_CV_DELETED);
+        if (retained > 0) {
+            log.info("event=cv_library_removed outcome=review_window cv_id={} applications={} review_ends_at={}",
+                    cvId, retained, now.plus(accessGrantTtl));
             return;
         }
-        String resourceType = snapshot.resourceType();
-        if (resourceType == null && snapshot.contentType() != null) {
-            String format = CONTENT_TYPE_TO_FORMAT.get(snapshot.contentType());
-            resourceType = format == null ? null : FORMAT_TO_RESOURCE_TYPE.get(format);
+        if (revokedForHired > 0) {
+            log.info("event=cv_library_removed outcome=hired_access_revoked cv_id={} applications={}",
+                    cvId, revokedForHired);
         }
+        purgeObject(cv);
+    }
+
+    /** Deletes the library object for one removed CV and records completion. Safe to retry. */
+    private void purgeObject(CandidateCv cv) {
+        String resourceType = resourceTypeForContentType(cv.getContentType());
         if (resourceType == null) {
+            log.warn("event=cv_object_purge outcome=unsupported_content_type cv_id={}", cv.getId());
             return;
         }
         try {
-            storage.delete(snapshot.storageKey(), resourceType);
+            storage.delete(cv.getPublicId(), resourceType);
+            cvRepository.markStorageDeleted(cv.getId(), clock.instant());
         } catch (RuntimeException cleanupFailure) {
-            log.warn("event=application_cv_snapshot_cleanup outcome=failed");
+            log.warn("event=cv_object_purge outcome=retry_required cv_id={}", cv.getId());
         }
     }
-
-    public record CandidateCvSnapshot(
-            UUID sourceCvId,
-            String storageKey,
-            String storageProvider,
-            String fileName,
-            String contentType,
-            long fileSize,
-            String resourceType
-    ) {}
 
     @Transactional
     public List<CandidateCvResponse> listCvs(Long userId, UUID requestedCandidateId) {
@@ -219,7 +262,7 @@ public class CandidateCvService {
         if (requestedCandidateId != null && !requestedCandidateId.equals(candidateId)) {
             throw new AppException(ErrorCode.FORBIDDEN);
         }
-        return cvRepository.findByCandidateIdOrderByCreatedAtDesc(candidateId)
+        return cvRepository.findByCandidateIdAndDeletedAtIsNullOrderByCreatedAtDesc(candidateId)
                 .stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
@@ -232,16 +275,16 @@ public class CandidateCvService {
     @Transactional
     public UploadUrlResponse generateDownloadUrl(Long userId, UUID cvId) {
         UUID candidateId = currentCandidateId(userId);
-        CandidateCv cv = cvRepository.findByIdAndCandidateId(cvId, candidateId)
+        CandidateCv cv = cvRepository.findByIdAndCandidateIdAndDeletedAtIsNull(cvId, candidateId)
                 .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
 
-        String format = CONTENT_TYPE_TO_FORMAT.get(cv.getContentType());
+        String format = formatForContentType(cv.getContentType());
         if (format == null) {
             throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
         }
-        String resourceType = FORMAT_TO_RESOURCE_TYPE.get(format);
+        String resourceType = resourceTypeForFormat(format);
         String url = storage.createDownloadUrl(cv.getPublicId(), resourceType, format, DOWNLOAD_URL_TTL);
-        return new UploadUrlResponse(url, null, null, null, cv.getPublicId());
+        return new UploadUrlResponse(url, null, null, null, cv.getPublicId(), null);
     }
 
     private UUID currentCandidateId(Long userId) {
@@ -285,8 +328,16 @@ public class CandidateCvService {
         return "candidates/" + candidateId + "/cvs/";
     }
 
-    private static String applicationFolder(UUID applicationId) {
-        return "applications/" + applicationId + "/cv/";
+    public static String formatForContentType(String contentType) {
+        return contentType == null ? null : CONTENT_TYPE_TO_FORMAT.get(contentType);
+    }
+
+    public static String resourceTypeForFormat(String format) {
+        return format == null ? null : FORMAT_TO_RESOURCE_TYPE.get(format);
+    }
+
+    public static String resourceTypeForContentType(String contentType) {
+        return resourceTypeForFormat(formatForContentType(contentType));
     }
 
     private void cleanupQuietly(CandidateCvStorage.StoredCvAsset asset) {
@@ -301,29 +352,14 @@ public class CandidateCvService {
     }
 
     @Transactional
-    public void deleteCv(Long userId, UUID cvId) {
-        UUID candidateId = currentCandidateId(userId);
-        CandidateCv cv = cvRepository.findByIdAndCandidateId(cvId, candidateId)
-                .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
-
-        String format = CONTENT_TYPE_TO_FORMAT.get(cv.getContentType());
-        if (format == null) {
-            throw new AppException(ErrorCode.INVALID_CV_FILE_FORMAT);
-        }
-        String resourceType = FORMAT_TO_RESOURCE_TYPE.get(format);
-
-        // Delete from Cloudinary first; a storage failure keeps the database row.
-        storage.delete(cv.getPublicId(), resourceType);
-        cvRepository.delete(cv);
-    }
-
-    @Transactional
     public CandidateCvResponse setDefaultCv(Long userId, UUID cvId) {
         UUID candidateId = currentCandidateId(userId);
-        CandidateCv selected = cvRepository.findByIdAndCandidateId(cvId, candidateId)
+        profileRepository.findByIdForUpdate(candidateId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        CandidateCv selected = cvRepository.findByIdAndCandidateIdAndDeletedAtIsNull(cvId, candidateId)
                 .orElseThrow(() -> new AppException(ErrorCode.CV_NOT_FOUND));
 
-        List<CandidateCv> cvs = cvRepository.findByCandidateIdOrderByCreatedAtDesc(candidateId);
+        List<CandidateCv> cvs = cvRepository.findByCandidateIdAndDeletedAtIsNullOrderByCreatedAtDesc(candidateId);
         for (CandidateCv cv : cvs) {
             cv.setDefault(cv.getId().equals(selected.getId()));
         }
@@ -344,4 +380,15 @@ public class CandidateCvService {
                 cv.getUpdatedAt()
         );
     }
+
+    /** Storage reference shared by an application; never an application-specific copy. */
+    public record ApplicationCvReference(
+            UUID cvId,
+            String storageKey,
+            String fileName,
+            String contentType,
+            long fileSize,
+            String resourceType,
+            String format
+    ) {}
 }
